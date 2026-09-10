@@ -1,0 +1,118 @@
+
+log:
+  queries: true
+  trace_msgs: false
+
+api:
+  addr: "127.0.0.1:8888"
+
+servers:
+  - tag: "doh-in"
+    protocol: "https"
+    listen: "0.0.0.0:{{DOH_PORT}}"
+    tls:
+      certs: ["{{TLS_CERT_PATH}}"]
+      keys: ["{{TLS_KEY_PATH}}"]
+      insecure_skip_verify: false
+      verify_client_cert: false
+    http:
+      path: "{{DOH_PATH}}"
+    socket:
+      so_reuseport: true
+
+  - tag: "doh3-in"
+    protocol: "http3"
+    listen: "0.0.0.0:{{DOH_PORT}}"
+    tls:
+      certs: ["{{TLS_CERT_PATH}}"]
+      keys: ["{{TLS_KEY_PATH}}"]
+      insecure_skip_verify: false
+      verify_client_cert: false
+    http:
+      path: "{{DOH_PATH}}"
+    quic:
+      max_streams: 100
+
+  - tag: "dot-in"
+    protocol: "tls"
+    listen: "0.0.0.0:{{DOT_PORT}}"
+    tls:
+      certs: ["{{TLS_CERT_PATH}}"]
+      keys: ["{{TLS_KEY_PATH}}"]
+      insecure_skip_verify: false
+      verify_client_cert: false
+    tcp:
+      max_concurrent_queries: 100
+    socket:
+      so_reuseport: true
+
+  - tag: "doq-in"
+    protocol: "quic"
+    listen: "0.0.0.0:{{DOT_PORT}}"
+    tls:
+      certs: ["{{TLS_CERT_PATH}}"]
+      keys: ["{{TLS_KEY_PATH}}"]
+      insecure_skip_verify: false
+      verify_client_cert: false
+    quic:
+      max_streams: 100
+
+cache:
+  mem_size: 67108864     # 64MB 内存缓存
+  maximum_ttl: 3600
+  prefetch_threshold: 0.25
+  optimistic_ttl: 604800
+
+ecs:
+  enabled: true
+  forward: true
+  ip_zone:
+    - /var/lib/dns-stack/ecs-ip-zone.txt
+
+strip_ech: true
+
+upstreams:
+  - tag: "local-unbound"
+    addr: "127.0.0.1:{{UNBOUND_PORT}}"
+    health_check:
+      max_fails: 5
+      ping_interval: 30
+
+  - tag: "foreign-hk"
+    addr: "10.100.0.3:{{UNBOUND_PORT}}"
+    health_check:
+      max_fails: 5
+      ping_interval: 30
+
+load_balancers:
+  - tag: "recursive-lb"
+    method: "fall_through"   # 有超时/故障自动切下一个
+    backends:
+      - tag: "local-unbound"
+        weight: 1
+      - tag: "foreign-hk"
+        weight: 1
+
+domain_sets:
+
+  - tag: "manual-exclude-domains"
+    files:
+      - "/var/lib/dns-stack/manual-exclude.txt"
+
+  - tag: "manual-gfw-domains"
+    files:
+      - "/var/lib/dns-stack/manual-gfw.txt"
+
+rules:
+  - domain: "manual-exclude-domains"
+    forward: "recursive-lb"
+  - domain: "manual-gfw-domains"
+    forward: "foreign-hk"
+  - forward: "recursive-lb"
+
+middleware:
+  - type: "limit"
+    concurrent: {{LIMIT_CONCURRENT}}
+    qps: {{LIMIT_QPS}}
+
+addons: {}
