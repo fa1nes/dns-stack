@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>DNS Stack 管理面板</title>
+<link rel="stylesheet" href="assets/panel.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polyline points='20 12 16.5 12 13.8 19 10 5 7.3 12 4 12' fill='none' stroke='%232dd4bf' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
+             stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 12 16.8 12 14.2 18.5 9.8 5.5 7.2 12 4 12"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1>DNS Stack</h1>
+        <div class="role"><span class="dot idle" id="healthDot"></span><span id="roleName">—</span></div>
+      </div>
+
+      <span class="brand-actions">
+        <button class="icon mobile-only" id="themeToggleMobile" title="切换主题" aria-label="切换主题">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button class="icon mobile-only auth-only" id="btnLogoutMobile" hidden title="退出登录" aria-label="退出登录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </span>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button data-page="overview" class="active" title="概览"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="lbl">概览</span></button>
+      <button data-page="queries" title="查询"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><span class="lbl">查询</span></button>
+      <button data-page="tools" title="工具"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="3" x2="15" y2="3"/><path d="M10 3v5.2l-5.5 9.9A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.9L14 8.2V3"/><line x1="7.2" y1="14.5" x2="16.8" y2="14.5"/></svg></span><span class="lbl">工具</span></button>
+      <button data-page="settings" title="设置"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="lbl">设置</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="row">
+        <button id="themeToggle" class="grow-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="lbl">主题</span></button>
+        <button id="btnLogout" class="auth-only" hidden title="退出登录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="lbl">退出</span></button>
+      </div>
+
+      <div class="hint access-line">
+        <span class="dot idle" id="accessDot"></span><span id="accessText">—</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+
+      <button class="icon fold-btn mobile-never" id="btnSideFold" title="收起侧栏" aria-label="收起侧栏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17.5" x2="20" y2="17.5"/></svg>
+      </button>
+      <div class="title-wrap">
+        <h2 id="pageTitle">概览</h2>
+        <span class="page-desc" id="pageDesc"></span>
+      </div>
+      <div class="actions" id="pageActions"></div>
+
+      <button class="icon" id="btnDiag" title="环境诊断（显示异常时点这里）" aria-label="环境诊断">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/>
+          <circle cx="12" cy="7.8" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="content">
+
+      <section class="page active" id="page-overview">
+        <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+        <div class="grid c2">
+          <div class="card">
+            <h3>请求量趋势 <select id="tsSpan" class="sel-sm" autocomplete="off">
+              <option value="3600">近 1 小时</option>
+              <option value="21600">近 6 小时</option>
+              <option value="86400">近 24 小时</option>
+            </select></h3>
+            <div class="chart" id="tsChart"></div>
+            <div class="legend">
+              <span><i class="lg-ok"></i>本机递归</span>
+              <span><i class="lg-accent"></i>香港递归</span>
+              <span><i class="lg-purple"></i>缓存命中</span>
+              <span><i class="lg-err"></i>已拒绝</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>系统资源</h3>
+            <div id="ovSystem"><div class="state"><span class="spinner"></span></div></div>
+          </div>
+        </div>
+        <div class="grid c2">
+          <div class="card"><h3>mosproxy</h3><div id="ovMosproxy"></div></div>
+          <div class="card"><h3>本机 Unbound</h3><div id="ovUnbound"></div></div>
+        </div>
+        <div class="card">
+          <h3>上游健康</h3>
+          <div class="table-wrap card-rows"><table class="card-rows">
+            <thead><tr><th>上游</th><th style="width:72px">状态</th><th style="width:88px">成功率</th>
+              <th style="width:88px">平均延迟</th><th style="width:88px">P95</th><th class="dim">方向</th></tr></thead>
+            <tbody id="ovUpstreamBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-queries">
+        <div class="tabs main-tabs" id="queryTabs">
+          <button data-qtab="live" class="active">实时请求</button>
+          <button data-qtab="domains">域名统计</button>
+        </div>
+
+        <div class="tab-panel active" id="qtab-live">
+          <div class="filters">
+            <input type="search" id="fDomain" class="grow" placeholder="域名包含…（回车搜索）" autocomplete="off">
+            <select id="fQtype" autocomplete="off"><option value="">全部类型</option>
+              <option>A</option><option>AAAA</option><option>CNAME</option><option>HTTPS</option>
+              <option>MX</option><option>TXT</option><option>NS</option><option>SOA</option><option>PTR</option></select>
+            <select id="fRoute" autocomplete="off"><option value="">全部路由</option>
+              <option value="cn">本机递归</option><option value="foreign">香港递归</option>
+              <option value="cache">缓存命中</option><option value="reject">已拒绝</option></select>
+            <select id="fRcode" autocomplete="off"><option value="">全部状态</option>
+              <option>NOERROR</option><option>NXDOMAIN</option><option>SERVFAIL</option><option>REFUSED</option></select>
+            <select id="fRespBy" title="按实际响应的上游筛选" autocomplete="off"><option value="">全部上游</option>
+              <option value="cache">缓存直接返回</option></select>
+            <select id="fSince" autocomplete="off"><option value="0">不限时间</option>
+              <option value="300">近 5 分钟</option><option value="3600">近 1 小时</option>
+              <option value="86400">近 24 小时</option><option value="604800">近 7 天</option></select>
+            <button id="btnSearch" class="primary">查询</button>
+            <button id="btnReset">重置</button>
+          </div>
+          <div class="card flush">
+            <div class="card-toolbar">
+              <div class="row nowrap fs-12">
+                <span class="dot idle" id="liveDot"></span>
+                <span id="liveStatus" class="dim">实时流未连接</span>
+              </div>
+              <div class="row">
+                <button class="sm" id="btnLiveToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6.5 4.8 19.5 12 6.5 19.2" fill="currentColor" stroke="none"/></svg>开启实时</button>
+                <button class="sm" id="btnClearLive">清空</button>
+                <button class="sm" id="btnExportQueriesJson" title="导出全部查询事件（最多 10 万条）">JSON</button>
+                <button class="sm" id="btnExportQueriesCsv" title="导出全部查询事件（最多 10 万条）">CSV</button>
+              </div>
+            </div>
+
+            <div class="table-wrap card-rows">
+              <table class="card-rows">
+                <thead><tr>
+                  <th style="width:74px">时间</th><th>域名</th><th style="width:58px">类型</th>
+                  <th style="width:84px">响应</th>
+                  <th style="width:88px">路由</th>
+                  <th style="width:104px">响应来源</th>
+                  <th style="width:82px">耗时</th>
+                  <th style="width:56px">缓存</th>
+                  <th style="width:52px">操作</th>
+                </tr></thead>
+                <tbody id="liveBody"><tr><td colspan="9"><div class="state">点击「查询」加载历史请求，或开启实时流</div></td></tr></tbody>
+              </table>
+            </div>
+            <div class="pager padded">
+              <span id="liveCount">—</span>
+              <div class="btns">
+                <button class="sm" id="btnPrev">上一页</button>
+                <span id="pageInfo" class="mono">1 / 1</span>
+                <button class="sm" id="btnNext">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="qtab-domains">
+          <div class="grid c4" id="domSummary"></div>
+          <div class="grid c2">
+            <div class="card"><h3>查询类型分布（近 24 小时）</h3><div id="domQtype"></div></div>
+            <div class="card"><h3>响应状态分布（近 24 小时）</h3><div id="domRcode"></div></div>
+          </div>
+          <div class="row mb-10">
+            <button class="sm" id="btnReloadDomains">刷新</button>
+            <button class="sm" id="btnExportDomainsJson" title="导出全部域名统计（最多 10 万条）">JSON</button>
+            <button class="sm" id="btnExportDomainsCsv" title="导出全部域名统计（最多 10 万条）">CSV</button>
+            <button class="danger sm" data-op="clear_domains">清理陈旧域名</button>
+            <button class="danger sm" data-op="clear_domains_all">清空全部统计</button>
+          </div>
+          <div class="tabs" id="domTabs">
+            <button data-metric="new" class="active">最近新增</button>
+            <button data-metric="recent">最近活跃</button>
+            <button data-metric="count">请求最多</button>
+            <button data-metric="fail">失败最多</button>
+            <button data-metric="slow">解析最慢</button>
+          </div>
+          <div class="filters">
+            <input type="search" id="domSearch" class="grow" placeholder="域名包含…" autocomplete="off">
+            <select id="domRoute" autocomplete="off"><option value="">全部路由</option>
+              <option value="cn">本机递归</option><option value="foreign">香港递归</option>
+              <option value="cache">缓存命中</option></select>
+            <select id="domLimit" autocomplete="off"><option value="50">每页 50</option><option value="100">每页 100</option>
+              <option value="200">每页 200</option></select>
+            <button id="btnDomSearch" class="primary">查询</button>
+          </div>
+          <div class="card flush"><div class="table-wrap card-rows">
+            <table class="card-rows">
+              <thead><tr id="domHead">
+                <th>域名</th><th style="width:160px">解析节点</th>
+                <th style="width:80px">请求次数</th><th style="width:70px">失败次数</th>
+                <th style="width:88px">最近状态</th><th style="width:130px">最后请求</th>
+              </tr></thead>
+              <tbody id="domBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+            </table>
+          </div>
+          <div class="pager padded">
+            <span id="domCount">—</span>
+            <div class="btns">
+              <button class="sm" id="btnDomPrev">上一页</button>
+              <span id="domPageInfo" class="mono">1 / 1</span>
+              <button class="sm" id="btnDomNext">下一页</button>
+            </div>
+          </div></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-tools">
+        <div class="tabs main-tabs" id="toolTabs">
+          <button data-ttab="test" class="active">解析测试</button>
+          <button data-ttab="ip">IP 查询</button>
+          <button data-ttab="location">我的位置</button>
+          <button data-ttab="logs">日志</button>
+        </div>
+
+        <div class="tab-panel active" id="ttab-test">
+          <div class="card">
+            <div class="filters flat m0">
+              <input type="text" id="testDomain" class="grow" placeholder="要测试的域名，如 www.example.com" autocomplete="off">
+              <select id="testQtype" autocomplete="off"><option>A</option><option>AAAA</option><option>CNAME</option>
+                <option>HTTPS</option><option>MX</option><option>TXT</option><option>NS</option><option>SOA</option></select>
+              <input type="text" id="testSubnet" style="width:11.5rem"
+                     placeholder="客户端子网（可选）" autocomplete="off"
+                     title="以指定网段的身份询问权威，用来查看按地区调度的真实结果。">
+              <button class="primary" id="btnTest">开始测试</button>
+            </div>
+            <div class="hint">对比本机与香港两侧的解析结果。结果不同通常是 GeoDNS 按地区调度所致。</div>
+          </div>
+          <div id="testResult"></div>
+        </div>
+
+        <div class="tab-panel" id="ttab-ip">
+          <div class="card">
+            <div class="filters flat m0">
+              <input type="text" id="ipQuery" class="grow mono" placeholder="IP 地址，留空查询你自己的出口地址" autocomplete="off" spellcheck="false">
+              <button class="primary" id="btnIpLookup">查询</button>
+            </div>
+            <div class="hint">四个来源各自独立查询同一地址：纯真负责国内省市与运营商，MaxMind 与 DB-IP 负责全球 ASN，ip.sb 作为在线兜底。只有 ASN 与国家码是可机器比对的规范值，其余字段按各源原样并列，供人工判断。</div>
+          </div>
+          <div id="ipResult"></div>
+        </div>
+
+        <div class="tab-panel" id="ttab-location">
+          <div class="card">
+            <h3>我的位置
+              <button class="ghost sm" id="btnMyLocRefresh" title="重新探测">刷新</button>
+            </h3>
+            <div id="myLocation"></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="ttab-logs">
+          <div class="filters">
+            <label>服务
+              <select id="logUnit" autocomplete="off">
+              </select>
+            </label>
+            <label>等级
+              <select id="logPriority" autocomplete="off">
+                <option value="">全部</option><option value="err">错误及以上</option>
+                <option value="warning">警告及以上</option><option value="info">信息及以上</option>
+              </select>
+            </label>
+            <label>行数
+              <select id="logLines" autocomplete="off"><option value="200">200</option><option value="500">500</option>
+                <option value="1000">1000</option><option value="2000">2000</option></select>
+            </label>
+            <input type="search" id="logSearch" class="grow" placeholder="关键字过滤…" autocomplete="off">
+            <button id="btnLogRefresh" class="primary">刷新</button>
+            <button id="btnLogFollow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6.5 4.8 19.5 12 6.5 19.2" fill="currentColor" stroke="none"/></svg>实时</button>
+            <button id="btnLogClear">清屏</button>
+          </div>
+          <div class="log-view" id="logView"><div class="state">选择服务后点击「刷新」加载日志</div></div>
+          <div class="hint">「清屏」只清当前显示，不动服务器日志。日志经 helper 统一脱敏。</div>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="tabs main-tabs" id="settingTabs">
+          <button data-stab="security" class="active">安全</button>
+          <button data-stab="rules">规则与证书</button>
+          <button data-stab="services">服务与备份</button>
+          <button data-stab="audit">审计</button>
+        </div>
+
+        <div class="tab-panel active" id="stab-security">
+          <div class="posture" id="posture" aria-label="安全态势总览"></div>
+
+          <div class="sec-label">登录方式</div>
+          <div class="sec-grid">
+            <div class="card">
+              <h3>密码登录 <span id="pwBadge"></span></h3>
+              <details class="sec-fold" id="foldPassword">
+                <summary>修改密码</summary>
+                <div class="sec-fold-body">
+                  <form id="pwForm" autocomplete="off">
+                    <label class="f-label" for="pwOld">当前密码</label>
+                    <input type="password" id="pwOld" class="w-full" autocomplete="current-password">
+                    <label class="f-label mt-8" for="pwNew">新密码（至少 12 位）</label>
+                    <input type="password" id="pwNew" class="w-full" autocomplete="new-password">
+                    <label class="f-label mt-8" for="pwNew2">再输入一次</label>
+                    <input type="password" id="pwNew2" class="w-full" autocomplete="new-password">
+                    <button type="submit" class="primary mt-10" id="btnPw">修改密码</button>
+                  </form>
+                  <div class="login-msg" id="pwMsg" role="alert"></div>
+                </div>
+              </details>
+              <div class="sec-act" id="pwToggleWrap">
+                <button class="danger sm" id="btnTogglePwd">关闭密码登录</button>
+                <span class="hint" id="pwToggleHint"></span>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>二次认证 <span class="mono sec-sub">TOTP</span> <span id="totpBadge"></span></h3>
+              <div id="totpSetup" hidden class="sec-fold-body">
+                <label class="f-label" for="totpSecret">密钥</label>
+                <input type="text" id="totpSecret" class="w-full mono" readonly onclick="this.select()">
+                <label class="f-label mt-8" for="totpUri">otpauth 链接</label>
+                <input type="text" id="totpUri" class="w-full mono" readonly onclick="this.select()"
+                       title="otpauth:// 链接，可粘贴进支持导入的验证器">
+                <label class="f-label mt-8" for="totpCode">验证器上的 6 位数字</label>
+                <div class="row mt-4">
+                  <input type="text" id="totpCode" class="grow-1" inputmode="numeric" maxlength="6"
+                         autocomplete="one-time-code">
+                  <button class="primary sm" id="btnTotpEnable">验证并启用</button>
+                  <button class="sm" id="btnTotpCancel">取消</button>
+                </div>
+              </div>
+              <div class="sec-act" id="totpActions">
+                <button class="primary sm" id="btnTotpSetup" disabled>启用二次认证</button>
+                <button class="danger sm" id="btnTotpDisable" hidden>停用二次认证</button>
+              </div>
+              <div class="sec-note is-warn" id="totpHint">
+                <b>启用入口已锁死。</b>登录页目前不渲染动态验证码输入框。
+              </div>
+              <div class="sec-note">
+                万一已启用且登不进来：在服务器执行
+                <code>sudo dns-stack panel-2fa-reset</code> 关闭。
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>GitHub 联合登录 <span id="oauthBadge"></span></h3>
+            <div class="sec-chips" id="oauthChips"></div>
+            <details class="sec-fold" id="foldOauth">
+              <summary>配置 OAuth 应用</summary>
+              <div class="sec-fold-body">
+                <div class="sec-form-grid">
+                  <div>
+                    <label class="f-label" for="oaClientId">Client ID</label>
+                    <input type="text" id="oaClientId" class="w-full" autocomplete="off">
+                  </div>
+                  <div>
+                    <label class="f-label" for="oaSecret">Client Secret</label>
+                    <input type="password" id="oaSecret" class="w-full" placeholder="留空表示不修改"
+                           autocomplete="new-password">
+                  </div>
+                  <div class="sec-form-wide">
+                    <label class="f-label" for="oaUsers">允许登录的 GitHub 用户名</label>
+                    <input type="text" id="oaUsers" class="w-full" placeholder="多个用户名用空格或逗号分隔"
+                           autocomplete="off">
+                  </div>
+                </div>
+                <div class="row mt-10">
+                  <button class="primary sm" id="btnSaveOAuth">保存</button>
+                </div>
+                <div class="hint mt-8">
+                  回调地址：<code id="oaCallback" class="mono"></code>。
+                  Secret 只写不回显，保存后这里始终显示为空。
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="sec-label">访问地址</div>
+          <div class="sec-grid">
+            <div class="card">
+              <h3>DNS 接入地址 <span id="dohBadge"></span></h3>
+              <div id="dohBox"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+            </div>
+            <div class="card">
+              <h3>面板访问 <span id="accessBadge"></span></h3>
+              <div id="accessBox"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="stab-rules">
+          <div class="grid c4" id="collectStats"></div>
+
+          <div class="card">
+            <h3>分流数据集
+              <span class="row">
+                <input type="text" id="dataSearch" class="ipt-sm" placeholder="筛选…" autocomplete="off">
+                <button class="sm" id="btnReloadCollected">刷新</button>
+              </span>
+            </h3>
+            <div class="tabs" id="dataTabs">
+              <button data-set="cn_zones" class="active">直连域名</button>
+              <button data-set="polluted">污染 IP</button>
+            </div>
+            <div id="dataList"></div>
+          </div>
+
+          <div class="grid c2">
+            <div class="card">
+              <h3>解析失败最多的域名</h3>
+              <div id="failingDomains"></div>
+            </div>
+            <div class="card">
+              <h3>客户端流量规则</h3>
+              <div id="rulesInfo"></div>
+              <div class="row mt-10">
+                <button class="primary sm" data-op="sync_rules">同步</button>
+                <button class="sm" data-op="reload_mosproxy">重载域名表</button>
+                <button class="danger sm" data-op="rollback_rules">回滚</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3>规则源</h3>
+              <div class="sec-form-grid">
+                <div class="sec-form-wide">
+                  <label class="f-label" for="rsRawBase">GitHub Raw 基础地址</label>
+                  <input type="text" id="rsRawBase" class="w-full mono" autocomplete="off" spellcheck="false">
+                </div>
+                <div>
+                  <label class="f-label" for="rsMirror1">镜像 1</label>
+                  <input type="text" id="rsMirror1" class="w-full mono" placeholder="留空表示不使用"
+                         autocomplete="off" spellcheck="false">
+                </div>
+                <div>
+                  <label class="f-label" for="rsMirror2">镜像 2</label>
+                  <input type="text" id="rsMirror2" class="w-full mono" placeholder="留空表示不使用"
+                         autocomplete="off" spellcheck="false">
+                </div>
+                <div>
+                  <label class="f-label" for="rsRepo">GitHub 仓库</label>
+                  <input type="text" id="rsRepo" class="w-full mono" autocomplete="off" spellcheck="false">
+                </div>
+                <div>
+                  <label class="f-label" for="rsBranch">分支</label>
+                  <input type="text" id="rsBranch" class="w-full mono" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+              <div class="row mt-10">
+                <button class="primary sm" id="btnSaveRuleSources">保存</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid c2">
+            <div class="card">
+              <h3>TLS 证书</h3>
+              <div id="certInfo"></div>
+              <div class="row mt-10">
+                <button class="sm" data-op="cert_check">检查</button>
+                <button class="danger sm" data-op="cert_renew">立即续签</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3>缓存策略</h3>
+              <div id="cacheInfo"></div>
+              <div class="filters flat">
+                <label>乐观缓存
+                  <select id="cacheTtl" autocomplete="off">
+                    <option value="0">关闭</option>
+                    <option value="3600">1 小时</option>
+                    <option value="86400">1 天</option>
+                    <option value="259200">3 天</option>
+                    <option value="604800">7 天</option>
+                    <option value="1209600">14 天</option>
+                    <option value="2592000">30 天</option>
+                  </select>
+                </label>
+                <button class="primary sm" id="btnSetCacheTtl">应用</button>
+              </div>
+            </div>
+          </div>
+
+          <details class="card">
+            <summary>维护操作与历史</summary>
+            <div class="row mt-12">
+              <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
+              <button class="sm" data-op="set_arch_epoch">重设统计起点</button>
+              <button class="danger sm" data-op="purge_legacy">清理旧架构数据</button>
+            </div>
+            <div class="grid c2 mt-12">
+              <div><div class="f-label mb-4">同步历史</div><div id="syncHistory"></div></div>
+              <div><div class="f-label mb-4">可回滚版本</div><div id="rollbackList"></div></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="tab-panel" id="stab-services">
+          <div class="grid c2">
+            <div class="card">
+              <h3>服务控制</h3>
+              <div class="row">
+                <button class="sm" data-op="healthcheck">健康检查</button>
+                <button class="sm" data-op="reload_mosproxy">重载 mosproxy</button>
+                <button class="danger sm" data-op="restart_mosproxy">重启 mosproxy</button>
+                <button class="danger sm" data-op="restart_unbound">重启 Unbound</button>
+              </div>
+              <div class="hint">所有操作通过受限 helper 白名单执行，标红按钮需二次确认。</div>
+            </div>
+            <div class="card">
+              <h3>备份与迁移</h3>
+              <div class="row">
+                <button class="sm" data-op="backup">立即备份</button>
+                <button class="sm" data-op="export" data-args='{"mode":"state"}'>导出（配置+数据）</button>
+                <button class="sm" data-op="export" data-args='{"mode":"full"}'>导出完整包</button>
+                <button class="sm" id="btnExportMigration">导出迁移数据</button>
+              </div>
+              <div class="row">
+                <input type="file" id="migrationFile" accept=".gz,.tgz,application/gzip" class="sm">
+                <button class="sm" id="btnMigrationDryRun">试算导入</button>
+                <button class="sm danger" id="btnMigrationImport">导入并覆盖</button>
+              </div>
+              <div id="migrationImportResult" class="hint"></div>
+              <div class="hint">导入只接受本面板导出的迁移包：逐文件校验 sha256、只写清单内的路径、
+                覆盖前自动备份。<b>先「试算导入」看清会写哪些文件再执行。</b>
+                整机迁移仍用 <code>sudo dns-stack migrate root@新服务器</code></div>
+            </div>
+          </div>
+          <div class="grid c2" id="opsRoleExtra"></div>
+          <div class="grid c2">
+            <div class="card"><h3>备份文件</h3><div id="backupList"></div></div>
+            <div class="card"><h3>导出包</h3><div id="exportList"></div></div>
+          </div>
+          <details class="card">
+            <summary>服务状态详情（systemd）</summary>
+            <div class="table-wrap card-rows mt-12"><table class="card-rows">
+              <thead><tr><th>服务</th><th style="width:96px">状态</th><th style="width:88px">子状态</th>
+                <th style="width:92px">内存</th><th style="width:78px">重启次数</th><th>启动时间 / 下次触发</th></tr></thead>
+              <tbody id="svcBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+            </table></div>
+          </details>
+        </div>
+
+        <div class="tab-panel" id="stab-audit">
+          <div class="row mb-10">
+            <button class="sm" id="btnReloadAudit">刷新</button>
+            <button class="danger sm" data-op="clear_audit">清空审计记录</button>
+          </div>
+          <div class="card flush"><div class="table-wrap card-rows"><table class="card-rows">
+            <thead><tr><th style="width:150px">时间</th><th style="width:150px">操作</th>
+              <th style="width:70px">结果</th><th style="width:120px">参数</th><th>输出摘要</th>
+              <th style="width:52px"></th></tr></thead>
+            <tbody id="auditBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+          </table></div></div>
+          <div class="hint">记录所有经面板触发的特权操作。helper 侧另有独立审计日志：
+            <code>/var/log/dns-stack/helper.log</code></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="drawer-mask" id="drawerMask"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h3 id="drawerTitle">详情</h3>
+    <button class="icon" id="drawerClose" aria-label="关闭详情">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="assets/runtime-config.js"></script>
+<script src="assets/panel.js"></script>
+</body>
+</html>

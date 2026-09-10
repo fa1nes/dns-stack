@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="robots" content="noindex,nofollow">
+<title>登录 · DNS Stack 管理面板</title>
+<link rel="stylesheet" href="assets/panel.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polyline points='20 12 16.5 12 13.8 19 10 5 7.3 12 4 12' fill='none' stroke='%232dd4bf' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<script>
+try {
+  var t = localStorage.getItem('dns-stack-theme');
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  document.documentElement.dataset.theme = t;
+} catch (e) {  }
+</script>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-wrap">
+    <div class="login-brandline">
+      <span class="login-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 12 16.8 12 14.2 18.5 9.8 5.5 7.2 12 4 12"/>
+        </svg>
+      </span>
+      <div class="login-wordmark">DNS STACK</div>
+      <div class="login-tagline">自建 DNS 解析栈管理面板</div>
+      <div class="login-host mono" id="hostLine">—</div>
+    </div>
+    <div class="login-card">
+      <div class="login-body">
+
+        <form id="loginForm">
+
+          <input type="text" name="username" id="loginUser" autocomplete="username"
+                 value="admin" readonly tabindex="-1" aria-hidden="true"
+                 style="position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;opacity:0;pointer-events:none;overflow:hidden">
+          <label class="f-label" for="pw">访问密码</label>
+          <div class="pw-field">
+            <input type="password" id="pw" name="password" autocomplete="current-password"
+                   spellcheck="false" autofocus aria-describedby="msg">
+            <button type="button" class="pw-toggle" id="btnEye"
+                    title="显示密码" aria-label="显示密码">
+              <svg id="eyeOn" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"></path>
+                <circle cx="12" cy="12" r="2.6"></circle>
+              </svg>
+              <svg id="eyeOff" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden>
+                <path d="M4.5 6.5C2.9 8.4 2 12 2 12s3.6 6.5 10 6.5c1.9 0 3.5-.4 4.9-1"></path>
+                <path d="M9.6 5.7A11 11 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5s-1 2-2.9 3.8"></path>
+                <path d="M10.1 10.1a2.6 2.6 0 0 0 3.7 3.7"></path>
+                <path d="M3 3l18 18"></path>
+              </svg>
+            </button>
+          </div>
+
+          <button type="submit" class="primary" id="btnLogin">登 录</button>
+        </form>
+        <div class="login-msg" id="msg" role="alert" aria-live="polite"></div>
+      </div>
+
+      <div class="login-foot">
+        <span class="dot idle" id="secDot"></span><span id="secText">检查连接…</span>
+      </div>
+    </div>
+    <div class="login-tip">
+      登录后会话有效期 12 小时 · 修改密码后所有会话立即失效
+      <br><a href="#" id="btnDiag" class="diag-link">显示环境诊断</a>
+    </div>
+
+    <pre id="diagOut" class="diag-out" hidden></pre>
+  </div>
+</div>
+
+<script src="assets/runtime-config.js"></script>
+<script>
+(function () {
+  var form = document.getElementById('loginForm');
+  var pw = document.getElementById('pw');
+  var btn = document.getElementById('btnLogin');
+  var msg = document.getElementById('msg');
+  var eye = document.getElementById('btnEye');
+  var timer = null;
+
+  document.getElementById('hostLine').textContent = location.host;
+
+  (function () {
+    var dot = document.getElementById('secDot');
+    var txt = document.getElementById('secText');
+    var local = ['localhost', '127.0.0.1', '[::1]', '::1'].indexOf(location.hostname) >= 0;
+    if (location.protocol === 'https:') {
+      dot.className = 'dot ok';
+      txt.textContent = '连接已加密 (HTTPS)';
+    } else if (local) {
+      dot.className = 'dot ok';
+      txt.textContent = '本机访问 · 流量不出本机';
+    } else {
+      dot.className = 'dot err';
+      txt.textContent = '连接未加密，密码会明文传输';
+    }
+  })();
+
+  function show(text, kind) {
+    msg.textContent = text;
+    msg.className = 'login-msg show' + (kind === 'warn' ? ' warn' : '');
+  }
+  function clear() { msg.textContent = ''; msg.className = 'login-msg'; }
+
+  pw.addEventListener('keyup', function (e) {
+    if (typeof e.getModifierState !== 'function') return;
+    if (e.getModifierState('CapsLock')) {
+      show('大写锁定 (Caps Lock) 已开启', 'warn');
+    } else if (msg.classList.contains('warn') && msg.textContent.indexOf('大写锁定') === 0) {
+      clear();
+    }
+  });
+
+  eye.addEventListener('click', function () {
+    var toText = pw.type === 'password';
+    pw.type = toText ? 'text' : 'password';
+    document.getElementById('eyeOn').hidden = toText;
+    document.getElementById('eyeOff').hidden = !toText;
+    eye.title = toText ? '隐藏密码' : '显示密码';
+    eye.setAttribute('aria-label', eye.title);
+    pw.focus();
+  });
+
+  function busy(on, label) {
+    btn.disabled = on;
+    pw.disabled = on;
+    btn.innerHTML = '';
+    if (on) {
+      var s = document.createElement('span');
+      s.className = 'spinner';
+      btn.appendChild(s);
+    }
+    btn.appendChild(document.createTextNode(label));
+  }
+
+  function lockdown(sec) {
+    clearInterval(timer);
+    var left = sec;
+    function tick() {
+      if (left <= 0) {
+        clearInterval(timer);
+        busy(false, '登 录');
+        clear();
+        pw.focus();
+        return;
+      }
+      busy(true, '请等待 ' + left + ' 秒');
+      left -= 1;
+    }
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (btn.disabled) return;
+    if (!pw.value) { show('请输入访问密码'); pw.focus(); return; }
+
+    clear();
+    busy(true, '登录中…');
+
+    fetch((window.dnsStackApiUrl || function (p) { return p; })('/api/login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        password: pw.value,
+        totp_code: (document.getElementById('totp') || {}).value || ''
+      })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, status: r.status, data: d };
+      });
+    }).then(function (res) {
+      if (res.ok && res.data.ok) {
+        busy(true, '正在进入…');
+        var target = '/' + (location.hash || '');
+        if (target === location.pathname + location.search + location.hash) {
+          location.reload();
+        } else {
+          location.replace(target);
+        }
+        return;
+      }
+      if (res.status === 429 && res.data.retry_after > 0) {
+        show(res.data.message || '尝试过于频繁', 'warn');
+        lockdown(res.data.retry_after);
+        return;
+      }
+      busy(false, '登 录');
+      show(res.data.message || res.data.error || ('登录失败 (HTTP ' + res.status + ')'));
+      pw.select();
+    }).catch(function (err) {
+      busy(false, '登 录');
+      show('无法连接面板：' + err.message);
+      pw.select();
+    });
+  });
+})();
+
+(function () {
+  var link = document.getElementById('btnDiag');
+  var out = document.getElementById('diagOut');
+  if (!link || !out) { return; }
+
+  function supports(prop, val) {
+    try { return (window.CSS && CSS.supports) ? (CSS.supports(prop, val) ? '是' : '否') : '未知'; }
+    catch (e) { return '否'; }
+  }
+  function supportsSel(sel) {
+    try { return (window.CSS && CSS.supports) ? (CSS.supports('selector(' + sel + ')') ? '是' : '否') : '未知'; }
+    catch (e) { return '否'; }
+  }
+
+  link.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    var de = document.documentElement;
+    var cs = window.getComputedStyle(de);
+    var L = [];
+
+    L.push('UA        ' + navigator.userAgent);
+    L.push('屏幕      ' + screen.width + 'x' + screen.height + ' dpr=' + (window.devicePixelRatio || 1));
+    L.push('布局视口  ' + window.innerWidth + 'x' + window.innerHeight);
+
+    var vv = window.visualViewport;
+    L.push('视觉视口  ' + (vv ? (Math.round(vv.width) + 'x' + Math.round(vv.height) +
+            ' scale=' + (Math.round(vv.scale * 1000) / 1000)) : '不支持 visualViewport'));
+    L.push('横向溢出  scrollWidth=' + de.scrollWidth + ' clientWidth=' + de.clientWidth +
+           (de.scrollWidth > de.clientWidth ? '  ← 有溢出' : '  (无)'));
+
+    var bg = cs.getPropertyValue('--bg').trim();
+    L.push('样式表    ' + (bg ? '已加载 (--bg=' + bg + ')' : '🔴 未加载或解析失败'));
+
+    L.push('特性 :has()      ' + supportsSel(':has(*)'));
+    L.push('特性 color-mix   ' + supports('color', 'color-mix(in srgb, red, blue)'));
+    L.push('特性 safe-area   ' + supports('padding-left', 'env(safe-area-inset-left)'));
+    L.push('特性 min/max()   ' + supports('width', 'max(10px, 2vw)'));
+
+    var mq = [];
+    [440, 640, 760, 860].forEach(function (w) {
+      if (window.matchMedia('(max-width:' + w + 'px)').matches) { mq.push('≤' + w); }
+    });
+    L.push('生效断点  ' + (mq.length ? mq.join(' ') : '无(按桌面布局渲染)'));
+
+    out.textContent = L.join('\n');
+    out.hidden = false;
+    link.textContent = '环境诊断（请截图发送）';
+  });
+})();
+</script>
+</body>
+</html>
