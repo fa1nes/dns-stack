@@ -1,0 +1,24 @@
+[Unit]
+Description=dns-stack 多归属库交叉验证 direct4(产出争议与晋级清单)
+Documentation=file:///opt/dns-stack/dns-stack/internal/geoaudit/geoaudit.go
+After=dns-stack-chnroute.service dns-stack-geoip.service
+Wants=dns-stack-geoip.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/dns-stack/config.env
+ExecStart=/opt/dns-stack/bin/dns-stack-go direct4-audit
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=40%
+MemoryMax=1G
+TimeoutStartSec=900
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/lib/dns-stack
+
+[Install]
+WantedBy=multi-user.target

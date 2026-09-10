@@ -1,0 +1,12 @@
+[Unit]
+Description=dns-stack 自动备份(数据库/配置/规则)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/backup.sh --automatic
+
+IOSchedulingClass=idle
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

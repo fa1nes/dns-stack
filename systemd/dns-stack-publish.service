@@ -1,0 +1,12 @@
+[Unit]
+Description=dns-stack 发布规则到 GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock -w 550 /run/lock/dns-stack-classifier.lock /opt/dns-stack/bin/dns-stack-go classify publish --defer-not-ready
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

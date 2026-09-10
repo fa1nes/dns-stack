@@ -1,0 +1,6 @@
+[Unit]
+Description=dns-stack 同步四文件规则包
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/sync-rules.sh

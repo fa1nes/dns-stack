@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 定时检查证书(Let's Encrypt IP证书6天有效期，每6小时检查一次)
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

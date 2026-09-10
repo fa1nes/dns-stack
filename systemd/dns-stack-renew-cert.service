@@ -1,0 +1,6 @@
+[Unit]
+Description=dns-stack TLS 证书检查/续签
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/renew-cert.sh

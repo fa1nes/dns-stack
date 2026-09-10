@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 递归出口分流存活看门狗
+Documentation=file:///opt/dns-stack/dns-stack/scripts/routing-watchdog.sh
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/routing-watchdog.sh
+[Install]
+WantedBy=multi-user.target

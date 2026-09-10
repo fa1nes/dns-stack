@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 定期刷新大陆 IP 直连集合
+
+[Timer]
+OnCalendar=daily
+OnBootSec=10min
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

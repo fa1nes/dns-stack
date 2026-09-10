@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 正式规则持续复检(每 30 分钟)
+
+[Timer]
+OnActiveSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=dns-stack 递归出口按目标 IP 分流
+Documentation=file:///opt/dns-stack/dns-stack/scripts/setup-recursive-routing.sh
+After=wg-quick@wg0.service
+Wants=wg-quick@wg0.service
+PartOf=wg-quick@wg0.service
+After=nftables.service
+
+PartOf=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/dns-stack/dns-stack/scripts/setup-recursive-routing.sh apply
+
+ExecStartPost=-/usr/sbin/unbound-control -c /etc/unbound/unbound.conf flush_infra all
+
+ExecStop=/opt/dns-stack/dns-stack/scripts/setup-recursive-routing.sh revert
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=每分钟检查递归出口分流是否仍然生效
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

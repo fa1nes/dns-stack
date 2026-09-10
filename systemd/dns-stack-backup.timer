@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 每日自动备份
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

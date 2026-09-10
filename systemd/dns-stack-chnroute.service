@@ -1,0 +1,9 @@
+[Unit]
+Description=dns-stack 更新大陆 IP 直连集合(APNIC 官方委派记录)
+Documentation=file:///opt/dns-stack/dns-stack/scripts/update-chnroute.sh
+After=wg-quick@wg0.service dns-stack-recursive-routing.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/update-chnroute.sh

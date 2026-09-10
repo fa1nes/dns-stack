@@ -1,0 +1,9 @@
+[Unit]
+Description=dns-stack 识别墙内域名的权威地址并加入直连集合
+Documentation=file:///opt/dns-stack/dns-stack/scripts/update-cn-authority.sh
+After=unbound.service dns-stack-recursive-routing.service dns-stack-geo-cross.service
+Wants=unbound.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/update-cn-authority.sh

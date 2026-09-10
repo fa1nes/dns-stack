@@ -1,0 +1,24 @@
+[Unit]
+Description=dns-stack 生成 ECS 缓存分片表(省份+运营商)
+Documentation=file:///opt/dns-stack/dns-stack/internal/ecszone/ecszone.go
+After=dns-stack-chnroute.service dns-stack-geoip.service dns-stack-geo-cross.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/dns-stack/config.env
+ExecStartPre=-/usr/bin/timeout 240 /opt/dns-stack/dns-stack/scripts/warm-authority-cache.sh
+ExecStart=/opt/dns-stack/bin/dns-stack-go ecs-zone
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=40%
+MemoryMax=1G
+TimeoutStartSec=900
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/lib/dns-stack
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+[Unit]
+Description=dns-stack 中文管理面板
+After=network.target dns-stack-helper.service
+Requires=dns-stack-helper.service
+
+[Service]
+Type=simple
+User=dns-stack-panel
+Group=dns-stack-panel
+WorkingDirectory=/opt/dns-stack
+ExecStart=/opt/dns-stack/bin/dns-stack-go panel
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/dns-stack /run/dns-stack
+
+[Install]
+WantedBy=multi-user.target

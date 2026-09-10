@@ -1,0 +1,7 @@
+[Unit]
+Description=dns-stack 采集 GFW DNS 污染 IP
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/collect-polluted-ip.sh
+Nice=10

@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 定期刷新墙内域名的权威地址集合
+
+[Timer]
+OnCalendar=*:0/15
+OnBootSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

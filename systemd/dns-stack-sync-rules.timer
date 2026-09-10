@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 定时同步四文件规则包(每5分钟)
+
+[Timer]
+OnActiveSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

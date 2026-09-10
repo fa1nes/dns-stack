@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 定时发布规则到 GitHub(每 6 小时)
+
+[Timer]
+OnActiveSec=20min
+OnUnitActiveSec=6h
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

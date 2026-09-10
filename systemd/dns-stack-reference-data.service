@@ -1,0 +1,10 @@
+[Unit]
+Description=dns-stack 更新中国 IP 与 Public Suffix List
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/dns-stack/config.env
+ExecStart=/opt/dns-stack/bin/dns-stack-go classify update-reference-data
+Nice=10

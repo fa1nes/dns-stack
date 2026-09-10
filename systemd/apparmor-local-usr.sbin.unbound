@@ -1,0 +1,5 @@
+/var/log/dns-stack/unbound.log rw,
+/var/log/dns-stack/ r,
+
+capability dac_override,
+capability dac_read_search,

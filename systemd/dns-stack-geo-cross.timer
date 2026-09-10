@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 定期重算多归属库交叉清单
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+OnBootSec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

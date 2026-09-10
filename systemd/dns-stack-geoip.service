@@ -1,0 +1,18 @@
+[Unit]
+Description=dns-stack 更新 GeoLite2 归属库(IP → 运营商/地理位置)
+Documentation=file:///opt/dns-stack/dns-stack/scripts/update-geoip.sh
+After=wg-quick@wg0.service dns-stack-recursive-routing.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/dns-stack/scripts/update-geoip.sh
+ProtectSystem=strict
+ReadWritePaths=/var/lib/dns-stack
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

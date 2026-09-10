@@ -1,0 +1,15 @@
+[Unit]
+Description=dns-stack 正式域名规则持续复检
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/dns-stack/config.env
+ExecStart=/usr/bin/flock -w 1700 /run/lock/dns-stack-classifier.lock /opt/dns-stack/bin/dns-stack-go classify verify-rules --limit 300
+TimeoutStartSec=30min
+IOSchedulingClass=idle
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=dns-stack 域名分类(判定国内/被墙)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock -w 2400 /run/lock/dns-stack-classifier.lock /opt/dns-stack/bin/dns-stack-go classify pipeline --authority-every 6h
+TimeoutStartSec=30min
+
+IOSchedulingClass=idle
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

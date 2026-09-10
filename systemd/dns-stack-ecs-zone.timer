@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 定期刷新 ECS 缓存分片表
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=3h
+OnBootSec=25min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
