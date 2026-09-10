@@ -1,0 +1,209 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l cmd internal web)"
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+  scale-gate:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      GEOIP_BASE: https://github.com/${{ github.repository }}/releases/download/geoip-latest
+      MAX_RSS_KB: "524288"
+      MAX_SECONDS: "300"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: fetch real-scale inputs
+        id: inputs
+        run: |
+          set -Eeuo pipefail
+          mkdir -p state/geoip state/chnroute
+          have=0
+          for f in qqwry.ipdb dbip-city.mmdb GeoLite2-City.mmdb; do
+            if curl -fsSL --retry 2 --max-time 300 -o "state/geoip/$f" "$GEOIP_BASE/$f"; then
+              echo "  got $f ($(stat -c%s "state/geoip/$f") bytes)"
+              have=$((have + 1))
+            else
+              rm -f "state/geoip/$f"
+              echo "  missing $f" >&2
+            fi
+          done
+          curl -fsSL --retry 2 --max-time 300 \
+            https://ftp.apnic.net/stats/apnic/delegated-apnic-latest -o apnic.txt
+          awk -F'|' '$2=="CN" && $3=="ipv4" && ($7=="allocated" || $7=="assigned") {
+              n=$5; b=32; while (n > 1) { n /= 2; b-- } print $4"/"b
+          }' apnic.txt > state/chnroute/direct4.txt
+          lines=$(wc -l < state/chnroute/direct4.txt)
+          echo "  direct4: ${lines} 段"
+          if [ "$lines" -lt 1000 ]; then
+            echo "direct4 只有 ${lines} 段，达不到真实量级，门禁失去意义" >&2
+            exit 1
+          fi
+          echo "sources=${have}" >> "$GITHUB_OUTPUT"
+
+      - name: scale gate
+        if: steps.inputs.outputs.sources != '0'
+        run: |
+          set -Eeuo pipefail
+          go build -trimpath -buildvcs=false -o ./dns-stack ./cmd/dns-stack
+
+          over() { awk -v v="$1" -v m="$2" 'BEGIN { exit !(v > m) }'; }
+
+          gate() {
+            local name="$1"; shift
+            if ! /usr/bin/time -f '%M %e' -o metrics.txt "$@" > out.txt 2> err.txt; then
+              echo "::error::${name} 执行失败"; cat err.txt; return 1
+            fi
+            local rss sec
+            read -r rss sec < metrics.txt
+            echo "${name}: 峰值 RSS ${rss} KB / 耗时 ${sec}s (上限 ${MAX_RSS_KB} KB / ${MAX_SECONDS}s)"
+            if over "$rss" "$MAX_RSS_KB"; then
+              echo "::error::${name} 峰值内存 ${rss} KB 超过上限 ${MAX_RSS_KB} KB"
+              echo "2026-09-07 就是这类缺陷把生产机 OOM 掀翻的，不要拿服务器试性能"
+              return 1
+            fi
+            if over "$sec" "$MAX_SECONDS"; then
+              echo "::error::${name} 耗时 ${sec}s 超过上限 ${MAX_SECONDS}s"
+              return 1
+            fi
+            return 0
+          }
+
+          over 100 10 || { echo "::error::门禁自证失败：100 > 10 没被判为超限"; exit 1; }
+          if over 10 100; then echo "::error::门禁自证失败：10 > 100 被判为超限"; exit 1; fi
+          if MAX_RSS_KB=1 gate 自证-必须失败 true; then
+            echo "::error::门禁自证失败：把上限压到 1KB 后 gate 仍然通过"; exit 1
+          fi
+          if ! gate 自证-必须通过 true; then
+            echo "::error::门禁自证失败：正常命令在宽松上限下没通过"; exit 1
+          fi
+          echo "门禁自证通过：超限会拦、不超限会放行"
+
+          gate direct4-audit ./dns-stack direct4-audit --state ./state --dry-run --list 0
+          ./dns-stack direct4-audit --state ./state --list 0 > /dev/null
+          if [ -f state/geoip/qqwry.ipdb ]; then
+            gate ecs-zone ./dns-stack ecs-zone \
+              --direct4 state/chnroute/direct4.txt \
+              --cnip state/geoip/qqwry.ipdb \
+              --disputed state/chnroute/geo-disputed.txt \
+              --dry-run
+          fi
+
+      - name: report skipped gate
+        if: steps.inputs.outputs.sources == '0'
+        run: |
+          echo "::warning::一个归属库都没拉到，规模门禁未执行"
+          echo "先跑 geoip.yml 生成 geoip-latest Release，否则这个门禁形同虚设"
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -Eeuo pipefail
+          version="${GITHUB_REF_NAME}"
+          case "${GITHUB_REF}" in
+            refs/tags/*) : ;;
+            *) version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" ;;
+          esac
+          name="dns-stack-${GOOS}-${GOARCH}"
+          [ "${GOOS}" = windows ] && name="${name}.exe"
+          go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -X main.version=${version}" \
+            -o "dist/${name}" ./cmd/dns-stack
+          (cd dist && sha256sum "${name}" > "${name}.sha256")
+
+      - name: assert static linking
+        if: matrix.goos == 'linux'
+        run: |
+          set -Eeuo pipefail
+          binary="dist/dns-stack-${{ matrix.goos }}-${{ matrix.goarch }}"
+          info="$(file -b "$binary")"
+          echo "$info"
+          case "$info" in
+            *"statically linked"*) ;;
+            *)
+              echo "::error::$binary 不是静态链接的。HK 是 Alpine(musl)，动态链接的产物在那里跑不起来" >&2
+              exit 1 ;;
+          esac
+          if command -v readelf >/dev/null && readelf -l "$binary" 2>/dev/null | grep -q INTERP; then
+            echo "::error::$binary 仍带 PT_INTERP 段，说明依赖动态链接器" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dns-stack-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 14
+
+      - name: attach to tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+
+      - name: publish rolling build
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: binaries-latest
+          name: 最新构建（滚动）
+          body: |
+            由 CI 从 `${{ github.sha }}` 构建的静态二进制，供 install.sh / install-hk-classifier.sh 直接下载。
+            **不要在生产机上编译**——那正是 2026-09-07 把生产 DNS 搞停 10 分钟的起点。
+          prerelease: true
+          files: dist/*
+          fail_on_unmatched_files: true
