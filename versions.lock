@@ -1,0 +1,62 @@
+{
+  "_comment": "dns-stack 固定版本清单。运行时是单个 Go 静态二进制，由 CI 构建后下发，不在生产机编译。更新此文件必须重新测试后才能提交。",
+  "generated_at": "2026-07-25T00:00:00Z",
+  "target": {
+    "os": "ubuntu-22.04",
+    "arch": "arm64"
+  },
+  "packages": {
+    "unbound": {
+      "source": "apt",
+      "version": "1.13.1-1ubuntu5.15",
+      "repo": "jammy-updates/universe"
+    },
+    "age": {
+      "source": "apt",
+      "version": "1.0.0-1ubuntu0.1",
+      "repo": "jammy-updates/universe"
+    },
+    "zstd": {
+      "source": "apt",
+      "version": "system-preinstalled",
+      "note": "安装前已存在，版本以 dpkg -l zstd 为准，未强制降级"
+    },
+    "git": {
+      "source": "apt",
+      "version": "system-preinstalled"
+    },
+    "sqlite3": {
+      "source": "apt",
+      "version": "system-preinstalled"
+    }
+  },
+  "china_ip_source": {
+    "_comment": "国外服务器中国大陆 IP CIDR 数据源，多个候选，按顺序尝试",
+    "primary": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/china.txt",
+    "fallback_1": "https://raw.githubusercontent.com/17mon/china_ip_list/master/china_ip_list.txt",
+    "fallback_2": "https://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest"
+  },
+  "mosproxy": {
+    "_comment": "已核实官方仓库(2026-07-25)。项目状态=alpha，无任何 tag/release，只有 dev 分支，必须锁定具体 commit 从源码编译，不使用 latest。真实命令是 `mosproxy router -c config.yaml`(不是 proxy 子命令，proxy 只是无配置文件的简易模式，不支持域名集/规则)。",
+    "repo": "https://github.com/IrineSistiana/mosproxy",
+    "branch": "dev",
+    "pinned_commit": "80afb0117d50963642e49404525589820743620a",
+    "pinned_commit_date": "2026-03-10T08:47:55Z",
+    "build_method": "source",
+    "local_patch_count": 16,
+    "patch_series_sha256": "25d24786b7d94d9b6dea62f6530a921ab9c6d3fc1e60ee7681520674ebb93050",
+    "artifact_version": "dns-stack/80afb0117d50-p16-25d24786b7d94d9b",
+    "artifact_validation": "embedded version + adjacent SHA256/build-id",
+    "routing_cache_key": "includes matched forward tag",
+    "ecs_suppression": "only for non-global client addresses (unmarked global space keeps its real prefix)",
+    "fall_through_behavior": "retries transport errors and SERVFAIL on the next backend within the same query",
+    "go_version_required": "见 go.mod",
+    "binary_sha256": "stored beside each architecture-specific artifact",
+    "docker_image_alt": "ghcr.io/irine-sistiana/mosproxy (CI自动构建，tag对应commit，platforms: linux/amd64,linux/arm64，本轮选择源码编译以获得可验证的本地SHA256而非依赖ghcr tag)",
+    "config_command": "mosproxy router -c /etc/dns-stack/mosproxy/config.yaml",
+    "api_endpoints": {
+      "metrics": "GET /metrics (prometheus)",
+      "reload": "GET /ctl/reload (只重载domain_sets/ecs zone等资源文件，不是全量配置热重载)"
+    }
+  }
+}
