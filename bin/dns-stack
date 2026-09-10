@@ -1,0 +1,1108 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+LOCK_FILE="/run/lock/dns-stack.lock"
+LOG_FILE="/var/log/dns-stack/dns-stack.log"
+CONFIG_FILE="/etc/dns-stack/config.env"
+GO_BIN="${DNS_STACK_GO_BIN:-/opt/dns-stack/bin/dns-stack-go}"
+
+YES=0
+DRY_RUN=0
+VERBOSE=0
+NONINTERACTIVE=0
+
+if [[ -t 1 ]]; then
+    C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
+    C_CYAN=$'\033[36m'; C_BOLD=$'\033[1m'; C_RESET=$'\033[0m'
+else
+    C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""; C_BOLD=""; C_RESET=""
+fi
+
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+
+log_raw() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+log_info()  { echo "${C_CYAN}[信息]${C_RESET} $*"; log_raw "INFO  $*"; }
+log_ok()    { echo "${C_GREEN}[成功]${C_RESET} $*"; log_raw "OK    $*"; }
+log_warn()  { echo "${C_YELLOW}[警告]${C_RESET} $*"; log_raw "WARN  $*"; }
+log_err()   { echo "${C_RED}[错误]${C_RESET} $*" >&2; log_raw "ERROR $*"; }
+
+die() {
+    log_err "$1"
+    echo "详细日志: $LOG_FILE"
+    exit "${2:-1}"
+}
+
+if [[ "${EUID}" -ne 0 ]]; then
+    die "本工具需要 root 权限运行，请使用: sudo dns-stack"
+fi
+
+on_error() {
+    local exit_code=$?
+    local line_no=$1
+    log_err "脚本在第 ${line_no} 行发生未预期错误(退出码 ${exit_code})"
+    echo "详细日志: $LOG_FILE"
+    exit "$exit_code"
+}
+trap 'on_error $LINENO' ERR
+
+TMP_DIR=""
+cleanup() {
+    [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf -- "$TMP_DIR"
+    return 0
+}
+trap cleanup EXIT
+TMP_DIR="$(mktemp -d)"
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    die "另一个 dns-stack 实例正在运行，请稍后重试"
+fi
+
+ROLE="unknown"
+if [[ -f "$CONFIG_FILE" ]]; then
+    ROLE="$(grep -E '^ROLE=' "$CONFIG_FILE" | head -1 | cut -d= -f2- || echo unknown)"
+fi
+
+confirm() {
+    local prompt="$1"
+    if [[ "$YES" -eq 1 ]]; then
+        return 0
+    fi
+    read -r -p "${prompt} [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]]
+}
+
+run_helper() {
+    local op="$1"; shift
+    local args_json="${1:-{}}"
+    local req
+    req=$(printf '{"op":"%s","args":%s}' "$op" "$args_json")
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log_info "(--dry-run) 将请求 helper 操作: ${op}"
+        return 0
+    fi
+    if [[ ! -S /run/dns-stack/helper.sock ]]; then
+        die "helper 服务未运行(/run/dns-stack/helper.sock 不存在)，请先: systemctl start dns-stack-helper"
+    fi
+    echo "$req" | timeout 60 socat - UNIX-CONNECT:/run/dns-stack/helper.sock 2>>"$LOG_FILE" || \
+        die "调用 helper 失败，详见日志"
+}
+
+action_status() {
+    log_info "查询服务运行状态..."
+    systemctl is-active unbound.service >/dev/null 2>&1 && echo "  Unbound        : ${C_GREEN}运行中${C_RESET}" || echo "  Unbound        : ${C_RED}未运行${C_RESET}"
+    systemctl is-active dns-stack-panel.service >/dev/null 2>&1 && echo "  管理面板       : ${C_GREEN}运行中${C_RESET}" || echo "  管理面板       : ${C_YELLOW}未运行${C_RESET}"
+    systemctl is-active dns-stack-helper.service >/dev/null 2>&1 && echo "  受限助手       : ${C_GREEN}运行中${C_RESET}" || echo "  受限助手       : ${C_YELLOW}未运行${C_RESET}"
+    if [[ "$ROLE" == "global-builder" ]]; then
+        systemctl is-active mosproxy.service >/dev/null 2>&1 && echo "  mosproxy(异常,不应在国外机运行)" || true
+        if [[ -f /var/lib/dns-stack/classifier.db ]]; then
+            "$GO_BIN" classify status 2>/dev/null | awk -F'[:,]' '
+                /"cn":/ { printf "  CN 域名数      : %s\n", $2 }
+                /"gfw":/ { printf "  GFW 域名数     : %s\n", $2 }
+                /"unknown":/ { printf "  待检测(unknown): %s\n", $2 }
+                /"pending_candidates":/ { printf "  待拉取候选数   : %s\n", $2 }'
+        else
+            echo "  分类数据库尚未初始化"
+        fi
+    elif [[ "$ROLE" == "cn-resolver" ]]; then
+        systemctl is-active mosproxy.service >/dev/null 2>&1 && echo "  mosproxy       : ${C_GREEN}运行中${C_RESET}" || echo "  mosproxy       : ${C_RED}未运行${C_RESET}"
+        if [[ -f /var/lib/dns-stack/cn.txt ]]; then
+            echo "  cn.txt 条目数  : $(wc -l < /var/lib/dns-stack/cn.txt)"
+        fi
+        if [[ -f /etc/dns-stack/secrets/doh-dot.pem ]]; then
+            local days_left
+            days_left=$(( ($(date -d "$(openssl x509 -in /etc/dns-stack/secrets/doh-dot.pem -noout -enddate | cut -d= -f2)" +%s) - $(date +%s)) / 86400 ))
+            echo "  证书剩余天数   : ${days_left}"
+        fi
+    fi
+}
+
+action_health_base() {
+    log_info "执行健康检查..."
+    local ok=1
+    if unbound-control -c /etc/unbound/unbound.conf status >/dev/null 2>&1; then
+        log_ok "Unbound 响应正常"
+    else
+        log_err "Unbound 无响应"
+        ok=0
+    fi
+    if dig @127.0.0.1 -p 5335 example.com A +time=3 +tries=1 +short >/dev/null 2>&1; then
+        log_ok "本机递归解析测试通过"
+    else
+        log_err "本机递归解析测试失败"
+        ok=0
+    fi
+
+    local failed_units
+    failed_units="$(systemctl list-units 'dns-stack-*' --state=failed --no-legend --plain 2>/dev/null \
+                    | awk '{print $1}' | tr '\n' ' ')"
+    failed_units="${failed_units% }"
+    if [[ -n "$failed_units" ]]; then
+        log_err "存在失败的单元: $failed_units"
+        log_err "  排查: systemctl status <单元> && journalctl -u <单元> -n 30"
+        ok=0
+    else
+        log_ok "无失败单元(含 timer 触发的一次性任务)"
+    fi
+    if [[ "$ROLE" == "cn-resolver" ]]; then
+        if systemctl is-active mosproxy.service >/dev/null 2>&1; then
+            log_ok "mosproxy 运行正常"
+        else
+            log_err "mosproxy 未运行"
+            ok=0
+        fi
+        if pgrep -f 'dns-stack-collector consume-stdin|dns-stack-go collect consume-stdin' \
+                >/dev/null 2>&1; then
+            local collect_errs
+            collect_errs="$(journalctl -u mosproxy.service --since '-1h' --no-pager 2>/dev/null \
+                            | grep -cE '"level": ?"error"[^}]*"module": ?"collector"' || true)"
+            collect_errs="${collect_errs:-0}"
+
+            local cdb=/var/lib/dns-stack/collector.db fresh=""
+            if [[ -f "$cdb" ]]; then
+                fresh="$(sqlite3 "$cdb" \
+                         "SELECT COUNT(*) FROM query_events WHERE ts > $(( $(date +%s) - 3600 ));" \
+                         2>/dev/null || true)"
+            fi
+
+            if [[ "$collect_errs" -gt 0 ]]; then
+                log_warn "近 1 小时 collector 报告 ${collect_errs} 次事件写入失败(面板统计不完整)"
+                log_warn "  排查: journalctl -u mosproxy -n 100 | grep collector"
+            elif [[ -z "$fresh" ]]; then
+                log_warn "collector 在运行，但读不到 $cdb，无法确认事件是否落库"
+            elif [[ "$fresh" -eq 0 ]]; then
+                log_warn "collector 在运行，但近 1 小时没有事件落库(可能只是无人查询)"
+                log_warn "  确认: sqlite3 $cdb 'SELECT MAX(ts) FROM query_events;'"
+            else
+                log_ok "查询采集链路正常(近 1 小时落库 ${fresh} 条，无写入失败)"
+            fi
+        else
+            log_err "collector 未运行：面板统计已停止更新，mosproxy 写日志将吃到 SIGPIPE"
+            log_err "  恢复: systemctl restart mosproxy.service"
+            ok=0
+        fi
+        local rej_cc rej_qps
+        rej_cc="$(curl -s --max-time 3 http://127.0.0.1:8888/metrics 2>/dev/null \
+                  | awk '$1=="rejected_cc_total"{print $2}' | head -1)"
+        rej_qps="$(curl -s --max-time 3 http://127.0.0.1:8888/metrics 2>/dev/null \
+                   | awk '$1=="rejected_qps_total"{print $2}' | head -1)"
+        rej_cc="${rej_cc%%.*}"; rej_qps="${rej_qps%%.*}"
+        if [[ -z "${rej_cc:-}" && -z "${rej_qps:-}" ]]; then
+            log_warn "取不到 mosproxy 限流指标(管理 API 无响应?)"
+        elif [[ "${rej_cc:-0}" -gt 0 || "${rej_qps:-0}" -gt 0 ]]; then
+            log_warn "曾有查询被限流拒绝(累计 并发 ${rej_cc:-0} / QPS ${rej_qps:-0})"
+            log_warn "  limit 是全局配额，被打满时自己的查询也会被拒；853 端口对全网开放"
+            log_warn "  如需收紧: 在云安全组上限制 443/853 的源 IP，或调高 LIMIT_QPS"
+        else
+            log_ok "无查询被限流拒绝(并发/QPS 配额未被打满)"
+        fi
+        if systemctl is-active dns-stack-recursive-routing.service >/dev/null 2>&1; then
+            local direct_n cnauth_n cnauth_base
+            direct_n="$(nft list set inet dns_route direct4 2>/dev/null \
+                        | tr ',' '\n' | grep -cE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)"
+            direct_n="${direct_n:-0}"
+            cnauth_n="$(nft list set inet dns_route cn_authority 2>/dev/null \
+                        | tr ',' '\n' | grep -cE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)"
+            cnauth_n="${cnauth_n:-0}"
+            cnauth_base="$(grep -cE '^[0-9]' /var/lib/dns-stack/chnroute/cn-authority.txt 2>/dev/null || true)"
+            cnauth_base="${cnauth_base:-0}"
+            if [[ "$direct_n" -lt 1000 ]]; then
+                log_err "大陆 IP 集合仅 ${direct_n} 段，国内递归查询会被误导进隧道"
+                ok=0
+            elif [[ "$cnauth_base" -ge 20 && "$cnauth_n" -lt $(( cnauth_base * 40 / 100 )) ]]; then
+                log_err "墙内权威集合仅 ${cnauth_n} 段(基线 ${cnauth_base} 段)，国内域名会走隧道拿境外 CDN 节点"
+                log_err "  恢复: systemctl restart dns-stack-recursive-routing.service"
+                ok=0
+            else
+                log_ok "递归出口分流正常(大陆 ${direct_n} 段 / 墙内权威 ${cnauth_n} 段)"
+            fi
+        else
+            log_err "递归出口分流未生效(境外权威将被直连查询，答案会被污染)"
+            ok=0
+        fi
+        if dig @10.100.0.3 -p 5335 example.com A +time=6 +tries=1 +short >/dev/null 2>&1; then
+            log_ok "香港递归器可用(降级备份就绪)"
+        else
+            log_err "香港递归器不可用：本机 Unbound 一旦故障将无降级目标"
+            log_err "  排查: ssh 香港机 → rc-service unbound zap && rc-service unbound start"
+            ok=0
+        fi
+        if dig @127.0.0.1 -p 5335 www.wikipedia.org A +time=8 +tries=1 +short 2>/dev/null \
+           | grep -qE '^[0-9]+\.'; then
+            log_ok "境外域名递归解析正常"
+        else
+            log_err "境外域名解析失败(依次检查 wg0 隧道 / 分流链 / 香港 NAT)"
+            ok=0
+        fi
+    fi
+    [[ "$ok" -eq 1 && "${HEALTH_EXTRA_FAILED:-0}" -eq 0 ]] && log_ok "健康检查全部通过" || die "健康检查未全部通过，请查看上面的详情"
+}
+
+action_health() {
+    local orphan_rc=0
+    HEALTH_EXTRA_FAILED=0
+    if [[ "$ROLE" == "cn-resolver" ]]; then
+        if [[ ! -x "$GO_BIN" ]]; then
+            orphan_rc=2
+            log_err "找不到 $GO_BIN，无法执行 ECS 孤儿审计（这不代表没有孤儿，代表判断不了）"
+        else
+            "$GO_BIN" ecs-orphans --max-foreign "${ECS_MAX_FOREIGN_ORPHANS:-9}" || orphan_rc=$?
+        fi
+    fi
+    [[ "$orphan_rc" -eq 0 ]] || HEALTH_EXTRA_FAILED=1
+    action_health_base
+}
+
+action_sync() {
+    [[ "$#" -le 1 ]] || die "sync 参数过多"
+    [[ -z "${1:-}" || "${1:-}" == "--force" ]] || die "sync 未知参数: $1"
+    if [[ "${1:-}" == "--force" ]]; then
+        if ! confirm "即将跳过规则数量骤降保护；格式、版本、重载与回滚校验仍保留，确认继续？"; then
+            log_warn "已取消"
+            return 0
+        fi
+        bash "$DNS_STACK_ROOT/scripts/sync-rules.sh" --force
+    else
+        bash "$DNS_STACK_ROOT/scripts/sync-rules.sh"
+    fi
+}
+
+action_rollback() {
+    if ! confirm "即将回滚到上一版四文件规则包，确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+    bash "$DNS_STACK_ROOT/scripts/sync-rules.sh" --rollback
+}
+
+action_reload() {
+    log_info "正在重载 mosproxy 域名表..."
+    local code
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10            "http://127.0.0.1:8888/ctl/reload" 2>/dev/null || echo 000)
+    [[ "$code" == "200" ]] || die "重载失败(HTTP ${code})，请确认 mosproxy 正在运行"
+    log_ok "域名表已重载"
+    if [[ "$ROLE" == "cn-resolver" ]]; then
+        systemctl reload unbound.service 2>/dev/null && log_ok "Unbound 已重载" || true
+    fi
+}
+
+action_cert_check() {
+    bash "$DNS_STACK_ROOT/scripts/renew-cert.sh" --check-only
+}
+
+action_cert_renew() {
+    bash "$DNS_STACK_ROOT/scripts/renew-cert.sh"
+}
+
+geo_suffix() {
+    local ip="$1" label
+    [[ -n "$ip" ]] || return 0
+    [[ -x "$GO_BIN" ]] || return 0
+    label="$(timeout 5 "$GO_BIN" geoip-check "$ip" 2>/dev/null | cut -f2)"
+    [[ -n "$label" ]] && printf ' [%s]' "$label"
+}
+
+annotate_geo() {
+    local lines ips labels
+    lines="$(cat)"
+    [[ -n "$lines" ]] || return 0
+    if [[ ! -x "$GO_BIN" ]]; then
+        printf '%s\n' "$lines"; return 0
+    fi
+    ips="$(printf '%s\n' "$lines" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$|^[0-9a-fA-F:]+:[0-9a-fA-F:]*$' || true)"
+    if [[ -z "$ips" ]]; then
+        printf '%s\n' "$lines"; return 0
+    fi
+    labels="$(printf '%s\n' "$ips" | timeout 8 "$GO_BIN" geoip-check 2>/dev/null | cut -f1,2)"
+    if [[ -z "$labels" ]]; then
+        printf '%s\n' "$lines"; return 0
+    fi
+    printf '%s\n' "$lines" | awk -F'\t' -v map="$labels" '
+        BEGIN { n = split(map, rows, "\n")
+                for (i = 1; i <= n; i++) { split(rows[i], kv, "\t")
+                    if (kv[2] != "") label[kv[1]] = kv[2] } }
+        { if ($0 in label) printf "%-40s [%s]\n", $0, label[$0]; else print $0 }'
+}
+
+action_test_domain() {
+    local domain="${1:-}"
+    [[ -z "$domain" ]] && die "用法: dns-stack test <域名> [客户端子网]"
+    domain="$(echo "$domain" | tr 'A-Z' 'a-z' | sed 's/\.$//')"
+    [[ "$domain" =~ ^[a-z0-9.-]+$ ]] || die "域名格式非法"
+
+    local ecs_arg="" ecs_note=""
+    if [[ -n "${2:-}" ]]; then
+        [[ "$2" =~ ^[0-9.]+/[0-9]+$ ]] || die "客户端子网格式应为 a.b.c.0/24"
+        ecs_arg="+subnet=$2"
+        ecs_note="（模拟客户端子网 $2）"
+    fi
+    echo "正在测试域名: ${domain}${ecs_note}"
+    local file label route matched="" suffix="$domain"
+    while [[ -n "$suffix" ]]; do
+        for spec in \
+            "manual-exclude.txt|人工排除|本机递归" \
+            "manual-gfw.txt|人工 GFW|香港递归"; do
+            IFS='|' read -r file label route <<<"$spec"
+            if grep -qxF "$suffix" "/var/lib/dns-stack/$file" 2>/dev/null; then
+                matched="$label ($suffix) -> $route"
+                break 2
+            fi
+        done
+        [[ "$suffix" == *.* ]] || break
+        suffix="${suffix#*.}"
+    done
+    if [[ -n "$matched" ]]; then
+        echo "  规则判定: $matched"
+    else
+        echo "  规则判定: 未命中人工规则 -> 本机递归(出口按权威 IP 分流)"
+        local zone ns_ip final_ip serves_cn=0
+        zone="$(echo "$domain" | awk -F. 'NF>=2{print $(NF-1)"."$NF} NF<2{print $0}')"
+        echo "    注册域: $zone"
+        for ns in $(dig @127.0.0.1 -p 5335 "$zone" NS +short +time=4 2>/dev/null | head -4); do
+            ns_ip="$(dig @127.0.0.1 -p 5335 "$ns" A +short +time=3 2>/dev/null \
+                     | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+            [[ -n "$ns_ip" ]] || continue
+            if nft get element inet dns_route direct4 "{ $ns_ip }" >/dev/null 2>&1; then
+                echo "    权威 ${ns%.} ($ns_ip)$(geo_suffix "$ns_ip") 在大陆 -> 直连"
+                serves_cn=1
+            elif nft get element inet dns_route cn_authority "{ $ns_ip }" >/dev/null 2>&1; then
+                echo "    权威 ${ns%.} ($ns_ip)$(geo_suffix "$ns_ip") 属墙内域名 -> 直连"
+                serves_cn=1
+            else
+                echo "    权威 ${ns%.} ($ns_ip)$(geo_suffix "$ns_ip") 在境外 -> 经隧道"
+            fi
+        done
+        final_ip="$(dig @127.0.0.1 -p 5335 "$domain" A +short +time=5 $ecs_arg 2>/dev/null \
+                    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+        if [[ -n "$final_ip" ]]; then
+            if nft get element inet dns_route direct4 "{ $final_ip }" >/dev/null 2>&1; then
+                echo "    解析结果 $final_ip$(geo_suffix "$final_ip") -> 大陆节点"
+            else
+                echo "    解析结果 $final_ip$(geo_suffix "$final_ip") -> 境外节点"
+                if [[ -z "$ecs_arg" && "$serves_cn" -eq 1 ]]; then
+                    echo "      ↑ 本机自查不带客户端子网(ECS)，按省调度的域名在这里会显示默认节点。"
+                    echo "        要看主人实际会拿到什么，带上运营商网段再跑一次，例如："
+                    echo "        dns-stack test $domain 219.141.136.0/24   # 电信"
+                    echo "        dns-stack test $domain 123.125.0.0/24     # 联通"
+                fi
+            fi
+        fi
+    fi
+    echo "  本机 Unbound 视角(A/AAAA/CNAME/HTTPS)  ← 主人实际会拿到的结果:"
+    for typ in A AAAA CNAME HTTPS; do
+        echo "    [$typ]"
+        dig @127.0.0.1 -p 5335 "$domain" "$typ" +time=3 +tries=1 +short $ecs_arg 2>&1 \
+            | annotate_geo | sed 's/^/      /'
+    done
+    echo "  国外 Unbound 视角(A/AAAA/CNAME/HTTPS)  ← 对比用，非主人实际结果:"
+    for typ in A AAAA CNAME HTTPS; do
+        echo "    [$typ]"
+        dig @10.100.0.3 -p 5335 "$domain" "$typ" +time=3 +tries=1 +short 2>&1 \
+            | annotate_geo | sed 's/^/      /'
+    done
+    local start end
+    start=$(date +%s%N)
+    dig @127.0.0.1 -p 5335 "$domain" A +time=3 +tries=1 +short >/dev/null 2>&1
+    end=$(date +%s%N)
+    echo "  查询耗时: $(( (end - start) / 1000000 ))ms"
+}
+
+action_pull() {
+    log_info "正在从国内服务器拉取候选域名..."
+    "$GO_BIN" classify pull || log_warn "拉取未完成，可能是国内服务器连接信息尚未配置"
+}
+
+action_classify() {
+    local domain="${1:-}"
+    if [[ -n "$domain" ]]; then
+        log_info "正在检测域名: ${domain}"
+        "$GO_BIN" classify classify --domain "$domain"
+    else
+        log_info "正在对候选域名执行分类..."
+        "$GO_BIN" classify classify
+    fi
+}
+
+action_verify_rules() {
+    [[ "$ROLE" == "global-builder" ]] || die "正式规则复检只在规则构建节点运行"
+    "$GO_BIN" classify verify-rules "$@"
+}
+
+action_build_rules() {
+    [[ "$ROLE" == "global-builder" ]] || die "规则生成只在规则构建节点运行"
+    [[ "$#" -le 1 ]] || die "build-rules 参数过多"
+    [[ -z "${1:-}" || "${1:-}" == "--force" ]] || die "build-rules 未知参数: $1"
+    log_info "正在生成四个公开规则文件..."
+    if [[ "${1:-}" == "--force" ]]; then
+        if ! confirm "即将跳过规则数量骤降保护；域名/CIDR/冲突校验仍保留，确认继续？"; then
+            log_warn "已取消"
+            return 0
+        fi
+        if ! "$GO_BIN" classify build-rules --force; then
+            die "规则生成失败，未发布新规则"
+        fi
+    else
+        if ! "$GO_BIN" classify build-rules; then
+            die "规则生成失败，未发布新规则"
+        fi
+    fi
+    log_ok "规则文件已生成到 /var/lib/dns-stack/publish/"
+}
+
+action_publish() {
+    if ! confirm "即将把四个规则文件推送到 GitHub 仓库，确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+    log_info "正在发布规则到 GitHub..."
+    "$GO_BIN" classify publish && log_ok "发布完成"
+}
+
+action_update_cn_ip() {
+    log_info "正在更新 Public Suffix List（中国 IP 仅作为递归观测附属数据）..."
+    "$GO_BIN" classify update-reference-data && log_ok "参考数据更新完成"
+}
+
+action_vacuum_logs() {
+    local keep="${1:-7d}"
+    [[ "$keep" =~ ^[0-9]+[dwm]$ ]] || die "保留期格式如 7d / 2w / 1m"
+    local before; before="$(journalctl --disk-usage 2>/dev/null | grep -oE '[0-9.]+[KMG]' | head -1)"
+    confirm "即将删除 ${keep} 之前的系统日志(当前占用 ${before:-未知})，确认？"         || { log_warn "已取消"; return 0; }
+    journalctl --vacuum-time="$keep" 2>&1 | tail -2
+    local after; after="$(journalctl --disk-usage 2>/dev/null | grep -oE '[0-9.]+[KMG]' | head -1)"
+    log_ok "日志已清理：${before:-?} → ${after:-?}"
+    local own=/var/log/dns-stack/dns-stack.log
+    if [[ -f "$own" ]] && [[ "$(stat -c%s "$own")" -gt 10485760 ]]; then
+        tail -c 2097152 "$own" > "$own.tmp" && mv "$own.tmp" "$own"
+        log_ok "  dns-stack.log 已截断至 2MB"
+    fi
+}
+
+action_clear_audit() {
+    local db=/var/lib/dns-stack/collector.db
+    [[ -f "$db" ]] || die "找不到 $db"
+    local n; n="$(sqlite3 "$db" 'SELECT COUNT(*) FROM audit_log;')"
+    [[ "$n" -gt 0 ]] || { log_ok "审计记录为空"; return 0; }
+    confirm "即将清空 $n 条审计记录，确认？" || { log_warn "已取消"; return 0; }
+    sqlite3 "$db" "DELETE FROM audit_log;
+        INSERT INTO audit_log(ts,actor,operation,args,ok,message)
+        VALUES ($(date +%s),'cli','audit_clear','{}',1,'已清空 $n 条审计记录');"
+    log_ok "已清空 $n 条审计记录"
+}
+
+action_clear_domains() {
+    local db=/var/lib/dns-stack/collector.db arg="${1:-7}"
+    [[ -f "$db" ]] || die "找不到 $db"
+
+    local total; total="$(sqlite3 "$db" 'SELECT COUNT(*) FROM domains;')"
+    if [[ "$arg" == "all" ]]; then
+        [[ "$total" -gt 0 ]] || { log_ok "域名表已为空，无需清理"; return 0; }
+        confirm "即将清空全部 $total 个域名及其查询记录，确认？"             || { log_warn "已取消"; return 0; }
+        sqlite3 "$db" "DELETE FROM domains; DELETE FROM query_events; VACUUM;"
+        log_ok "已清空全部 $total 个域名与查询记录"
+        return 0
+    fi
+
+    [[ "$arg" =~ ^[0-9]+$ ]] || die "参数需为天数或 all"
+    local cutoff=$(( $(date +%s) - arg * 86400 ))
+    local n; n="$(sqlite3 "$db" "SELECT COUNT(*) FROM domains WHERE last_seen_at < $cutoff;")"
+    if [[ "$n" -eq 0 ]]; then
+        log_ok "没有超过 ${arg} 天未出现的域名，无需清理"
+        log_info "  当前共 ${total} 个域名，全部在 ${arg} 天内出现过"
+        log_info "  如需清空全部统计重新开始：dns-stack clear-domains all"
+        return 0
+    fi
+    confirm "即将清理 $n 个超过 ${arg} 天未出现的域名及其记录(共 ${total} 个)，确认？"         || { log_warn "已取消"; return 0; }
+    sqlite3 "$db" "DELETE FROM domains WHERE last_seen_at < $cutoff;
+                   DELETE FROM query_events WHERE ts < $cutoff; VACUUM;"
+    log_ok "已清理 $n 个陈旧域名，剩余 $(( total - n )) 个"
+}
+
+action_purge_legacy() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "只在国内 DNS 服务器上有意义"
+    local db=/var/lib/dns-stack/collector.db epoch_file=/var/lib/dns-stack/architecture-epoch
+    [[ -f "$db" ]] || die "找不到 $db"
+    local epoch; epoch="$(cat "$epoch_file" 2>/dev/null || echo 0)"
+    [[ "$epoch" =~ ^[0-9]+$ && "$epoch" -gt 0 ]]         || die "未设置架构基准，先执行: dns-stack set-arch-epoch"
+    local n; n="$(sqlite3 "$db" "SELECT COUNT(*) FROM query_events WHERE ts < $epoch;")"
+    [[ "$n" -gt 0 ]] || { log_ok "没有早于基准的记录，无需清理"; return 0; }
+    log_warn "将删除 $n 条早于 $(date -d "@$epoch" '+%F %T') 的查询记录"
+    log_warn "这些记录描述的是已退场的旧架构(route=foreign/dynamic、无出口路径)，无法追溯修正"
+    confirm "确认删除？" || { log_warn "已取消"; return 0; }
+    sqlite3 "$db" "DELETE FROM query_events WHERE ts < $epoch;
+                   DELETE FROM domains WHERE last_seen_at < $epoch;
+                   VACUUM;"
+    log_ok "已清理 $n 条旧架构记录并压缩数据库"
+}
+
+action_set_arch_epoch() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "只在国内 DNS 服务器上有意义"
+    local ts="${1:-$(date +%s)}"
+    [[ "$ts" =~ ^[0-9]+$ ]] || die "时间戳必须是数字"
+    echo "$ts" > /var/lib/dns-stack/architecture-epoch
+    chmod 0644 /var/lib/dns-stack/architecture-epoch
+    log_ok "架构基准已设为 $(date -d "@$ts" '+%F %T')；面板统计将只采用此后的数据"
+}
+
+action_routing_status() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "递归出口分流只存在于国内 DNS 服务器"
+    "$DNS_STACK_ROOT/scripts/setup-recursive-routing.sh" status
+}
+
+action_routing_refresh() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "递归出口分流只存在于国内 DNS 服务器"
+    local state_dir="${DNS_STACK_STATE_DIR:-/var/lib/dns-stack}"
+    local psl_file="${PSL_FILE:-$state_dir/reference/public_suffix_list.dat}"
+    local geoip_file="${CNIP_DB:-$state_dir/geoip/qqwry.ipdb}"
+    if [[ ! -s "$psl_file" && -s "$state_dir/psl-data/public_suffix_list.dat" ]]; then
+        psl_file="$state_dir/psl-data/public_suffix_list.dat"
+    elif [[ ! -s "$psl_file" && -s "/usr/share/publicsuffix/public_suffix_list.dat" ]]; then
+        psl_file="/usr/share/publicsuffix/public_suffix_list.dat"
+    fi
+    [[ -s "$psl_file" ]] || die "缺少有效 Public Suffix List，未改动分流产物"
+    [[ -s "$geoip_file" ]] || die "缺少 GeoIP 归属库: $geoip_file，未改动分流产物"
+
+    log_info "刷新大陆 IP 集合(APNIC 官方委派记录)..."
+    if ! "$DNS_STACK_ROOT/scripts/update-chnroute.sh"; then
+        die "大陆 IP 集合刷新失败，已保留原集合"
+    fi
+    log_info "刷新墙内域名权威集合与 ECS 白名单..."
+    if ! "$DNS_STACK_ROOT/scripts/update-cn-authority.sh"; then
+        die "权威集合/ECS 白名单刷新失败，已保留原集合"
+    fi
+    log_info "刷新 ECS 省份/运营商缓存分片..."
+    if ! "$GO_BIN" ecs-zone; then
+        die "ECS 缓存分片刷新失败，已保留原文件"
+    fi
+    log_ok "分流数据已刷新(direct4 / cn-authority / ECS zone)"
+}
+
+action_classify_authority() {
+    [[ "$ROLE" == "global-builder" ]] || die "权威位置分类只在规则构建节点运行"
+    "$GO_BIN" classify classify-authority "$@"
+}
+
+action_rebuild_rules() {
+    [[ "$ROLE" == "global-builder" ]] || die "规则流水线只在规则构建节点运行"
+    log_info "执行一键规则流水线(拉取 → 分类 → 权威位置 → 生成；不自动发布 GitHub)..."
+    if ! flock -w 2400 /run/lock/dns-stack-classifier.lock \
+        "$GO_BIN" classify pipeline --authority-every 0; then
+        die "规则流水线失败，未发布新规则"
+    fi
+    log_ok "规则流水线完成，发布仍需单独执行: dns-stack publish"
+}
+
+action_migrate_db() {
+    if ! confirm "即将备份数据库、短暂停止写入服务并执行幂等迁移，确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+    bash "$DNS_STACK_ROOT/scripts/migrate-databases.sh"
+}
+
+action_reset_classifications() {
+    [[ "$ROLE" == "global-builder" ]] || die "该命令只适用于规则构建节点"
+    if ! confirm "即将停止当前分类、禁用自动发布，保留人工规则/历史并废弃全部自动分类，确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+    local classify_timer_was_active=0 verify_timer_was_active=0 \
+        pull_timer_was_active=0 rc=0
+    systemctl is-active --quiet dns-stack-classify.timer 2>/dev/null && \
+        classify_timer_was_active=1
+    systemctl is-active --quiet dns-stack-verify.timer 2>/dev/null && \
+        verify_timer_was_active=1
+    systemctl is-active --quiet dns-stack-pull-candidates.timer 2>/dev/null && \
+        pull_timer_was_active=1
+    systemctl stop dns-stack-classify.timer dns-stack-classify.service \
+        dns-stack-verify.timer dns-stack-verify.service \
+        dns-stack-pull-candidates.timer dns-stack-pull-candidates.service 2>/dev/null || true
+    systemctl disable --now dns-stack-publish.timer 2>/dev/null || true
+    systemctl stop dns-stack-publish.service 2>/dev/null || true
+    "$GO_BIN" classify reset-auto-classifications --ack \
+        --reason routing_baseline_invalidated || rc=$?
+    [[ "$classify_timer_was_active" -eq 1 ]] && \
+        systemctl start dns-stack-classify.timer 2>/dev/null || true
+    [[ "$verify_timer_was_active" -eq 1 ]] && \
+        systemctl start dns-stack-verify.timer 2>/dev/null || true
+    [[ "$pull_timer_was_active" -eq 1 ]] && \
+        systemctl start dns-stack-pull-candidates.timer 2>/dev/null || true
+    [[ "$rc" -eq 0 ]] || die "自动分类重置失败；发布 timer 保持禁用，请检查日志"
+    log_ok "旧自动分类已失效，候选域名已重新入队"
+    log_warn "dns-stack-publish.timer 已禁用；完成至少两轮分类并校验四文件后再启用"
+}
+
+action_cold_start_global() {
+    [[ "$ROLE" == "global-builder" ]] || die "该命令只适用于规则构建节点"
+    local reset_all_cidrs=0
+    [[ "${1:-}" == "--reset-all-cidrs" ]] && reset_all_cidrs=1
+    local prompt="将刷新 CN CIDR/PSL、清除自动分类观测与污染基线，并把四份规则文件发布为全动态冷启动包，确认继续？"
+    [[ "$reset_all_cidrs" -eq 1 ]] && \
+        prompt="将删除全部 CN/污染 CIDR，并发布四文件全空重置包；期间国内仅使用本机递归，确认继续？"
+    confirm "$prompt" \
+        || { log_warn "已取消"; return 0; }
+    systemctl stop dns-stack-classify.timer dns-stack-classify.service \
+        dns-stack-verify.timer dns-stack-verify.service \
+        dns-stack-pull-candidates.timer dns-stack-pull-candidates.service \
+        dns-stack-reference-data.timer dns-stack-reference-data.service 2>/dev/null || true
+    systemctl disable --now dns-stack-publish.timer 2>/dev/null || true
+    systemctl stop dns-stack-publish.service 2>/dev/null || true
+    if [[ "$reset_all_cidrs" -eq 1 ]]; then
+        "$GO_BIN" classify reset-ip-cidrs --ack \
+            || die "IP CIDR 全量清理失败，未发布重置包"
+    else
+        "$GO_BIN" classify update-reference-data \
+            || die "参考数据刷新失败，未执行冷启动"
+    fi
+    if ! unbound-control flush_zone . >/dev/null 2>&1; then
+        systemctl restart unbound \
+            || die "本机 Unbound 缓存清理失败，未执行分类重置"
+    fi
+    dig @127.0.0.1 -p 5335 www.cloudflare.com A +time=5 +tries=1 +short \
+        | grep -q . || die "本机 Unbound 冷启动健康检查失败，未执行分类重置"
+    "$GO_BIN" classify reset-auto-classifications --ack \
+        --reason routing_baseline_invalidated \
+        --purge-observations --reset-polluted \
+        || die "分类基线重置失败"
+    if [[ "$reset_all_cidrs" -eq 1 ]]; then
+        "$GO_BIN" classify publish-cold-start --ack --reset-cn-cidrs \
+            || die "全空 CIDR 重置包发布失败；自动发布仍保持禁用"
+        systemctl start dns-stack-reference-data.timer \
+            || die "重置包已发布，但参考数据 timer 启动失败"
+        log_ok "全空 CIDR 重置包已发布；分类/复检保持暂停"
+        log_warn "国内接受 full-reset 后，再运行普通 cold-start-global 从零重建 CIDR"
+        return 0
+    fi
+    "$GO_BIN" classify publish-cold-start --ack \
+        || die "冷启动规则发布失败；自动发布仍保持禁用"
+    systemctl start dns-stack-reference-data.timer dns-stack-classify.timer \
+        dns-stack-verify.timer \
+        || die "冷启动包已发布，但分类/复检 timer 启动失败；自动发布仍保持禁用"
+    log_ok "冷启动包已发布，旧自动分类与污染基线已失效"
+    log_warn "国内接受冷启动包后再启动 dns-stack-pull-candidates.timer"
+    log_warn "完成至少两轮增量分类与正式复检后，再人工启用 dns-stack-publish.timer"
+}
+
+action_cold_start_cn() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "该命令只适用于国内解析节点"
+    local reset_all_cidrs=0 sync_flag="--accept-cold-start"
+    [[ "${1:-}" == "--reset-all-cidrs" ]] && {
+        reset_all_cidrs=1
+        sync_flag="--accept-full-reset"
+    }
+    local prompt="将接受 GitHub 冷启动包，清空自动域名/污染规则、动态缓存和递归缓存，确认继续？"
+    [[ "$reset_all_cidrs" -eq 1 ]] && \
+        prompt="将接受 full-reset，清空全部域名/IP CIDR 与 DNS 缓存，并临时仅使用本机递归，确认继续？"
+    confirm "$prompt" \
+        || { log_warn "已取消"; return 0; }
+    systemctl stop dns-stack-sync-rules.timer dns-stack-sync-rules.service 2>/dev/null || true
+    if ! bash "$DNS_STACK_ROOT/scripts/sync-rules.sh" "$sync_flag"; then
+        systemctl start dns-stack-sync-rules.timer 2>/dev/null || true
+        die "冷启动规则同步失败，旧规则已保留或回滚"
+    fi
+    systemctl stop mosproxy 2>/dev/null || true
+    if ! unbound-control flush_zone . >/dev/null 2>&1; then
+        systemctl restart unbound || die "国内 Unbound 缓存清理失败"
+    fi
+    dig @127.0.0.1 -p 5335 www.baidu.com A +time=5 +tries=1 +short \
+        | grep -q . || die "国内 Unbound 冷启动健康检查失败"
+    "$DNS_STACK_ROOT/scripts/update-cn-authority.sh" >/dev/null 2>&1 || true
+    systemctl start mosproxy
+    systemctl start dns-stack-sync-rules.timer 2>/dev/null || true
+    if [[ "$reset_all_cidrs" -eq 1 ]]; then
+        log_ok "国内域名/IP CIDR 与 DNS 缓存已全量重置；无明确污染时优先本机递归"
+    else
+        log_ok "国内规则与 DNS 缓存已冷启动，未知域名全部进入实时双路判断"
+    fi
+}
+
+action_logs() {
+    local unit="${1:-dns-stack-classify}"
+    journalctl -u "${unit}.service" -n 100 --no-pager
+}
+
+DNS_STACK_ROOT="/opt/dns-stack/dns-stack"
+
+action_backup() {
+    local extra=()
+    [[ "$*" == *"--include-secrets"* ]] && extra+=(--include-secrets)
+    [[ "$NONINTERACTIVE" -eq 1 ]] && extra+=(--automatic)
+    bash "$DNS_STACK_ROOT/scripts/backup.sh" "${extra[@]}"
+}
+
+action_panel_2fa_reset() {
+    local auth_file="/etc/dns-stack/secrets/panel/auth.json"
+    [[ -f "$auth_file" ]] || die "面板尚未设置密码，无二次认证可重置"
+
+    if ! confirm "即将关闭面板的二次认证(TOTP)，之后仅凭密码即可登录。确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+
+    local out
+    out="$("$GO_BIN" panel-auth disable-totp)" || die "重置失败"
+
+    chown dns-stack-panel:dns-stack-panel "$auth_file"
+    chmod 0400 "$auth_file"
+
+    if [[ "$out" == *"本就未启用"* ]]; then
+        log_ok "二次认证本就未启用，未做改动"
+    else
+        log_ok "二次认证已关闭，现在仅凭密码即可登录"
+        log_info "建议登录后重新启用，并把新密钥存到可靠的地方"
+    fi
+    systemctl restart dns-stack-panel 2>/dev/null && log_ok "面板已重启" || true
+}
+
+action_panel_password() {
+    local pw pw2
+    read -r -s -p "请输入新的面板密码(至少 12 位): " pw; echo
+    if [[ "${#pw}" -lt 12 ]]; then
+        die "密码太短(至少 12 位)。面板能重启服务、导出含密钥的备份，值得一个强密码"
+    fi
+    read -r -s -p "请再输入一次: " pw2; echo
+    [[ "$pw" == "$pw2" ]] || die "两次输入不一致"
+
+    PW="$pw" "$GO_BIN" panel-auth set-password >/dev/null || die "写入密码失败"
+    install -d -o dns-stack-panel -g dns-stack-panel -m 0750 /etc/dns-stack/secrets/panel
+    chown dns-stack-panel:dns-stack-panel /etc/dns-stack/secrets/panel/auth.json
+    chmod 0400 /etc/dns-stack/secrets/panel/auth.json
+    log_ok "密码已设置(存的是 scrypt 哈希，不是明文)"
+    log_info "改密码会让所有已登录会话立即失效"
+    systemctl restart dns-stack-panel 2>/dev/null && log_ok "面板已重启" || true
+}
+
+action_preflight() {
+    local rc=0
+    bash "$DNS_STACK_ROOT/scripts/preflight.sh" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+        log_warn "校验存在警告项，请人工确认上面标注的条目"
+        return 0
+    fi
+    return "$rc"
+}
+
+action_collect_polluted() {
+    bash "$DNS_STACK_ROOT/scripts/collect-polluted-ip.sh"
+}
+
+action_export() {
+    bash "$DNS_STACK_ROOT/migration/export.sh" "$@"
+}
+
+action_import() {
+    local pkg="${1:-}"
+    [[ -z "$pkg" ]] && die "用法: dns-stack import <迁移包路径>"
+    bash "$DNS_STACK_ROOT/migration/import.sh" "$pkg"
+}
+
+action_verify() {
+    local pkg="${1:-}"
+    if [[ -z "$pkg" ]]; then
+        pkg="$(ls -t /srv/dns-stack/export/*.tar.zst.age /var/backups/dns-stack/*.tar.zst.age 2>/dev/null | head -1 || true)"
+        [[ -z "$pkg" ]] && die "用法: dns-stack verify <迁移包路径>(当前没有可自动选取的包)"
+        log_info "未指定包，自动选择最新的: $pkg"
+    fi
+    local rc=0
+    bash "$DNS_STACK_ROOT/migration/verify.sh" "$pkg" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        log_err "迁移包校验未通过，请勿用它执行 import(退出码 ${rc})"
+    fi
+    return "$rc"
+}
+
+action_list_packages() {
+    echo "导出包(/srv/dns-stack/export):"
+    ls -lht /srv/dns-stack/export/*.tar.zst.age 2>/dev/null | awk '{print "  "$5"\t"$9}' || echo "  (无)"
+    echo "备份包(/var/backups/dns-stack):"
+    ls -lht /var/backups/dns-stack/*.tar.zst* 2>/dev/null | grep -v '\.sha256$' | awk '{print "  "$5"\t"$9}' || echo "  (无)"
+}
+
+action_migrate() {
+    bash "$DNS_STACK_ROOT/migration/migrate.sh" "$@"
+}
+
+action_wg_peer() {
+    [[ "$ROLE" == "cn-resolver" ]] || die "wg-peer 在国内机上运行：它把本机注册成 HK 的 peer"
+    bash "$DNS_STACK_ROOT/migration/wg-peer.sh" "$@"
+}
+
+action_migration_finish() {
+    if ! confirm "即将停止本机的 mosproxy/Unbound/面板/分类器服务(不删除任何数据)，确认继续？"; then
+        log_warn "已取消"
+        return 0
+    fi
+    systemctl stop mosproxy.service 2>/dev/null || true
+    systemctl stop unbound.service 2>/dev/null || true
+    systemctl stop dns-stack-panel.service 2>/dev/null || true
+    systemctl stop dns-stack-classify.service 2>/dev/null || true
+    systemctl disable dns-stack-backup.timer 2>/dev/null || true
+    log_ok "旧服务器相关服务已停止(数据仍保留在 /etc/dns-stack /var/lib/dns-stack /var/backups/dns-stack /srv/dns-stack/export)"
+}
+
+show_menu() {
+    clear 2>/dev/null || true
+    echo "========================================"
+    echo "        DNS Stack 中文管理工具"
+    echo "========================================"
+    if [[ "$ROLE" == "cn-resolver" ]]; then
+        echo "当前角色：国内 DNS 服务器"
+    else
+        echo "当前角色：规则构建服务器"
+    fi
+    if systemctl is-active unbound.service >/dev/null 2>&1; then
+        echo "服务状态：运行正常"
+    else
+        echo "服务状态：${C_YELLOW}部分服务未运行${C_RESET}"
+    fi
+    echo
+    if [[ "$ROLE" == "cn-resolver" ]]; then
+        echo " 1. 查看运行状态"
+        echo " 2. 执行健康检查"
+        echo " 3. 测试域名解析"
+        echo " 4. 同步最新 CN 规则"
+        echo " 5. 回滚上一版规则"
+        echo " 6. 重载 DNS 服务"
+        echo " 7. 重启 DNS 服务"
+        echo " 8. 查看运行日志"
+        echo " 9. 立即备份"
+        echo "10. 导出迁移包"
+        echo "11. 导入迁移包"
+        echo "12. 一键迁移到新服务器"
+        echo "13. 检查 TLS 证书"
+        echo "14. 续签 TLS 证书"
+        echo "15. 查看管理面板信息"
+        echo "16. 更新 DNS Stack"
+        echo "17. 停止旧服务器服务"
+        echo "18. 卸载 DNS Stack"
+        echo "19. 采集 GFW 污染 IP"
+        echo "20. 投产前完整校验"
+        echo "21. 刷新递归分流数据"
+        echo " 0. 退出"
+    else
+        echo " 1. 查看运行状态"
+        echo " 2. 执行健康检查"
+        echo " 3. 拉取候选域名"
+        echo " 4. 立即执行分类"
+        echo " 5. 查询指定域名分类"
+        echo " 6. 生成 CN/GFW 规则"
+        echo " 7. 发布规则到 GitHub"
+        echo " 8. 更新中国 IP 数据"
+        echo " 9. 查看分类日志"
+        echo "10. 立即备份"
+        echo "11. 导出迁移包"
+        echo "12. 导入迁移包"
+        echo "13. 一键迁移到新服务器"
+        echo "14. 查看管理面板信息"
+        echo "15. 更新 DNS Stack"
+        echo "16. 停止旧服务器服务"
+        echo "17. 卸载 DNS Stack"
+        echo "18. 一键重建规则(不发布)"
+        echo " 0. 退出"
+    fi
+    echo "========================================"
+}
+
+interactive_loop() {
+    while true; do
+        show_menu
+        read -r -p "请输入选项: " choice
+        if [[ "$ROLE" == "cn-resolver" ]]; then
+            case "$choice" in
+                1) action_status ;;
+                2) action_health ;;
+                3) read -r -p "请输入要测试的域名: " d; action_test_domain "$d" ;;
+                4) action_sync ;;
+                5) action_rollback ;;
+                6) action_reload ;;
+                7) systemctl restart mosproxy.service && systemctl restart unbound.service && log_ok "已重启" ;;
+                8) action_logs mosproxy ;;
+                9) action_backup ;;
+                10) action_export ;;
+                11) read -r -p "请输入迁移包路径: " p; action_import "$p" ;;
+                12) read -r -p "请输入目标服务器(如 root@1.2.3.4): " t; action_migrate "$t" ;;
+                13) action_cert_check ;;
+                14) action_cert_renew ;;
+                15) echo "面板地址: http://127.0.0.1:8080 (需通过 SSH 隧道或 WireGuard 访问)" ;;
+                16) log_warn "更新功能开发中" ;;
+                17) action_migration_finish ;;
+                18) log_warn "卸载功能开发中" ;;
+                19) action_collect_polluted ;;
+                20) action_preflight ;;
+                21) action_routing_refresh ;;
+                0) echo "再见喵～"; exit 0 ;;
+                *) log_warn "无效选项，请重新输入" ;;
+            esac
+        else
+            case "$choice" in
+                1) action_status ;;
+                2) action_health ;;
+                3) action_pull ;;
+                4) action_classify ;;
+                5) read -r -p "请输入要查询的域名: " d; action_classify "$d" ;;
+                6) action_build_rules ;;
+                7) action_publish ;;
+                8) action_update_cn_ip ;;
+                9) action_logs dns-stack-classify ;;
+                10) action_backup ;;
+                11) action_export ;;
+                12) read -r -p "请输入迁移包路径: " p; action_import "$p" ;;
+                13) read -r -p "请输入目标服务器(如 root@1.2.3.4): " t; action_migrate "$t" ;;
+                14) echo "面板地址: http://127.0.0.1:8080 (需通过 SSH 隧道或 WireGuard 访问)" ;;
+                15) log_warn "更新功能开发中" ;;
+                16) action_migration_finish ;;
+                17) log_warn "卸载功能开发中" ;;
+                18) action_rebuild_rules ;;
+                0) echo "再见喵～"; exit 0 ;;
+                *) log_warn "无效选项，请重新输入" ;;
+            esac
+        fi
+        echo
+        read -r -p "按回车键继续..." _
+    done
+}
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --yes) YES=1; shift ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        --verbose) VERBOSE=1; set -x; shift ;;
+        --limit|--port|--identity|--mode) POSITIONAL+=("$1" "$2"); shift 2 ;;
+        *) POSITIONAL+=("$1"); shift ;;
+    esac
+done
+set -- "${POSITIONAL[@]:-}"
+[[ "${1:-}" == "" ]] && set --
+
+print_help() {
+    cat <<'EOF'
+dns-stack 中文管理工具
+
+用法:
+  sudo dns-stack                    进入交互菜单
+
+[运行状态]
+  sudo dns-stack status             查看运行状态
+  sudo dns-stack health             执行健康检查
+  sudo dns-stack preflight          投产前完整校验(服务/解析/安全/恢复能力)
+  sudo dns-stack panel-password     设置面板访问密码(公网访问必须)
+  sudo dns-stack panel-2fa-reset    关闭面板二次认证(验证器丢失时的救砖通道)
+  sudo dns-stack doh-path           查看 DoH 接入地址
+  sudo dns-stack doh-path --rotate  轮换 DoH 私密路径(所有客户端需同步更新)
+  sudo dns-stack test <域名> [子网] 测试域名解析(带子网可看按省调度的真实结果)
+  sudo dns-stack diag <域名> [子网] 全链路诊断：解析/ECS/权威走向/四份客户端规则
+                                    /ECH/可达性一次列全。"域名打不开"时用这个
+  sudo dns-stack logs [服务名]      查看运行日志
+
+[规则管理]
+  sudo dns-stack sync               同步 CN/GFW 与两份 IP-CIDR 规则
+  sudo dns-stack sync --force       人工确认后允许规则数量大幅缩减
+  sudo dns-stack rollback           回滚到上一版规则
+  sudo dns-stack pull               拉取候选域名(规则构建角色)
+  sudo dns-stack classify [域名]    执行分类 / 查询指定域名
+  sudo dns-stack verify-rules       立即复检到期的正式规则(规则构建角色)
+  sudo dns-stack build-rules        生成四个公开规则文件
+  sudo dns-stack build-rules --force  人工确认后允许规则数量大幅缩减
+  sudo dns-stack publish            发布规则到 GitHub
+  sudo dns-stack update-cn-ip       更新中国大陆 IP 数据
+  sudo dns-stack collect-polluted   采集 GFW DNS 污染 IP
+  sudo dns-stack routing-status     查看递归出口分流状态(策略路由/集合/分流链)
+  sudo dns-stack routing-refresh    刷新大陆 IP 与墙内域名权威集合
+  sudo dns-stack classify-authority 按权威位置重建 CN/foreign 规则(规则构建角色)
+  sudo dns-stack rebuild-rules       一键拉取、分类、权威判定并生成规则(不发布)
+  sudo dns-stack set-arch-epoch     设定架构基准(此前数据不计入统计)
+  sudo dns-stack purge-legacy       删除基准之前的旧架构记录
+  sudo dns-stack clear-audit        清空审计记录
+  sudo dns-stack vacuum-logs [7d]   清理系统日志(释放磁盘)
+  sudo dns-stack clear-domains [天|all] 清理未出现的域名(默认 7 天，all=全清)
+  sudo dns-stack migrate-db         备份并迁移现有数据库结构
+  sudo dns-stack reset-classifications  废弃旧自动分类并重新检测(保留人工规则/历史)
+  sudo dns-stack cold-start-global  清理旧分类并发布全动态冷启动包(规则构建角色)
+  sudo dns-stack cold-start-global --reset-all-cidrs  发布域名/IP CIDR 全空重置包
+  sudo dns-stack cold-start-cn      接受冷启动包并清空 DNS 缓存(国内角色)
+  sudo dns-stack cold-start-cn --reset-all-cidrs  接受全空 CIDR 重置包
+
+[服务控制]
+  sudo dns-stack reload             重载 mosproxy 域名表
+  sudo dns-stack restart            重启 mosproxy 与 Unbound
+  sudo dns-stack cert-check         检查 TLS 证书
+  sudo dns-stack cert-renew         立即续签 TLS 证书
+
+[备份与迁移]
+  sudo dns-stack backup             立即备份
+  sudo dns-stack export [--mode M]  导出迁移包(M: config/state/full)
+  sudo dns-stack packages           列出本机所有备份包与导出包
+  sudo dns-stack verify [包路径]    只读校验包完整性(不填则校验最新的包)
+  sudo dns-stack import <包路径>    导入迁移包(覆盖本机数据，高危)
+  sudo dns-stack migrate <目标>     迁移到新服务器(如 root@1.2.3.4)
+  sudo dns-stack wg-peer <HK目标>   与 HK 对接 WireGuard 隧道(默认只预演，--apply 才落盘)
+  sudo dns-stack migration-finish   迁移完成后停止旧服务器的服务
+
+  sudo dns-stack help               显示本帮助
+
+全局选项: --yes  --dry-run  --verbose
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+    interactive_loop
+    exit 0
+fi
+
+cmd="$1"; shift || true
+
+dispatch() {
+case "$cmd" in
+    status) action_status ;;
+    health) action_health ;;
+    test) action_test_domain "${1:-}" "${2:-}" ;;
+    diag) "$DNS_STACK_ROOT/scripts/diag-domain.sh" "${1:-}" "${2:-}" ;;
+    pull) action_pull ;;
+    classify) action_classify "${1:-}" ;;
+    verify-rules) action_verify_rules "$@" ;;
+    build-rules) action_build_rules "$@" ;;
+    publish) action_publish ;;
+    update-cn-ip) action_update_cn_ip ;;
+    sync) action_sync "$@" ;;
+    rollback) action_rollback ;;
+    collect-polluted) action_collect_polluted ;;
+    routing-status) action_routing_status ;;
+    purge-legacy) action_purge_legacy ;;
+    clear-audit) action_clear_audit ;;
+    vacuum-logs) action_vacuum_logs "${1:-}" ;;
+    clear-domains) action_clear_domains "${1:-}" ;;
+    set-arch-epoch) action_set_arch_epoch "${1:-}" ;;
+    routing-refresh) action_routing_refresh ;;
+    classify-authority) action_classify_authority "$@" ;;
+    rebuild-rules) action_rebuild_rules ;;
+    migrate-db) action_migrate_db ;;
+    reset-classifications) action_reset_classifications ;;
+    cold-start-global) action_cold_start_global "$@" ;;
+    cold-start-cn) action_cold_start_cn "$@" ;;
+    preflight|check) action_preflight ;;
+    panel-password) action_panel_password ;;
+    panel-2fa-reset) action_panel_2fa_reset ;;
+    doh-path) bash "$DNS_STACK_ROOT/scripts/doh-path.sh" "${@:---print}" ;;
+    reload) action_reload ;;
+    restart) systemctl restart mosproxy.service && systemctl restart unbound.service && log_ok "已重启" ;;
+    cert-check) action_cert_check ;;
+    cert-renew) action_cert_renew ;;
+    logs) action_logs "${1:-$([ "$ROLE" = "cn-resolver" ] && echo mosproxy || echo dns-stack-classify)}" ;;
+    backup) action_backup "$@" ;;
+    export) action_export "$@" ;;
+    import) action_import "${1:-}" ;;
+    verify) action_verify "${1:-}" ;;
+    packages|list-packages) action_list_packages ;;
+    migrate) action_migrate "$@" ;;
+    wg-peer) action_wg_peer "$@" ;;
+    migration-finish) action_migration_finish ;;
+    help|--help|-h) print_help ;;
+    *) log_err "未知命令: ${cmd}"; print_help; exit 1 ;;
+esac
+}
+
+dispatch "$@" || exit $?
