@@ -1,0 +1,45 @@
+From c0751275ef9701032265cd56ae75bbe9154b4876 Mon Sep 17 00:00:00 2001
+From: fa1nes <302685793+fa1nes@users.noreply.github.com>
+Date: Sun, 26 Jul 2026 15:54:38 +0800
+Subject: [PATCH 03/11] fix: normalise query name to lower case
+
+Rule sets are lower-cased when loaded, but the queried name never was, and
+matching uses bytes.Compare. As a result EXAMPLE.COM matched no rule at all
+and silently fell through to the default route, defeating domain based
+routing; any reject rule could be bypassed by flipping a single letter.
+RFC 4343 requires case-insensitive comparison, and some resolvers randomise
+case deliberately (DNS 0x20) as an anti-spoofing measure.
+
+This also fixes cache key fragmentation: the key is derived from this name,
+so one domain otherwise had 2^labels distinct keys, letting a client flood
+the cache with case variants of a single name.
+---
+ app/router/server_utils.go | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/app/router/server_utils.go b/app/router/server_utils.go
+index 6a174c1..b3173e2 100644
+--- a/app/router/server_utils.go
++++ b/app/router/server_utils.go
+@@ -226,6 +226,18 @@ func parseQuery(q *QueryCtx, m *dnsmsg.Msg) bool {
+ 	}
+ 
+ 	q.Question.CopyFrom(m.Questions[0])
++	// Normalise the queried name to lower case. RFC 4343 requires DNS name
++	// comparison to be case-insensitive, and rule sets are already lower-cased
++	// when loaded (see domain_matcher), but the query name never was -- matching
++	// uses bytes.Compare, so "EXAMPLE.COM" missed every rule and fell through to
++	// the default route. That silently defeats domain-based routing (a domestic
++	// domain in caps gets sent abroad) and lets any reject rule be bypassed by
++	// flipping a single letter. It matters in practice because some resolvers
++	// deliberately randomise case (DNS 0x20) as an anti-spoofing measure.
++	// It also fixes cache-key fragmentation: the key is built from this name, so
++	// one domain otherwise had 2^labels distinct keys, letting a client flood the
++	// cache with case variants of a single name and evict everything else.
++	q.Question.Name.ToLower()
+ 	q.ClientECS = findECS(m)
+ 	return true
+ }
+-- 
+2.34.1
+

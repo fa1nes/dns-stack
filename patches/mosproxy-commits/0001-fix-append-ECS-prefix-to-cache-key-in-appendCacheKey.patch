@@ -1,0 +1,35 @@
+From 6598203db7b7ff018c228d2d31e680f002aec6eb Mon Sep 17 00:00:00 2001
+From: fa1nes <302685793+fa1nes@users.noreply.github.com>
+Date: Sun, 26 Jul 2026 15:54:38 +0800
+Subject: [PATCH 01/11] fix: append ECS prefix to cache key in appendCacheKey
+
+AppendTo follows Go's append convention and returns the resulting slice,
+which may have been reallocated. The return value was discarded, so the ECS
+prefix never made it into the cache key: every client shared a single cache
+entry regardless of its subnet, defeating ECS-aware caching. The length byte
+written afterwards also covered only the type marker.
+---
+ app/router/router_utils.go | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/app/router/router_utils.go b/app/router/router_utils.go
+index 5b0a856..e9638e0 100644
+--- a/app/router/router_utils.go
++++ b/app/router/router_utils.go
+@@ -29,7 +29,12 @@ func (r *Router) appendCacheKey(b []byte, q *QueryCtx) []byte {
+ 		b = append(b, q.ECSZone...)
+ 	case q.ECS2Upstream.IsValid():
+ 		b = append(b, 2)
+-		q.ECS2Upstream.Masked().AppendTo(b)
++		// AppendTo follows Go's append convention: it may reallocate and returns
++		// the resulting slice. Dropping that return value silently discarded the
++		// ECS prefix, so it never became part of the cache key -- every client
++		// shared a single cache entry regardless of its subnet, and the length
++		// byte written below covered only the type marker.
++		b = q.ECS2Upstream.Masked().AppendTo(b)
+ 	}
+ 	b[p] = byte(len(b) - p)
+ 	return b
+-- 
+2.34.1
+

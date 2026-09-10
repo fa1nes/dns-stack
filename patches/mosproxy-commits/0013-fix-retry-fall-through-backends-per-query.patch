@@ -1,0 +1,129 @@
+diff --git a/app/router/upstream_lb.go b/app/router/upstream_lb.go
+--- a/app/router/upstream_lb.go
++++ b/app/router/upstream_lb.go
+@@ -15,10 +15,11 @@ import (
+ )
+ 
+ type LoadBalancer struct {
+-	tag      string
+-	logger   *zerolog.Logger
+-	e        []*lbBackend                               // not zero
+-	simpleFn func(s *lbSampler, q *QueryCtx) *lbBackend // simple from sampler, may return nil if no backend is available
++	tag         string
++	logger      *zerolog.Logger
++	e           []*lbBackend                               // not zero
++	fallThrough bool                                       // retry backends in order for the same query
++	simpleFn    func(s *lbSampler, q *QueryCtx) *lbBackend // simple from sampler, may return nil if no backend is available
+ 
+ 	idxM    sync.Mutex
+ 	sampler atomic.Pointer[lbSampler]
+@@ -40,6 +41,7 @@ func (r *Router) initLoadBalancer(cfg *LoadBalancerConfig) error {
+ 			return s.simple(rand.Int())
+ 		}
+ 	case "fall_through":
++		lb.fallThrough = true
+ 		lb.simpleFn = func(s *lbSampler, q *QueryCtx) *lbBackend {
+ 			for _, b := range s.bs {
+ 				if b.rateLimiter == nil {
+@@ -125,6 +127,38 @@ func (lb *LoadBalancer) Tag() string { return lb.tag }
+ 
+ func (lb *LoadBalancer) Exchange(ctx context.Context, q *QueryCtx, m *dnsmsg.Msg) error {
+ 	s := lb.sampler.Load()
++	if lb.fallThrough {
++		var lastErr error
++		tried := false
++		for _, b := range s.bs {
++			if b.rateLimiter != nil && !b.rateLimiter.Allow() {
++				continue
++			}
++			if err := ctx.Err(); err != nil {
++				return err
++			}
++			tried = true
++			err := b.u.Exchange(ctx, q, m)
++			if err == nil {
++				resp := q.Resp()
++				if resp == nil || resp.RCode != dnsmsg.RCodeServerFailure {
++					return nil
++				}
++				// SERVFAIL is a valid DNS packet, so the transport reports success.
++				// For fall_through it still means this backend could not answer; release
++				// it before trying the next backend in the same client query.
++				q.SetResp(nil)
++				err = errors.New("backend returned SERVFAIL")
++			}
++			lastErr = err
++		}
++		if lastErr != nil {
++			return lastErr
++		}
++		if !tried {
++			return errors.New("no backend available")
++		}
++	}
+ 	b, zero := s.fastPath()
+ 	if zero {
+ 		// Try to start a ping test in a random upstream.
+diff --git a/app/router/upstream_lb_fallthrough_test.go b/app/router/upstream_lb_fallthrough_test.go
+new file mode 100644
+--- /dev/null
++++ b/app/router/upstream_lb_fallthrough_test.go
+@@ -0,0 +1,58 @@
++package router
++
++import (
++	"context"
++	"testing"
++
++	"github.com/IrineSistiana/mosproxy/pkg/dnsmsg"
++	"github.com/rs/zerolog"
++)
++
++type fixedResponseTransport struct {
++	rcode dnsmsg.RCode
++	calls int
++}
++
++func (t *fixedResponseTransport) ExchangeContext(
++	_ context.Context, _ *dnsmsg.Msg,
++) (*dnsmsg.Msg, error) {
++	t.calls++
++	resp := dnsmsg.NewMsg()
++	resp.RCode = t.rcode
++	return resp, nil
++}
++
++func (t *fixedResponseTransport) Close() error { return nil }
++
++func TestFallThroughRetriesServfailInSameQuery(t *testing.T) {
++	logger := zerolog.Nop()
++	r := &Router{opt: &Config{}, ctx: context.Background(), logger: &logger}
++	failed := &fixedResponseTransport{rcode: dnsmsg.RCodeServerFailure}
++	succeeded := &fixedResponseTransport{rcode: dnsmsg.RCodeSuccess}
++
++	lb := &LoadBalancer{
++		tag:         "fallback-test",
++		logger:      &logger,
++		fallThrough: true,
++		e: []*lbBackend{
++			{u: r.wrapUpstream("failed", failed, &logger, HealthCheckConfig{}), weight: 1},
++			{u: r.wrapUpstream("succeeded", succeeded, &logger, HealthCheckConfig{}), weight: 1},
++		},
++	}
++	lb.buildIdx()
++
++	q := NewQueryCtx()
++	defer ReleaseQueryCtx(q)
++	m := dnsmsg.NewMsg()
++	defer dnsmsg.ReleaseMsg(m)
++	if err := lb.Exchange(context.Background(), q, m); err != nil {
++		t.Fatal(err)
++	}
++	if failed.calls != 1 || succeeded.calls != 1 {
++		t.Fatalf("expected both backends once, got failed=%d succeeded=%d",
++			failed.calls, succeeded.calls)
++	}
++	if q.Resp() == nil || q.Resp().RCode != dnsmsg.RCodeSuccess {
++		t.Fatal("fallback response was not selected")
++	}
++}

@@ -1,0 +1,39 @@
+From 7381e1b5f70bcd3c64d4a0dc173100439f8d4ccd Mon Sep 17 00:00:00 2001
+From: fa1nes <302685793+fa1nes@users.noreply.github.com>
+Date: Sun, 26 Jul 2026 15:54:38 +0800
+Subject: [PATCH 02/11] fix: release prefetch single-flight reservation when
+ done
+
+prefetchCtl.Done had no call sites. Reserve() inserted the key into the queue
+and nothing ever removed it, so a given key could be prefetched exactly once
+for the lifetime of the process; every later attempt returned false and the
+entry could never be refreshed again. With optimistic caching enabled this
+means a stale record keeps being served for the whole optimistic window.
+The map also grew without bound, which is remotely reachable by querying
+random subdomains.
+---
+ app/router/router_handle.go | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/app/router/router_handle.go b/app/router/router_handle.go
+index 5de2264..1e744e8 100644
+--- a/app/router/router_handle.go
++++ b/app/router/router_handle.go
+@@ -130,6 +130,14 @@ func (r *Router) AsyncSingleFlightPrefetch(key []byte, q *QueryCtx, u Upstream)
+ 	qCopy := q.Copy()
+ 	go func() {
+ 		defer ReleaseQueryCtx(qCopy)
++		// Release the single-flight reservation when this prefetch finishes.
++		// Without it, Reserve() succeeds exactly once per key for the whole
++		// lifetime of the process: the entry is never removed from the queue, so
++		// every later attempt returns false and that key can never be refreshed
++		// again. With optimistic caching enabled this means a stale record keeps
++		// being served for the entire optimistic window. The map also grows
++		// without bound, which is remotely reachable via random subdomains.
++		defer r.prefetchSf.Done(sk)
+ 		r.DoPrefetch(utils.Str2BytesUnsafe(sk), qCopy, u)
+ 	}()
+ }
+-- 
+2.34.1
+

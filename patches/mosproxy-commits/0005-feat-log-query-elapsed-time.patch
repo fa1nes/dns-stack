@@ -1,0 +1,40 @@
+From ab51e9e3dcbaf322f962a5130c196ee24ece5ff7 Mon Sep 17 00:00:00 2001
+From: fa1nes <302685793+fa1nes@users.noreply.github.com>
+Date: Sun, 26 Jul 2026 15:54:38 +0800
+Subject: [PATCH 05/11] feat: log query elapsed time
+
+QueryCtx.Start was already recorded but never surfaced, leaving log consumers
+unable to tell a cache hit from a slow recursive lookup. Emitted via zerolog
+Dur, honouring zerolog.DurationFieldUnit (milliseconds by default).
+---
+ app/router/log.go | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/app/router/log.go b/app/router/log.go
+index 9d7286f..037ce6a 100644
+--- a/app/router/log.go
++++ b/app/router/log.go
+@@ -2,6 +2,7 @@ package router
+ 
+ import (
+ 	"net"
++	"time"
+ 
+ 	"github.com/IrineSistiana/mosproxy/internal/pool"
+ 	"github.com/IrineSistiana/mosproxy/pkg/dnsmsg"
+@@ -45,6 +46,12 @@ func (r *Router) logAccess(q *QueryCtx) {
+ 	e.Dict("query", q.LogQuery())
+ 	e.Dict("meta", q.LogServerMeta())
+ 	e.Dict("resp", q.LogResp())
++	// How long this query took, from the moment QueryCtx was created to the
++	// moment the response was ready. QueryCtx.Start was already being recorded
++	// but never surfaced, so log consumers had no way to tell a cache hit from
++	// a slow recursive lookup. Emitted via zerolog's Dur, which honours
++	// zerolog.DurationFieldUnit (milliseconds by default).
++	e.Dur("elapsed", time.Since(q.Start))
+ 	e.Msg("query log")
+ }
+ 
+-- 
+2.34.1
+
