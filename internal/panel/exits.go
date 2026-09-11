@@ -65,7 +65,6 @@ func (s *Server) exitGeoLabel(ip string) any {
 	return "归属库未收录"
 }
 
-// exitGeoInfo 返回结构化的出口归属（含 IP），供面板直接展示出口线路。
 func (s *Server) exitGeoInfo(ip string) map[string]any {
 	geo := map[string]any{"ip": ip, "available": false}
 	if ip == "" {

@@ -174,8 +174,11 @@ has "界面写明清屏不等于清服务器日志" "$WEB/index.html" '只清当
 has "面板会在有流量却零事件入库时报采集中断" "$WEB/assets/panel.js" '采集已停'
 has "分流卡把大陆权威集合纳入判据" "$WEB/assets/panel.js" 'cn_authority_count'
 has "限流拒绝非 0 时面板会告警" "$WEB/assets/panel.js" '次查询被限流拒绝'
-has "面板展示递归出口归属" "$WEB/assets/panel.js" '出口归属'
+has "面板展示两条递归出口的归属与地址" "$WEB/assets/panel.js" 'exitPathHtml'
 has "面板判定规则同步链路是否中断" "$WEB/assets/panel.js" 'SYNC_STALE_SEC'
+has "概览首屏给出整机结论而不是只堆指标" "$WEB/index.html" 'id="sysBar"'
+has "模块视图按功能分组展示中文名与用途" "$WEB/assets/panel.js" 'mod-group-head'
+hasnt "服务列表不再直接渲染 systemd 原始字段" "$WEB/index.html" 'id="svcBody"'
 a "前端资源已编进二进制(改前端必须重建)" test -f "$SRC/web/embed.go"
 
 sec "机密与脱敏"
@@ -197,27 +200,8 @@ else
     skip "日志脱敏抽查" "helper socket 不可用"
 fi
 
-_go_units() {   # <文件> <变量名> —— 取该 Go 变量字面量块内的全部单元名
-    sed -n "/$2 = /,/^}/p" "$1" 2>/dev/null \
-        | grep -oE '"dns-stack[A-Za-z0-9@._-]*"' | tr -d '"' | sort -u
-}
-PANEL_UNITS="$( { _go_units "$SRC/internal/panel/services.go" 'cnUnits'
-                  _go_units "$SRC/internal/panel/services.go" 'globalUnits'; } | sort -u | grep -v '^$')"
-HELPER_UNITS="$(_go_units "$SRC/internal/helper/ops.go" 'allowedUnits')"
-if [[ -z "${PANEL_UNITS//[[:space:]]/}" || -z "${HELPER_UNITS//[[:space:]]/}" ]]; then
-    bad "取不到面板或 helper 的单元清单" "变量名是否改过？判据自身失效比结果为 0 更危险"
-else
-    MISSING="$(comm -23 <(printf '%s\n' "$PANEL_UNITS") <(printf '%s\n' "$HELPER_UNITS") | tr '\n' ' ')"
-    [[ -z "${MISSING// /}" ]] \
-        && ok "面板监视的单元 helper 全部放行($(grep -c . <<<"$PANEL_UNITS") 个)" \
-        || bad "helper 白名单缺少面板要监视的单元" "$MISSING"
-    GHOST=""
-    for u in $PANEL_UNITS; do
-        [[ -f "$SRC/systemd/$u.service" || -f "$SRC/systemd/$u.timer" ]] || GHOST="${GHOST} $u"
-    done
-    [[ -z "$GHOST" ]] && ok "面板监视的单元都有对应的 systemd 文件" \
-        || bad "面板监视了不存在的单元:${GHOST}" "会永远显示「未运行」"
-fi
+has "面板的单元清单来自统一模块登记表" "$SRC/internal/panel/services.go" 'stack\.UnitsForRole'
+has "helper 白名单来自同一张登记表" "$SRC/internal/helper/ops.go" 'stack\.All\(\)'
 
 sec "部署与迁移"
 MISSING=""

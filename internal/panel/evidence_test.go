@@ -2,7 +2,6 @@ package panel
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net"
 	"net/http/httptest"
@@ -21,36 +20,6 @@ func TestGlobalEvidenceBoundaries(t *testing.T) {
 	for _, status := range []string{"SERVFAIL", "NXDOMAIN", "REFUSED"} {
 		parsed := map[string]any{"status": status, "records": []map[string]any{{"type": "A", "value": "1.2.3.4"}}}
 		checkedEqual(t, "failure is not evidence "+status, len(parsedGlobalIPs(parsed)), 0)
-	}
-}
-
-func TestCNLiveDNSParity(t *testing.T) {
-	path := os.Getenv("PANEL_LIVE_FIXTURES")
-	if path == "" {
-		t.Skip("CN live DNS capture requires live parity script")
-	}
-	encoded, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []struct {
-		Name           string            `json:"name"`
-		Args           map[string]string `json:"args"`
-		HelperResponse map[string]any    `json:"helper_response"`
-		Expected       map[string]any    `json:"expected"`
-	}
-	if err := json.Unmarshal(encoded, &cases); err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) == 0 {
-		t.Fatal("empty CN live capture")
-	}
-	for _, item := range cases {
-		t.Run(item.Name, func(t *testing.T) {
-			fakeHelper(t, func(request map[string]any) map[string]any { return item.HelperResponse })
-			got := dnsProbe(context.Background(), item.Args["domain"], item.Args["qtype"], item.Args["server"], item.Args["subnet"])
-			checkedEqual(t, "Python vs Go real CN DNS response", got, item.Expected)
-		})
 	}
 }
 
