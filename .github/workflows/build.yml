@@ -203,7 +203,23 @@ jobs:
         with:
           tag_name: binaries-latest
           name: ${{ steps.build.outputs.version }}
-          body: ""
           prerelease: true
           files: dist/*
           fail_on_unmatched_files: true
+
+      - name: clear release body
+        if: |
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+          && matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/binaries-latest" --jq .id)"
+          printf '{"body":""}' | gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${id}" --input - >/dev/null
+          left="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${id}" --jq '.body | length')"
+          if [ "$left" != "0" ]; then
+            echo "::error::release body is still ${left} characters after the clear" >&2
+            exit 1
+          fi
+          echo "release body cleared"
