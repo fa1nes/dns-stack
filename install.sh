@@ -225,7 +225,7 @@ record_installed_versions() {
         done
         echo
         echo "  },"
-        echo "  \"mosproxy_pinned_commit\": \"$(grep -oP '"pinned_commit":\s*"\K[^"]+' "$SCRIPT_DIR/versions.lock" 2>/dev/null || echo "unknown")\","
+        echo "  \"mosproxy\": \"$(mosproxy_expected_repo "$SCRIPT_DIR" 2>/dev/null || echo unknown)@$(mosproxy_expected_version "$SCRIPT_DIR" 2>/dev/null || echo unknown)\","
         echo "  \"dns_stack\": \"$("$OPT_DIR/bin/dns-stack-go" version 2>/dev/null | awk '{print $2}' || echo unknown)\""
         echo "}"
     } > "$tmp"
@@ -397,7 +397,7 @@ install_mosproxy_candidate() {
 
 download_mosproxy() {
     local repo="$1" arch="$2" expected="$3"
-    local path="${repo}/releases/latest/download/mosproxy-linux-${arch}"
+    local path="${repo}/releases/download/${expected}/mosproxy-linux-${arch}"
     local direct="https://github.com/${path}"
     local srcs=(
         "https://ghfast.top/${direct}"
@@ -435,8 +435,10 @@ step8_deploy_mosproxy() {
     log_info "[8/17] 部署 mosproxy..."
     mkdir -p "$OPT_DIR/bin" /etc/dns-stack/mosproxy
 
-    local mp_repo mp_arch expected bundled candidate build_dir
-    mp_repo="$(cfg_or_default MOSPROXY_REPO yourname/mosproxy)"
+    local mp_repo mp_arch expected bundled candidate locked_repo
+    locked_repo="$(mosproxy_expected_repo "$SCRIPT_DIR")" \
+        || die "versions.lock 里的 mosproxy repo 不是 owner/name 形式"
+    mp_repo="$(cfg_or_default MOSPROXY_REPO "$locked_repo")"
     case "$(uname -m)" in
         x86_64|amd64) mp_arch=amd64 ;;
         aarch64|arm64) mp_arch=arm64 ;;
@@ -444,7 +446,7 @@ step8_deploy_mosproxy() {
     esac
     [[ -n "$mp_arch" ]] || die "不支持为 $(uname -m) 部署 mosproxy"
     expected="$(mosproxy_expected_version "$SCRIPT_DIR")" \
-        || die "versions.lock 与 mosproxy 补丁序列不一致，拒绝部署不可复现二进制"
+        || die "versions.lock 的 mosproxy artifact_version 不是 vX.Y.Z 形式"
 
     if mosproxy_binary_matches "$OPT_DIR/bin/mosproxy" "$expected"; then
         mosproxy_write_metadata "$OPT_DIR/bin/mosproxy" "$expected"
@@ -464,20 +466,8 @@ step8_deploy_mosproxy() {
             :
         elif download_mosproxy "$mp_repo" "$mp_arch" "$expected"; then
             :
-        elif command -v go >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-            log_info "  未找到已验证产物，从锁定提交构建 ${expected}..."
-            build_dir="$(mktemp -d)"
-            if GO=go bash "$SCRIPT_DIR/scripts/build-mosproxy.sh" \
-                    --arch "$mp_arch" --output-dir "$build_dir" \
-               && install_mosproxy_candidate "$build_dir/mosproxy-linux-${mp_arch}" \
-                    "$expected" "锁定源码现场构建"; then
-                rm -rf "$build_dir"
-            else
-                log_err "  构建现场保留在: $build_dir"
-                die "mosproxy 构建或补丁指纹校验失败"
-            fi
         else
-            die "没有包含 ${expected} 的 mosproxy 产物，且本机缺少 Go/git。请先运行 scripts/build-mosproxy.sh 并把对应架构产物连同 .sha256/.build-id 放入 bin/"
+            die "取不到 ${mp_repo} 的 ${expected} 产物(mosproxy-linux-${mp_arch})。不在生产机编译，请确认该 tag 的 Release 已发布且包含 .sha256 与 .build-id"
         fi
     fi
     mosproxy_artifact_matches "$OPT_DIR/bin/mosproxy" "$expected" \
