@@ -21,6 +21,7 @@ const (
 	LandingMixed    = "mixed"
 	LandingOffshore = "offshore"
 	LandingNoAnswer = "no_answer"
+	LandingUnjudged = "unjudged"
 
 	OverrideCN      = "cn"
 	OverrideGFW     = "gfw"
@@ -120,8 +121,6 @@ func inspect(o *resolve.Outcome, polluted *cidrutil.Set) view {
 			v.polluted = append(v.polluted, addr)
 		}
 	}
-	// 全局地址过半即视为可用：个别权威应答混入私网/文档段时，
-	// 异常地址已单列进 abnormal 供审计，不应一票否决整个视角。
 	v.usable = len(v.ips) > 0 && len(v.abnormal)*2 <= len(v.ips)
 	return v
 }
@@ -222,21 +221,25 @@ func staticStatus(override, landing string, polluted bool, route, reason string)
 }
 
 func landingVerdict(cnIPs, foreignIPs []netip.Addr, mainland Mainland) string {
-	routable := globalOnly(cnIPs)
-	if len(routable) == 0 {
-		routable = globalOnly(foreignIPs)
+	judged := judgeableOnly(cnIPs)
+	global := globalOnly(cnIPs)
+	if len(global) == 0 {
+		judged, global = judgeableOnly(foreignIPs), globalOnly(foreignIPs)
 	}
-	if len(routable) == 0 {
+	if len(global) == 0 {
 		return LandingNoAnswer
 	}
+	if len(judged) == 0 {
+		return LandingUnjudged
+	}
 	hits := 0
-	for _, addr := range routable {
+	for _, addr := range judged {
 		if mainland.IsMainland(addr) {
 			hits++
 		}
 	}
 	switch {
-	case hits == len(routable):
+	case hits == len(judged):
 		return LandingMainland
 	case hits > 0:
 		return LandingMixed
@@ -249,6 +252,21 @@ func globalOnly(addrs []netip.Addr) []netip.Addr {
 	out := addrs[:0:0]
 	for _, addr := range addrs {
 		if ipset.IsGlobalAddr(addr) {
+			out = append(out, addr)
+		}
+	}
+	return out
+}
+
+func judgeable(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	return addr.Is4() && ipset.IsGlobalAddr(addr)
+}
+
+func judgeableOnly(addrs []netip.Addr) []netip.Addr {
+	out := addrs[:0:0]
+	for _, addr := range addrs {
+		if judgeable(addr) {
 			out = append(out, addr)
 		}
 	}
@@ -271,21 +289,21 @@ func sharesGeoSteeredChain(left, right []string) bool {
 	return false
 }
 
-// splitHorizonCN 识别权威按解析器位置分水的域名：
-// 两侧视角都可用、答案完全不同、国内视角全部落在direct4、
-// 境外视角没有一个落在大陆——这是 GeoDNS 正常工作而非污染。
-// 污染证据（polluted/abnormal）在进入本函数前已被更高优先级分支拦截。
 func splitHorizonCN(cnIPs, foreignIPs []netip.Addr, mainland Mainland) bool {
-	cnGlobal := globalOnly(cnIPs)
-	if len(cnGlobal) == 0 {
+	cnJudged := judgeableOnly(cnIPs)
+	if len(cnJudged) == 0 {
 		return false
 	}
-	for _, addr := range cnGlobal {
+	for _, addr := range cnJudged {
 		if !mainland.IsMainland(addr) {
 			return false
 		}
 	}
-	for _, addr := range globalOnly(foreignIPs) {
+	foreignJudged := judgeableOnly(foreignIPs)
+	if len(foreignJudged) == 0 {
+		return false
+	}
+	for _, addr := range foreignJudged {
 		if mainland.IsMainland(addr) {
 			return false
 		}

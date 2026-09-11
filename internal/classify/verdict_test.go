@@ -149,8 +149,6 @@ func TestArbitraryCommonCNAMEDoesNotValidateConflict(t *testing.T) {
 }
 
 func TestSplitHorizonGeoDNSStaysDomestic(t *testing.T) {
-	// 权威按解析器位置分水：CN 视角全落大陆、境外视角全在境外，
-	// CNAME 链不在已知 geo-steering 名单里，此前会被误判成 views_conflict 推去隧道。
 	v := decide(t, "split.example",
 		answer([]string{"split.example.cdn-custom.example"}, "125.89.169.195", "140.205.31.96"),
 		answer([]string{"split.example.cdn-custom.example"}, "17.253.200.10"),
@@ -160,8 +158,35 @@ func TestSplitHorizonGeoDNSStaysDomestic(t *testing.T) {
 	expect(t, "status", v.Status, StatusCN)
 }
 
+func TestDualStackAnswerStillSplitHorizons(t *testing.T) {
+	v := decide(t, "dual.example",
+		answer(nil, "125.89.169.195", "2408:8756::1"),
+		answer(nil, "17.253.200.10", "2620:149:af0::10"),
+		withMainland(mainlandOf("125.89.169.195")))
+	expect(t, "route", v.Route, RouteCN)
+	expect(t, "reason", v.Reason, ReasonSplitHorizon)
+	expect(t, "landing", v.Landing, LandingMainland)
+	expect(t, "status", v.Status, StatusCN)
+}
+
+func TestUnjudgeableAnswerNeverClaimsOffshore(t *testing.T) {
+	only6 := answer(nil, "2408:8756::1")
+	v := decide(t, "v6only.example", only6, only6)
+	expect(t, "landing", v.Landing, LandingUnjudged)
+	expect(t, "status", v.Status, StatusUnknown)
+
+	noEvidence := decide(t, "v6split.example",
+		answer(nil, "2408:8756::1"), answer(nil, "17.253.200.10"),
+		withMainland(mainlandOf("125.89.169.195")))
+	expect(t, "国内侧没有可判据的地址时不得声称分水", noEvidence.Reason, ReasonViewsConflict)
+
+	foreign6 := decide(t, "foreign6.example",
+		answer(nil, "125.89.169.195"), answer(nil, "2620:149:af0::10"),
+		withMainland(mainlandOf("125.89.169.195")))
+	expect(t, "境外侧没有可判据的地址时不得声称分水", foreign6.Reason, ReasonViewsConflict)
+}
+
 func TestSplitHorizonRejectsMixedCNView(t *testing.T) {
-	// CN 视角里混进一个境外地址：可能是部分劫持，不能按分水放行。
 	v := decide(t, "mixed.example",
 		answer(nil, "125.89.169.195", "8.8.8.8"),
 		answer(nil, "17.253.200.10"),
@@ -172,7 +197,6 @@ func TestSplitHorizonRejectsMixedCNView(t *testing.T) {
 }
 
 func TestSplitHorizonRejectsForeignLandingInMainland(t *testing.T) {
-	// 境外视角也落在大陆：不是清晰的分水，维持保守判定。
 	v := decide(t, "both-cn.example",
 		answer(nil, "125.89.169.195"),
 		answer(nil, "140.205.31.96"),
@@ -182,7 +206,6 @@ func TestSplitHorizonRejectsForeignLandingInMainland(t *testing.T) {
 }
 
 func TestPollutionStillBeatsSplitHorizon(t *testing.T) {
-	// CN 视角命中污染清单时，即使落点形态像分水也必须先走污染分支。
 	v := decide(t, "poisoned.example",
 		answer(nil, "157.240.7.20"), answer(nil, "17.253.200.10"),
 		withPolluted("157.240.7.20"), withMainland(mainlandOf("157.240.7.20")))
@@ -191,8 +214,6 @@ func TestPollutionStillBeatsSplitHorizon(t *testing.T) {
 }
 
 func TestMinorityNonGlobalAnswerDoesNotVoidView(t *testing.T) {
-	// 多记录应答混入一个私网地址：其余全局地址仍应让视角可用，
-	// 不能再一票否决整个视角把域名推去隧道。
 	v := decide(t, "mostly-good.example",
 		answer(nil, "125.89.169.195", "192.168.10.1"),
 		answer(nil, "17.253.200.10"),
