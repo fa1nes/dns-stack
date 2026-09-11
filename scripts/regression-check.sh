@@ -112,6 +112,30 @@ else
     else
         bad "安装 dns-stack 与源码树一致性无法检查" "缺少安装 CLI 或源码副本"
     fi
+
+    DRIFTED=""; CHECKED=0
+    _installed_pairs() {
+        local f
+        for f in /etc/systemd/system/dns-stack-*.service /etc/systemd/system/dns-stack-*.timer \
+                 /etc/systemd/system/mosproxy.service; do
+            [[ -f "$f" ]] && printf '%s\t%s\n' "systemd/$(basename "$f")" "$f"
+        done
+        printf '%s\t%s\n' "systemd/apparmor-local-usr.sbin.unbound" /etc/apparmor.d/local/usr.sbin.unbound
+        printf '%s\t%s\n' "docs/logrotate-dns-stack.conf" /etc/logrotate.d/dns-stack
+        printf '%s\t%s\n' "docs/sysctl-cn.conf" /etc/sysctl.d/90-dns-stack.conf
+    }
+    while IFS=$'\t' read -r rel dst; do
+        [[ -f "$SRC/$rel" && -f "$dst" ]] || continue
+        CHECKED=$((CHECKED+1))
+        cmp -s "$SRC/$rel" "$dst" || DRIFTED="${DRIFTED} $(basename "$dst")"
+    done < <(_installed_pairs)
+    if [[ "$CHECKED" -eq 0 ]]; then
+        bad "安装点与源码树逐文件核对" "一个安装点都没找到，判据等于没跑"
+    elif [[ -z "$DRIFTED" ]]; then
+        ok "全部 ${CHECKED} 个安装点与源码树一致"
+    else
+        bad "有安装点与源码树漂移" "${DRIFTED# }"
+    fi
     if [[ -f "$GO_BIN.sha256" ]]; then
         WANT="$(awk '{print $1}' "$GO_BIN.sha256")"
         GOT="$(sha256sum "$GO_BIN" 2>/dev/null | awk '{print $1}')"

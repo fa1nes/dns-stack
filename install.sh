@@ -304,7 +304,6 @@ GO_RUNTIME_DONE=0
 install_go_runtime() {
     [[ "$GO_RUNTIME_DONE" -eq 1 ]] && return 0
     local arch candidate="" target="$OPT_DIR/bin/dns-stack-go"
-    local dropin_dir=/etc/systemd/system/dns-stack-panel.service.d
     case "$(uname -m)" in
         x86_64|amd64) arch=amd64 ;;
         aarch64|arm64) arch=arm64 ;;
