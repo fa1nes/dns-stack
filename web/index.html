@@ -77,6 +77,7 @@
     <div class="content">
 
       <section class="page active" id="page-overview">
+        <div class="sysbar" id="sysBar"><div class="state"><span class="spinner"></span> 正在检查各模块…</div></div>
         <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
         <div class="grid c2">
           <div class="card">
@@ -550,14 +551,15 @@
             <div class="card"><h3>备份文件</h3><div id="backupList"></div></div>
             <div class="card"><h3>导出包</h3><div id="exportList"></div></div>
           </div>
-          <details class="card">
-            <summary>服务状态详情（systemd）</summary>
-            <div class="table-wrap card-rows mt-12"><table class="card-rows">
-              <thead><tr><th>服务</th><th style="width:96px">状态</th><th style="width:88px">子状态</th>
-                <th style="width:92px">内存</th><th style="width:78px">重启次数</th><th>启动时间 / 下次触发</th></tr></thead>
-              <tbody id="svcBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
-            </table></div>
-          </details>
+          <div class="card">
+            <h3>系统模块
+              <span class="row">
+                <span class="hint m0" id="moduleImpl"></span>
+                <button class="sm" id="btnReloadModules">刷新</button>
+              </span>
+            </h3>
+            <div id="moduleGroups"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+          </div>
         </div>
 
         <div class="tab-panel" id="stab-audit">

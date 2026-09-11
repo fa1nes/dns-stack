@@ -1064,3 +1064,54 @@ details.card[open] > summary::before { content: '▾ '; }
 .src-tag.global{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .src-tag.online{background:color-mix(in srgb,var(--text-dim) 18%,transparent);color:var(--text-dim)}
 .badge.sm{margin-left:.35rem;font-size:.68rem;padding:0 .35rem}
+
+.sysbar { margin-bottom: 14px; }
+.sys-card {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--r); padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.sys-card.warn { border-left-color: var(--warn); }
+.sys-card.down { border-left-color: var(--err); }
+.sys-card.unknown { border-left-color: var(--text-dim); }
+.sys-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.sys-headline { font-size: 1.05rem; letter-spacing: .2px; }
+.sys-counts { font-size: .78rem; }
+.sys-head > button { margin-left: auto; }
+.sys-body { margin-top: .35rem; font-size: .84rem; }
+.sys-issues { margin: .2rem 0 0; padding-left: 1.1rem; color: var(--warn); }
+.sys-issues li { margin: .12rem 0; }
+
+.mod-group { margin-bottom: 16px; }
+.mod-group:last-child { margin-bottom: 0; }
+.mod-group-head {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .82rem; padding: 0 0 6px; border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 2px;
+}
+.mod-group-head .dim { margin-left: auto; font-size: .74rem; }
+
+.mod {
+  display: flex; align-items: flex-start; gap: .55rem;
+  padding: 9px 4px; border-bottom: 1px solid var(--border-soft);
+}
+.mod:last-child { border-bottom: 0; }
+.mod > .dot { margin-top: .42rem; }
+.mod-main { flex: 1 1 15rem; min-width: 0; }
+.mod-title { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.mod-title b { font-size: .92rem; font-weight: 600; }
+.mod-unit { font-size: .7rem; }
+.mod-purpose { font-size: .78rem; color: var(--text-muted); margin-top: .12rem; line-height: 1.5; }
+.mod-side { flex: 0 0 16rem; text-align: right; display: flex; flex-direction: column; gap: .12rem; }
+.mod-state { font-size: .8rem; font-weight: 550; color: var(--ok); }
+.mod-state.warn { color: var(--warn); }
+.mod-state.down { color: var(--err); }
+.mod-state.unknown { color: var(--text-dim); }
+.mod-facts { font-size: .72rem; line-height: 1.55; }
+.mod-state { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .mod { flex-wrap: wrap; }
+  .mod-side { flex-basis: 100%; text-align: left; flex-direction: row; gap: .5rem; align-items: baseline; padding-left: 1rem; }
+}

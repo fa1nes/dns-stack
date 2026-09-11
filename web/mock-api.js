@@ -114,10 +114,26 @@
     ['export', '导出迁移包', false],
   ];
 
-  const UNITS = ['mosproxy', 'unbound', 'dns-stack-recursive-routing', 'dns-stack-helper',
-                 'dns-stack-panel', 'dns-stack-sync-rules', 'dns-stack-collect-polluted',
-                 'dns-stack-chnroute', 'dns-stack-cn-authority', 'dns-stack-routing-watchdog',
-                 'dns-stack-geoip', 'dns-stack-renew-cert', 'dns-stack-backup', 'wg-quick@wg0'];
+  const MODULES = [
+    ['解析链路', 'mosproxy', 'DNS 入口', '接收你设备发来的 DoH/DoT 查询，按规则决定走本机递归还是香港递归', 'daemon', 'external', 1],
+    ['解析链路', 'unbound', '递归解析器', '自己从根服务器一级级问下来，不依赖任何公共 DNS', 'daemon', 'external', 1],
+    ['解析链路', 'dns-stack-recursive-routing', '出口分流', '按目标权威服务器的 IP 归属，决定这一跳走大陆直连还是香港隧道', 'daemon', 'shell', 1],
+    ['解析链路', 'wg-quick@wg0', '香港隧道', '通往香港节点的 WireGuard 隧道，境外权威的查询从这里出去', 'daemon', 'external', 1],
+    ['解析链路', 'dns-stack-routing-watchdog', '分流看门狗', '定期确认分流规则还在内核里，被其他程序刷掉时自动补回', 'job', 'shell', 0],
+    ['分流数据', 'dns-stack-chnroute', '大陆网段', '从 APNIC 官方委派记录重建大陆 IPv4 网段表，是所有归属判定的底座', 'job', 'shell', 0],
+    ['分流数据', 'dns-stack-cn-authority', '国内权威地址', '记录国内域名的权威服务器地址，让它们的查询走直连而不是绕香港', 'job', 'shell', 0],
+    ['分流数据', 'dns-stack-shared-anycast', '共享 anycast 识别', '识别多租户 DNS 服务商的共享节点，避免把它们误当成国内权威', 'job', 'go', 0],
+    ['分流数据', 'dns-stack-geoip', '归属库更新', '更新纯真/MaxMind/DB-IP 归属库，IP 查省市运营商靠它', 'job', 'shell', 0],
+    ['分流数据', 'dns-stack-geo-cross', '归属交叉校验', '拿多个归属库互相对照，挑出「纯真说是大陆、别家说不是」的争议网段', 'job', 'go', 0],
+    ['分流数据', 'dns-stack-ecs-zone', 'ECS 缓存分片', '按省份+运营商切分缓存，让 CDN 给你的是本地节点而不是外省节点', 'job', 'go', 0],
+    ['分流数据', 'dns-stack-collect-polluted', '污染 IP 采集', '采集 GFW 投毒返回的假地址，作为判定域名被污染的证据', 'job', 'shell', 0],
+    ['分流数据', 'dns-stack-sync-rules', '规则同步', '从 GitHub 拉取最新的四文件规则包并热加载进 mosproxy', 'job', 'shell', 0],
+    ['面板与运维', 'dns-stack-panel', '管理面板', '就是你现在看的这个界面', 'daemon', 'go', 0],
+    ['面板与运维', 'dns-stack-helper', '特权助手', '面板要动系统时经它代办，只放行白名单内的操作', 'daemon', 'go', 1],
+    ['面板与运维', 'dns-stack-renew-cert', '证书续签', '检查 TLS 证书剩余天数，到期前自动续签', 'job', 'shell', 0],
+    ['面板与运维', 'dns-stack-backup', '自动备份', '每天备份数据库、配置与规则', 'job', 'shell', 0],
+  ];
+  const UNITS = MODULES.map((m) => m[1]);
 
   const ROUTES = {
 
@@ -271,14 +287,41 @@
 
     '/api/doh': () => ({ doh_url: 'https://203.0.113.1/dns-query', is_default: true }),
 
-    '/api/services': () => ({
-      services: UNITS.map((unit, i) => ({
-        unit, active: i === 11 ? 'failed' : (i > 4 ? 'waiting' : 'active'),
-        sub: i === 11 ? 'failed / exit-code' : (i > 4 ? 'timer waiting / success' : 'running'),
-        since: 'Wed 2026-01-01 00:00:00 UTC', memory: 20971520 + i * 1048576,
-        restarts: i === 11 ? 3 : 0, next: i > 4 ? 'Wed 2026-01-01 06:00:00 UTC' : null,
-      })),
-    }),
+    '/api/modules': () => {
+      const notes = { 'dns-stack-geo-cross': ['warn', '从未运行过'],
+                      'dns-stack-renew-cert': ['warn', '已经 4 天没有运行'] };
+      const counts = { ok: 0, warn: 0, down: 0, unknown: 0 };
+      const attention = [];
+      const byGroup = {};
+      const impl = {};
+      MODULES.forEach((m, i) => {
+        const [group, unit, name, purpose, kind, kindImpl, critical] = m;
+        const hit = notes[unit];
+        const state = hit ? hit[0] : 'ok';
+        counts[state]++;
+        impl[kindImpl] = (impl[kindImpl] || 0) + 1;
+        if (hit) attention.push(name + '：' + hit[1]);
+        const note = hit ? hit[1] : (kind === 'daemon' ? '运行中' : (i % 3 + 1) + ' 小时前运行过');
+        (byGroup[group] = byGroup[group] || []).push({
+          unit, name, group, purpose, kind, impl: kindImpl, critical: !!critical,
+          state, note, active: kind === 'daemon' ? 'active' : 'waiting',
+          last_run: hit && hit[1] === '从未运行过' ? null : now() - (i + 1) * 3600,
+          next_run: kind === 'job' ? now() + (i + 1) * 1800 : null,
+          memory: kind === 'daemon' ? 20971520 + i * 1048576 : null,
+          restarts: 0,
+          artifact: kind === 'job' ? { path: unit + '.txt', exists: !hit, lines: hit ? null : 1200 + i * 37 } : undefined,
+        });
+      });
+      const verdict = counts.down ? 'down' : (counts.warn ? 'warn' : 'ok');
+      return {
+        role: 'cn-resolver', verdict, total: MODULES.length, counts, impl, attention,
+        headline: verdict === 'ok' ? '全部正常' : attention.length + ' 个模块需要关注',
+        groups: ['解析链路', '分流数据', '规则构建', '面板与运维']
+          .filter((g) => byGroup[g])
+          .map((g) => ({ name: g, modules: byGroup[g],
+                         state: byGroup[g].some((x) => x.state !== 'ok') ? 'warn' : 'ok' })),
+      };
+    },
 
     '/api/backups': () => ({
       backups: [{ name: 'backup-20260101.tar.zst', size: 4194304, mtime: now() - 3600 }],

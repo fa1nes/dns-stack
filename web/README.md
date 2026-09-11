@@ -11,15 +11,15 @@ web/
 │   ├── panel.css
 │   └── panel.js      无框架、无打包，原生 ES2020
 ├── mock-api.js       假后端：拦截 fetch / EventSource，数据全部虚构
-├── serve-dev.py      开发服务器，返回 HTML 时动态注入 mock-api.js
+├── devserver/        开发服务器（Go），返回 HTML 时动态注入 mock-api.js
 └── README.md
 ```
 
 ## 本地开发
 
 ```bash
-python serve-dev.py          # http://127.0.0.1:8080
-python serve-dev.py 9000     # 换端口
+go run ./devserver --root .                     # http://127.0.0.1:8791
+go run ./devserver --root . --addr :9000        # 换端口
 ```
 
 不需要任何后端。`mock-api.js` 会接管所有请求，界面上的每一块都能看到。
@@ -58,10 +58,9 @@ Cookie，SSE 日志流也会带凭据。若只在本机通过 SSH 隧道访问�
 | `GET /api/my-location` | 访问者位置与 CDN 调度探测 |
 | `POST /api/dns-test` | 解析对比测试 |
 | `GET /api/logs` `GET /api/logs/stream` | 日志 |
+| `GET /api/modules` | 模块清单与整机结论（分组、状态、上次/下次运行） |
 | `GET /api/services` `POST /api/action/{op}` | 服务状态与运维操作 |
 | `POST /api/login` `POST /api/logout` | 认证 |
-
-参考实现在 `../panel/backend/app.py`（FastAPI）。
 
 ### `/api/bootstrap` 契约
 
@@ -103,3 +102,7 @@ Cookie，SSE 日志流也会带凭据。若只在本机通过 SSH 隧道访问�
 **IP 一律用文档专用段**。示例、注释、mock 数据里出现的地址必须取自
 RFC 5737（`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`）与 RFC 2606
 （`example.com` 等）。仓库里有一道扫描护栏盯着这件事，真实地址提交不进去。
+
+**模块清单只有一处**：`internal/stack/stack.go`。面板的监视列表、helper 的单元
+白名单、`dns-stack status` 三者都从它派生，新增模块只改那一处。前端不要再自己
+维护单元名数组——`mock-api.js` 里那份是给假后端造数据用的，不参与真实渲染。

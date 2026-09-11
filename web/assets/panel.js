@@ -76,7 +76,6 @@ const fmtNum = (n) => {
   return n.toLocaleString('zh-CN');
 };
 
-// 完整数字（千分位），供 title 悬浮显示
 const fmtNumFull = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('zh-CN'));
 
 const dash = (v, unit) => (v === null || v === undefined ? '—' : String(v) + (unit || ''));
@@ -374,11 +373,17 @@ function switchPage(page) {
 
 function startOverview() {
   loadTimeseries();
+  let sinceModules = Infinity;
   const tick = async () => {
     state.overviewTimer = 0;
     if (state.page !== 'overview') return;
     if (!document.hidden) {
       try { await loadOverview(); } catch (e) {  }
+      if (sinceModules >= 30000) {
+        sinceModules = 0;
+        try { await loadModules(); } catch (e) {  }
+      }
+      sinceModules += 5000;
     }
     if (state.page === 'overview') state.overviewTimer = setTimeout(tick, 5000);
   };
@@ -461,14 +466,14 @@ function renderOverviewStats(d) {
   const hit = m.cache_hit_ratio || 0;
   const errR = m.error_ratio || 0;
   setHtml($('#ovStats'), html`${[
-    statCard(m.available ? fmtNum(m.query_total) : '—', 'mosproxy 累计请求',
-      m.available ? 'QPS ' + (m.qps || 0) : '指标不可用', 'accent',
+    statCard(m.available ? fmtNum(m.query_total) : '—', '累计查询量',
+      m.available ? '开机至今 · 每秒 ' + (m.qps || 0) + ' 次' : '指标不可用', 'accent',
       m.available ? fmtNumFull(m.query_total) : ''),
     statCard(m.available ? hit.toFixed(1) + '%' : '—', '缓存命中率',
-      m.available ? '命中 ' + fmtNum(m.cache_hit_total) + ' · 缓存条目 ' + fmtNum(m.cache_entries) : '',
+      m.available ? '每 100 次查询有 ' + Math.round(hit) + ' 次免去了解析' : '',
       hit >= 50 ? 'ok' : (hit >= 20 ? 'warn' : '')),
-    statCard(m.available ? errR.toFixed(2) + '%' : '—', '上游错误率',
-      m.available ? '失败 ' + fmtNum(m.upstream_err_total) + ' / ' + fmtNum(m.upstream_query_total) : '',
+    statCard(m.available ? errR.toFixed(2) + '%' : '—', '上游失败率',
+      m.available ? '失败 ' + fmtNum(m.upstream_err_total) + ' / ' + fmtNum(m.upstream_query_total) + ' 次' : '',
       errR > 5 ? 'err' : (errR > 1 ? 'warn' : 'ok')),
     eventsCard(ev, m),
     latencyCard(ev.latency, m),
@@ -540,14 +545,14 @@ function exitPathHtml(cn, hk) {
 function latencyCard(lat, m) {
   if (lat && lat.samples) {
     const p50 = lat.p50;
-    const sub = 'P95 ' + dash(lat.p95, ' ms') + ' · 样本 ' + fmtNum(lat.samples) +
-      (lat.slow_1s ? ' · 超 1 秒 ' + fmtNum(lat.slow_1s) + ' 次' : '');
-    return statCard(dash(p50, ' ms'), '响应延迟 P50（近 1 小时）', sub,
+    const sub = '一半的查询快于此 · 最慢 5% 超过 ' + dash(lat.p95, ' ms') +
+      (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '');
+    return statCard(dash(p50, ' ms'), '响应速度（近 1 小时）', sub,
       p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')));
   }
   const avg = m && m.avg_latency_ms;
-  return statCard(dash(avg, ' ms'), '上游平均延迟',
-    m && m.latency_samples ? '样本 ' + fmtNum(m.latency_samples) + ' 次（不含缓存命中）' : '暂无样本',
+  return statCard(dash(avg, ' ms'), '上游平均耗时',
+    m && m.latency_samples ? '取样 ' + fmtNum(m.latency_samples) + ' 次（不含缓存命中）' : '暂无样本',
     avg === null || avg === undefined ? '' : (avg <= 50 ? 'ok' : (avg <= 200 ? 'warn' : 'err')));
 }
 
@@ -2056,8 +2061,13 @@ async function togglePassword() {
   } catch (e) { toast('操作失败', e.message, 'err'); }
 }
 
+let _modulesBound = false;
 async function loadOps() {
-  loadServices();
+  if (!_modulesBound) {
+    const b = $('#btnReloadModules');
+    if (b) { b.addEventListener('click', () => { invalidateCache(); loadModules(); }); _modulesBound = true; }
+  }
+  loadModules();
   loadBackups();
   renderRoleExtra();
 }
@@ -2097,8 +2107,6 @@ async function loadDohInfo() {
   }
 }
 
-const SVC_LABEL = { active: '运行中', waiting: '定时等待', inactive: '未运行', failed: '失败', activating: '启动中' };
-
 function copyDohUrl() {
   const url = ($('#dohUrl') || {}).textContent || '';
   const fallback = () => {
@@ -2114,26 +2122,101 @@ function copyDohUrl() {
   } else fallback();
 }
 
-async function loadServices() {
-  const body = $('#svcBody');
+const MOD_STATE = {
+  ok: { dot: 'ok', text: '正常' },
+  warn: { dot: 'warn', text: '需关注' },
+  down: { dot: 'err', text: '已中断' },
+  unknown: { dot: 'idle', text: '未知' },
+};
+
+const IMPL_LABEL = { go: 'Go 原生', shell: 'Shell 脚本', external: '外部组件' };
+
+function until(ts) {
+  if (!ts) return '';
+  const s = ts - Math.floor(Date.now() / 1000);
+  if (s <= 0) return '即将运行';
+  if (s < 60) return s + ' 秒后';
+  if (s < 3600) return Math.floor(s / 60) + ' 分钟后';
+  if (s < 86400) return Math.floor(s / 3600) + ' 小时后';
+  return Math.floor(s / 86400) + ' 天后';
+}
+
+function moduleRow(m) {
+  const st = MOD_STATE[m.state] || MOD_STATE.unknown;
+  const facts = [];
+  if (m.kind === 'job') {
+    if (m.last_run) facts.push('上次 ' + ago(m.last_run));
+    if (m.next_run) facts.push('下次 ' + until(m.next_run));
+  } else {
+    if (m.last_run) facts.push('已运行 ' + ago(m.last_run).replace('前', ''));
+    if (m.memory) facts.push('内存 ' + fmtBytes(m.memory));
+    if (m.restarts) facts.push('重启 ' + m.restarts + ' 次');
+  }
+  const art = m.artifact;
+  if (art && art.exists && art.lines) facts.push('产出 ' + fmtNum(art.lines) + ' 条');
+  else if (art && !art.exists) facts.push('尚无产出文件');
+
+  return html`<div class="mod ${m.state}">
+    <span class="dot ${st.dot}"></span>
+    <div class="mod-main">
+      <div class="mod-title">
+        <b>${m.name}</b>
+        ${m.critical ? html`<span class="badge warn">关键</span>` : ''}
+        <span class="mod-unit mono dim" title="systemd 单元名">${m.unit}</span>
+      </div>
+      <div class="mod-purpose">${m.purpose}</div>
+    </div>
+    <div class="mod-side">
+      <span class="mod-state ${m.state}">${m.note || st.text}</span>
+      ${facts.length ? html`<span class="mod-facts dim">${facts.join(' · ')}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderSysBar(d) {
+  const bar = $('#sysBar');
+  if (!bar) return;
+  const st = MOD_STATE[d.verdict] || MOD_STATE.unknown;
+  const c = d.counts || {};
+  const detail = (d.verdict === 'ok')
+    ? html`<span class="dim">${d.total} 个模块协同工作，全部就绪</span>`
+    : html`<ul class="sys-issues">${(d.attention || []).slice(0, 4).map((x) => html`<li>${x}</li>`)}</ul>`;
+  setHtml(bar, html`<div class="sys-card ${d.verdict}">
+    <div class="sys-head">
+      <span class="dot ${st.dot}"></span>
+      <b class="sys-headline">${d.headline}</b>
+      <span class="sys-counts mono dim">正常 ${c.ok || 0} · 关注 ${c.warn || 0} · 中断 ${c.down || 0}</span>
+      <button class="ghost sm" data-page-jump="settings" data-tab="services">查看模块</button>
+    </div>
+    <div class="sys-body">${detail}</div>
+  </div>`);
+}
+
+async function loadModules() {
+  const box = $('#moduleGroups');
   try {
-    const d = await apiCached('/api/services');
-    const svcs = d.services || [];
-    if (!svcs.length) { setHtml(body, rowSpan(6, EMPTY())); return; }
-    setHtml(body, html`${svcs.map((s) => {
-      const cls = (s.active === 'active' || s.active === 'waiting') ? 'ok' : (s.active === 'inactive' ? 'idle' : 'err');
-      const schedule = s.next ? `下次 ${s.next}` : (s.since || '—');
-      return html`<tr>
-        <td class="mono">${s.unit}</td>
-        <td><span class="dot ${cls}"></span>${SVC_LABEL[s.active] || s.active}</td>
-        <td class="mono dim">${s.sub || '—'}</td>
-        <td class="mono">${s.memory ? fmtBytes(s.memory) : '—'}</td>
-        <td class="mono">${dash(s.restarts)}</td>
-        <td class="mono dim">${schedule}</td>
-      </tr>`;
+    const d = await apiCached('/api/modules');
+    renderSysBar(d);
+    const impl = d.impl || {};
+    setHtml($('#moduleImpl'), html`共 ${d.total} 个模块：${
+      Object.keys(IMPL_LABEL).filter((k) => impl[k])
+        .map((k) => IMPL_LABEL[k] + ' ' + impl[k]).join(' · ')}`);
+    if (!box) return;
+    const groups = d.groups || [];
+    if (!groups.length) { setHtml(box, EMPTY()); return; }
+    setHtml(box, html`${groups.map((g) => {
+      const st = MOD_STATE[g.state] || MOD_STATE.unknown;
+      return html`<div class="mod-group">
+        <div class="mod-group-head">
+          <span class="dot ${st.dot}"></span><b>${g.name}</b>
+          <span class="dim">${g.modules.length} 个模块</span>
+        </div>
+        ${g.modules.map(moduleRow)}
+      </div>`;
     })}`);
   } catch (e) {
-    setHtml(body, rowSpan(6, errState(e)));
+    setHtml(box, errState(e));
+    setHtml($('#sysBar'), stateHtml('模块状态加载失败：' + e.message, 'error'));
   }
 }
 
@@ -2290,9 +2373,9 @@ async function runOp(op, label, args, isDangerous) {
     if (['sync_rules', 'rollback_rules', 'cert_check', 'cert_renew', 'build_rules',
       'rebuild_rules', 'classify_authority', 'set_rule_sources'].indexOf(op) >= 0
       && state.page === 'settings') loadRules();
-    if (['restart_mosproxy', 'restart_unbound'].indexOf(op) >= 0) setTimeout(loadServices, 1500);
+    if (['restart_mosproxy', 'restart_unbound'].indexOf(op) >= 0) setTimeout(loadModules, 1500);
     if (['backup', 'export'].indexOf(op) >= 0) loadBackups();
-    if (op === 'rotate_doh_path') { loadDohInfo(); setTimeout(loadServices, 1500); }
+    if (op === 'rotate_doh_path') { loadDohInfo(); setTimeout(loadModules, 1500); }
     if (op === 'clear_audit') loadAudit();
     if (['clear_domains', 'clear_domains_all', 'purge_legacy'].indexOf(op) >= 0) {
       loadCollected();
@@ -2312,10 +2395,22 @@ async function runOp(op, label, args, isDangerous) {
   }
 }
 
+function jumpTo(page, tab) {
+  switchPage(page);
+  if (!tab) return;
+  const btn = $('#settingTabs button[data-stab="' + tab + '"]');
+  if (btn) btn.click();
+}
+
 function bindEvents() {
   $('#nav').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-page]');
     if (btn) switchPage(btn.dataset.page);
+  });
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-page-jump]');
+    if (btn) jumpTo(btn.dataset.pageJump, btn.dataset.tab);
   });
 
   const bindTabs = (tabsSel, attr, onSwitch) => {

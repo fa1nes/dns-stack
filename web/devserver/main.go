@@ -44,11 +44,27 @@ func main() {
 		w.Header().Set("Cache-Control", "no-store")
 		if strings.HasSuffix(name, ".html") {
 			data = bytes.Replace(data, []byte("</head>"), []byte(mockTag+"</head>"), 1)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		}
+		w.Header().Set("Content-Type", contentType(name))
 		w.Write(data)
 	})
 
 	fmt.Printf("前端开发服务器: http://%s/  (已注入 mock-api.js，不需要任何后端)\n", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
+}
+
+func contentType(name string) string {
+	switch filepath.Ext(name) {
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".js":
+		return "text/javascript; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".json":
+		return "application/json; charset=utf-8"
+	}
+	return "application/octet-stream"
 }
