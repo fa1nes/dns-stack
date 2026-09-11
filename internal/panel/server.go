@@ -1098,6 +1098,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	routing["direct4_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "direct4.txt"))
 	routing["cn_authority_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "cn-authority.txt"))
 	routing["cn_zones_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "cn-zones-matched.txt"))
+	routing["exits"] = s.exitAddresses(r.Context())
 
 	if s.role() == "cn-resolver" {
 		for key, active := range s.routingServiceState(r) {

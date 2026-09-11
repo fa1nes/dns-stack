@@ -38,9 +38,13 @@ func (s *Server) exitAddresses(ctx context.Context) map[string]any {
 	publicV4, _ := data["public_ipv4"].(string)
 	tunnelPeer, _ := data["tunnel_peer"].(string)
 	info := map[string]any{
-		"available": true,
-		"direct":    s.exitGeoLabel(publicV4),
-		"tunnel":    s.exitGeoLabel(tunnelPeer),
+		"available":  true,
+		"direct":     s.exitGeoLabel(publicV4),
+		"tunnel":     s.exitGeoLabel(tunnelPeer),
+		"direct_ip":  publicV4,
+		"tunnel_ip":  tunnelPeer,
+		"direct_geo": s.exitGeoInfo(publicV4),
+		"tunnel_geo": s.exitGeoInfo(tunnelPeer),
 
 		"tunnel_note": data["tunnel_peer_note"],
 	}
@@ -51,16 +55,33 @@ func (s *Server) exitAddresses(ctx context.Context) map[string]any {
 }
 
 func (s *Server) exitGeoLabel(ip string) any {
+	geo := s.exitGeoInfo(ip)
+	if label, ok := geo["label"].(string); ok && label != "" {
+		return label
+	}
 	if ip == "" {
 		return nil
 	}
+	return "归属库未收录"
+}
+
+// exitGeoInfo 返回结构化的出口归属（含 IP），供面板直接展示出口线路。
+func (s *Server) exitGeoInfo(ip string) map[string]any {
+	geo := map[string]any{"ip": ip, "available": false}
+	if ip == "" {
+		return geo
+	}
 	result := s.geoLookup(ip)
 	if available, _ := result["available"].(bool); available {
+		geo["available"] = true
 		if label, ok := result["label"].(string); ok && label != "" {
-			return label
+			geo["label"] = label
+		}
+		if country, ok := result["country"].(string); ok && country != "" {
+			geo["country"] = country
 		}
 	}
-	return "归属库未收录"
+	return geo
 }
 
 func (s *Server) geoipStatus() map[string]any {

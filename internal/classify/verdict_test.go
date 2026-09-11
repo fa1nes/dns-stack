@@ -148,6 +148,77 @@ func TestArbitraryCommonCNAMEDoesNotValidateConflict(t *testing.T) {
 	expect(t, "reason", v.Reason, ReasonViewsConflict)
 }
 
+func TestSplitHorizonGeoDNSStaysDomestic(t *testing.T) {
+	// 权威按解析器位置分水：CN 视角全落大陆、境外视角全在境外，
+	// CNAME 链不在已知 geo-steering 名单里，此前会被误判成 views_conflict 推去隧道。
+	v := decide(t, "split.example",
+		answer([]string{"split.example.cdn-custom.example"}, "125.89.169.195", "140.205.31.96"),
+		answer([]string{"split.example.cdn-custom.example"}, "17.253.200.10"),
+		withMainland(mainlandOf("125.89.169.195", "140.205.31.96")))
+	expect(t, "route", v.Route, RouteCN)
+	expect(t, "reason", v.Reason, ReasonSplitHorizon)
+	expect(t, "status", v.Status, StatusCN)
+}
+
+func TestSplitHorizonRejectsMixedCNView(t *testing.T) {
+	// CN 视角里混进一个境外地址：可能是部分劫持，不能按分水放行。
+	v := decide(t, "mixed.example",
+		answer(nil, "125.89.169.195", "8.8.8.8"),
+		answer(nil, "17.253.200.10"),
+		withMainland(mainlandOf("125.89.169.195")))
+	expect(t, "route", v.Route, RouteForeign)
+	expect(t, "reason", v.Reason, ReasonViewsConflict)
+	expect(t, "status", v.Status, StatusUnknown)
+}
+
+func TestSplitHorizonRejectsForeignLandingInMainland(t *testing.T) {
+	// 境外视角也落在大陆：不是清晰的分水，维持保守判定。
+	v := decide(t, "both-cn.example",
+		answer(nil, "125.89.169.195"),
+		answer(nil, "140.205.31.96"),
+		withMainland(mainlandOf("125.89.169.195", "140.205.31.96")))
+	expect(t, "reason", v.Reason, ReasonViewsConflict)
+	expect(t, "status", v.Status, StatusUnknown)
+}
+
+func TestPollutionStillBeatsSplitHorizon(t *testing.T) {
+	// CN 视角命中污染清单时，即使落点形态像分水也必须先走污染分支。
+	v := decide(t, "poisoned.example",
+		answer(nil, "157.240.7.20"), answer(nil, "17.253.200.10"),
+		withPolluted("157.240.7.20"), withMainland(mainlandOf("157.240.7.20")))
+	expect(t, "status", v.Status, StatusGFW)
+	expect(t, "reason", v.Reason, ReasonCNViewPolluted)
+}
+
+func TestMinorityNonGlobalAnswerDoesNotVoidView(t *testing.T) {
+	// 多记录应答混入一个私网地址：其余全局地址仍应让视角可用，
+	// 不能再一票否决整个视角把域名推去隧道。
+	v := decide(t, "mostly-good.example",
+		answer(nil, "125.89.169.195", "192.168.10.1"),
+		answer(nil, "17.253.200.10"),
+		withMainland(mainlandOf("125.89.169.195")))
+	expect(t, "route", v.Route, RouteCN)
+	expect(t, "reason", v.Reason, ReasonSplitHorizon)
+	if len(v.AnomalousIPs) != 1 || v.AnomalousIPs[0].String() != "192.168.10.1" {
+		t.Errorf("混入的私网地址应单列进异常清单，得到 %v", v.AnomalousIPs)
+	}
+
+	allBad := decide(t, "all-bad.example",
+		answer(nil, "127.0.0.1", "192.168.10.1"),
+		answer(nil, "8.8.8.8"))
+	expect(t, "全异常仍走异常分支", allBad.Reason, ReasonAbnormalCNAnswer)
+	expect(t, "route", allBad.Route, RouteForeign)
+}
+
+func TestCNPollutionUnconfirmedIsRechecked(t *testing.T) {
+	for _, r := range recheckReasons {
+		if r == ReasonCNPollutionUnconfirmed {
+			return
+		}
+	}
+	t.Error("cn_pollution_unconfirmed_hk 必须在复检清单里，否则香港侧一次抖动就把污染域名永久悬置")
+}
+
 func TestAbnormalAnswersPreferTheSafeView(t *testing.T) {
 	hijacked := decide(t, "hijacked.example", answer(nil, "127.0.0.1"), answer(nil, "8.8.8.8"))
 	expect(t, "route", hijacked.Route, RouteForeign)
@@ -183,7 +254,8 @@ func TestLandingVerdicts(t *testing.T) {
 	disagree := decide(t, "apps.apple.com",
 		answer(nil, "125.89.169.195"), answer(nil, "17.253.200.10"), withMainland(mainland))
 	expect(t, "landing", disagree.Landing, LandingMainland)
-	expect(t, "视角冲突时不因落点晋级", disagree.Status, StatusUnknown)
+	expect(t, "国内视角全落大陆且境外视角全在境外，按分水晋级",
+		disagree.Status, StatusCN)
 
 	mixed := answer(nil, "140.205.31.96", "17.253.200.10")
 	mixedVerdict := decide(t, "gs-loc.apple.com", mixed, mixed, withMainland(mainland))

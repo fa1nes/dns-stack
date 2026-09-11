@@ -68,10 +68,16 @@ function fmtBytes(n) {
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return v.toFixed(v >= 100 || i === 0 ? 0 : 1) + ' ' + u[i];
 }
-function fmtNum(n) {
+const fmtNum = (n) => {
   if (n === null || n === undefined) return '—';
-  return Number(n).toLocaleString('zh-CN');
-}
+  n = Number(n);
+  if (n >= 1e8) return (n / 1e8).toFixed(n >= 1e9 ? 0 : 1).replace(/\.0$/, '') + ' 亿';
+  if (n >= 1e5) return (n / 1e4).toFixed(n >= 1e6 ? 0 : 1).replace(/\.0$/, '') + ' 万';
+  return n.toLocaleString('zh-CN');
+};
+
+// 完整数字（千分位），供 title 悬浮显示
+const fmtNumFull = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('zh-CN'));
 
 const dash = (v, unit) => (v === null || v === undefined ? '—' : String(v) + (unit || ''));
 
@@ -444,8 +450,8 @@ function renderOverviewUpstreams(list) {
   })}`);
 }
 
-const statCard = (num, label, sub, cls) => html`<div class="card stat">
-    <div class="num ${cls || ''}">${num}</div>
+const statCard = (num, label, sub, cls, title) => html`<div class="card stat">
+    <div class="num ${cls || ''}" title="${title || ''}">${num}</div>
     <div class="label">${label}</div>
     ${sub ? html`<div class="sub">${sub}</div>` : raw('')}
   </div>`;
@@ -456,7 +462,8 @@ function renderOverviewStats(d) {
   const errR = m.error_ratio || 0;
   setHtml($('#ovStats'), html`${[
     statCard(m.available ? fmtNum(m.query_total) : '—', 'mosproxy 累计请求',
-      m.available ? 'QPS ' + (m.qps || 0) : '指标不可用', 'accent'),
+      m.available ? 'QPS ' + (m.qps || 0) : '指标不可用', 'accent',
+      m.available ? fmtNumFull(m.query_total) : ''),
     statCard(m.available ? hit.toFixed(1) + '%' : '—', '缓存命中率',
       m.available ? '命中 ' + fmtNum(m.cache_hit_total) + ' · 缓存条目 ' + fmtNum(m.cache_entries) : '',
       hit >= 50 ? 'ok' : (hit >= 20 ? 'warn' : '')),
@@ -477,7 +484,8 @@ function eventsCard(ev, m) {
       + '执行 sudo dns-stack health 查看 collector', 'err');
   }
   return statCard(fmtNum(ev.last_1h || 0), '近 1 小时请求',
-    '近 5 分钟 ' + fmtNum(ev.last_5m || 0) + ' · 域名 ' + fmtNum(ev.domains || 0));
+    '近 5 分钟 ' + fmtNum(ev.last_5m || 0) + ' · 域名 ' + fmtNum(ev.domains || 0), '',
+    fmtNumFull(ev.last_1h || 0));
 }
 
 function routingCard(rt) {
@@ -495,11 +503,38 @@ function routingCard(rt) {
       ? ['权威集合为空', fmtNum(zones) + ' 个直连域名的权威一段也未收录，解析会改走隧道']
     : null;
 
-  return fault
-    ? statCard(fault[0], '递归出口分流', fault[1], 'err')
-    : statCard('正常', '递归出口分流',
-        '大陆 ' + fmtNum(direct4) + ' 段 · 大陆权威 ' + fmtNum(authority)
-        + ' 段 · 直连域名 ' + fmtNum(zones) + ' 个', 'ok');
+  const ex = rt.exits || {};
+  const cnLine = exitLine('大陆直连', ex.direct_geo, ex.direct_ip, '未配置');
+  const hkLine = exitLine('香港隧道', ex.tunnel_geo, ex.tunnel_ip, '未建立');
+
+  if (fault) {
+    return html`<div class="card stat err">
+      <div class="num">${fault[0]}</div>
+      <div class="label">递归出口分流</div>
+      <div class="sub">${fault[1]}</div>
+      ${exitPathHtml(cnLine, hkLine)}
+    </div>`;
+  }
+  return html`<div class="card stat ok">
+    <div class="num">正常</div>
+    <div class="label">递归出口分流</div>
+    ${exitPathHtml(cnLine, hkLine)}
+  </div>`;
+}
+
+function exitLine(name, geo, ip, emptyText) {
+  const g = geo || {};
+  const label = g.label || (ip ? '归属未知' : emptyText);
+  return { name: name, label: label, ip: ip || '', known: !!g.label };
+}
+
+function exitPathHtml(cn, hk) {
+  const row = (e) => html`<div class="exit-line">
+    <span class="exit-name">${e.name}</span>
+    <span class="exit-geo${e.known ? '' : ' dim'}">${e.label}</span>
+    ${e.ip ? html`<span class="exit-ip">${e.ip}</span>` : ''}
+  </div>`;
+  return html`<div class="exit-path">${row(cn)}${row(hk)}</div>`;
 }
 
 function latencyCard(lat, m) {
@@ -715,12 +750,13 @@ function routingSummary(rt) {
   const detailRows = [];
   const ex = rt.exits;
   if (ex && ex.available) {
-    detailRows.push(['出口归属', html`
-      <div>直连　<span>${ex.direct || '未配置'}</span></div>
-      <div>经隧道　<span>${ex.tunnel || '未建立'}</span>${ex.tunnel_note
-          ? html`<span class="note-xs text-warn">${ex.tunnel_note}</span>` : ''}</div>`]);
+    detailRows.push(['出口线路', html`
+      ${exitPathHtml(
+        exitLine('大陆直连', ex.direct_geo, ex.direct_ip, '未配置'),
+        exitLine('香港隧道', ex.tunnel_geo, ex.tunnel_ip, '未建立'))}
+      ${ex.tunnel_note ? html`<div class="note-xs text-warn">${ex.tunnel_note}</div>` : ''}`]);
   } else if (ex) {
-    detailRows.push(['出口归属', html`<span class="badge warn">取不到：${ex.error || '未知原因'}</span>`]);
+    detailRows.push(['出口线路', html`<span class="badge warn">取不到：${ex.error || '未知原因'}</span>`]);
   }
   if (rt.viewer_subnet) {
     detailRows.push(['查询身份', html`<span class="mono">${rt.viewer_subnet}</span>　${ecsVerdict(rt.ecs)}`]);
@@ -1003,8 +1039,20 @@ function ecsVerdict(e) {
     + '<span class="note-xs">应答 scope=0，对所有子网通用</span>');
 }
 
-const routeBadge = (r) =>
-  html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
+const EXIT_NAMES = {
+  cache: '缓存命中', direct: '大陆直连', tunnel: '香港隧道',
+  hongkong: '香港递归', reject: '已拒绝', unknown: '未知',
+};
+const EXIT_CLS = { cache: 'cache', direct: 'cn', tunnel: 'foreign', hongkong: 'foreign', reject: 'reject' };
+
+const exitBadge = (path) => html`<span class="badge ${EXIT_CLS[path] || 'unknown'}">${EXIT_NAMES[path] || path}</span>`;
+
+const routeBadge = (r) => {
+  const badge = html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
+  return (r.route === 'cn' || r.route === 'foreign') && r.exit_path
+    ? html`${badge} <span class="exit-tag">${EXIT_NAMES[r.exit_path] || r.exit_path}</span>`
+    : badge;
+};
 const rcodeBadge = (r) =>
   html`<span class="badge ${r.rcode === 0 ? 'ok' : (r.rcode === 3 ? 'warn' : 'err')}">${r.rcode_name}</span>`;
 
@@ -1422,8 +1470,8 @@ async function loadDomainSummary() {
     (d.by_exit || []).forEach((x) => { byExit[x.path] = x.count; });
     const exitCount = (k) => byExit[k] || 0;
     setHtml($('#domSummary'), html`${[
-      statCard(fmtNum(exitCount('direct')), '直连出网', '近 24 小时', 'ok'),
-      statCard(fmtNum(exitCount('tunnel') + exitCount('hongkong')), '经隧道出网', '近 24 小时', 'accent'),
+      statCard(fmtNum(exitCount('direct')), '大陆直连', '近 24 小时', 'ok'),
+      statCard(fmtNum(exitCount('tunnel') + exitCount('hongkong')), '香港隧道', '近 24 小时', 'accent'),
       statCard(fmtNum(d.new_24h || 0), '近 24 小时新增',
         '近 1 小时活跃 ' + fmtNum(d.active_1h || 0)),
       statCard(fmtNum(d.failing || 0), '近 24 小时失败',

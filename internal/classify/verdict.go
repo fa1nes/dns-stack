@@ -40,6 +40,7 @@ const (
 	ReasonIdenticalAnswer        = "identical_answer"
 	ReasonSharedGeoDNSChain      = "shared_geodns_chain"
 	ReasonViewsConflict          = "views_conflict_foreign_preferred"
+	ReasonSplitHorizon           = "split_horizon_cn_landing"
 	ReasonViewsAgreeNXDomain     = "views_agree_nxdomain"
 	ReasonIndeterminate          = "indeterminate_dns_result"
 	ReasonBothViewsTransient     = "both_views_transient"
@@ -53,7 +54,7 @@ var recheckReasons = []string{
 	ReasonIdenticalAnswer, ReasonSharedGeoDNSChain, ReasonViewsConflict,
 	ReasonAbnormalForeignAnswer, ReasonAbnormalCNAnswer, ReasonIndeterminate,
 	ReasonBothViewsTransient, ReasonNoFinalIP, ReasonBothViewsFailed,
-	ReasonManualRemoved, ReasonBaselineInvalidated,
+	ReasonManualRemoved, ReasonBaselineInvalidated, ReasonCNPollutionUnconfirmed,
 }
 
 var (
@@ -119,7 +120,9 @@ func inspect(o *resolve.Outcome, polluted *cidrutil.Set) view {
 			v.polluted = append(v.polluted, addr)
 		}
 	}
-	v.usable = len(v.ips) > 0 && len(v.abnormal) == 0
+	// 全局地址过半即视为可用：个别权威应答混入私网/文档段时，
+	// 异常地址已单列进 abnormal 供审计，不应一票否决整个视角。
+	v.usable = len(v.ips) > 0 && len(v.abnormal)*2 <= len(v.ips)
 	return v
 }
 
@@ -141,9 +144,9 @@ func Decide(in Input, override string, mainland Mainland, polluted *cidrutil.Set
 		reason, anomalous = ReasonCNPollutionUnconfirmed, cn.polluted
 	case len(foreign.polluted) > 0:
 		reason, anomalous = ReasonForeignViewPolluted, foreign.polluted
-	case len(cn.abnormal) > 0:
+	case !cn.usable && len(cn.abnormal) > 0:
 		route, reason, anomalous = routeIf(foreign.usable, RouteForeign), ReasonAbnormalCNAnswer, cn.abnormal
-	case len(foreign.abnormal) > 0:
+	case !foreign.usable && len(foreign.abnormal) > 0:
 		route, reason, anomalous = routeIf(cn.usable, RouteCN), ReasonAbnormalForeignAnswer, foreign.abnormal
 	case cn.usable && foreign.usable:
 		switch {
@@ -151,6 +154,8 @@ func Decide(in Input, override string, mainland Mainland, polluted *cidrutil.Set
 			route, reason = RouteCN, ReasonIdenticalAnswer
 		case sharesGeoSteeredChain(cn.chain, foreign.chain):
 			route, reason = RouteCN, ReasonSharedGeoDNSChain
+		case splitHorizonCN(cn.ips, foreign.ips, mainland):
+			route, reason = RouteCN, ReasonSplitHorizon
 		default:
 			route, reason = RouteForeign, ReasonViewsConflict
 		}
@@ -208,7 +213,8 @@ func staticStatus(override, landing string, polluted bool, route, reason string)
 		return StatusGFW
 	}
 	if route == RouteCN &&
-		(reason == ReasonIdenticalAnswer || reason == ReasonSharedGeoDNSChain) &&
+		(reason == ReasonIdenticalAnswer || reason == ReasonSharedGeoDNSChain ||
+			reason == ReasonSplitHorizon) &&
 		(landing == LandingMainland || landing == LandingMixed) {
 		return StatusCN
 	}
@@ -263,6 +269,28 @@ func sharesGeoSteeredChain(left, right []string) bool {
 		}
 	}
 	return false
+}
+
+// splitHorizonCN 识别权威按解析器位置分水的域名：
+// 两侧视角都可用、答案完全不同、国内视角全部落在direct4、
+// 境外视角没有一个落在大陆——这是 GeoDNS 正常工作而非污染。
+// 污染证据（polluted/abnormal）在进入本函数前已被更高优先级分支拦截。
+func splitHorizonCN(cnIPs, foreignIPs []netip.Addr, mainland Mainland) bool {
+	cnGlobal := globalOnly(cnIPs)
+	if len(cnGlobal) == 0 {
+		return false
+	}
+	for _, addr := range cnGlobal {
+		if !mainland.IsMainland(addr) {
+			return false
+		}
+	}
+	for _, addr := range globalOnly(foreignIPs) {
+		if mainland.IsMainland(addr) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameAddrs(left, right []netip.Addr) bool {
