@@ -24,7 +24,7 @@ jobs:
         run: |
           unformatted="$(gofmt -l cmd internal web)"
           if [ -n "$unformatted" ]; then
-            echo "以下文件未格式化:" >&2
+            echo "The following files are not gofmt-formatted:" >&2
             echo "$unformatted" >&2
             exit 1
           fi
@@ -66,9 +66,9 @@ jobs:
               n=$5; b=32; while (n > 1) { n /= 2; b-- } print $4"/"b
           }' apnic.txt > state/chnroute/direct4.txt
           lines=$(wc -l < state/chnroute/direct4.txt)
-          echo "  direct4: ${lines} 段"
+          echo "  direct4: ${lines} prefixes"
           if [ "$lines" -lt 1000 ]; then
-            echo "direct4 只有 ${lines} 段，达不到真实量级，门禁失去意义" >&2
+            echo "direct4 has only ${lines} prefixes, far below production scale; the gate would prove nothing" >&2
             exit 1
           fi
           echo "sources=${have}" >> "$GITHUB_OUTPUT"
@@ -84,32 +84,32 @@ jobs:
           gate() {
             local name="$1"; shift
             if ! /usr/bin/time -f '%M %e' -o metrics.txt "$@" > out.txt 2> err.txt; then
-              echo "::error::${name} 执行失败"; cat err.txt; return 1
+              echo "::error::${name} failed to run"; cat err.txt; return 1
             fi
             local rss sec
             read -r rss sec < metrics.txt
-            echo "${name}: 峰值 RSS ${rss} KB / 耗时 ${sec}s (上限 ${MAX_RSS_KB} KB / ${MAX_SECONDS}s)"
+            echo "${name}: peak RSS ${rss} KB / elapsed ${sec}s (limits ${MAX_RSS_KB} KB / ${MAX_SECONDS}s)"
             if over "$rss" "$MAX_RSS_KB"; then
-              echo "::error::${name} 峰值内存 ${rss} KB 超过上限 ${MAX_RSS_KB} KB"
-              echo "2026-09-07 就是这类缺陷把生产机 OOM 掀翻的，不要拿服务器试性能"
+              echo "::error::${name} peak memory ${rss} KB exceeds the ${MAX_RSS_KB} KB limit"
+              echo "A regression of exactly this kind OOM-killed the production resolver on 2026-09-07; do not benchmark on the server"
               return 1
             fi
             if over "$sec" "$MAX_SECONDS"; then
-              echo "::error::${name} 耗时 ${sec}s 超过上限 ${MAX_SECONDS}s"
+              echo "::error::${name} took ${sec}s, over the ${MAX_SECONDS}s limit"
               return 1
             fi
             return 0
           }
 
-          over 100 10 || { echo "::error::门禁自证失败：100 > 10 没被判为超限"; exit 1; }
-          if over 10 100; then echo "::error::门禁自证失败：10 > 100 被判为超限"; exit 1; fi
-          if MAX_RSS_KB=1 gate 自证-必须失败 true; then
-            echo "::error::门禁自证失败：把上限压到 1KB 后 gate 仍然通过"; exit 1
+          over 100 10 || { echo "::error::self-test failed: 100 > 10 was not reported as over the limit"; exit 1; }
+          if over 10 100; then echo "::error::self-test failed: 10 > 100 was reported as over the limit"; exit 1; fi
+          if MAX_RSS_KB=1 gate self-test-must-fail true; then
+            echo "::error::self-test failed: the gate still passed with the limit set to 1 KB"; exit 1
           fi
-          if ! gate 自证-必须通过 true; then
-            echo "::error::门禁自证失败：正常命令在宽松上限下没通过"; exit 1
+          if ! gate self-test-must-pass true; then
+            echo "::error::self-test failed: a trivial command did not pass under generous limits"; exit 1
           fi
-          echo "门禁自证通过：超限会拦、不超限会放行"
+          echo "Gate self-test passed: it blocks when over the limit and lets through when under"
 
           gate direct4-audit ./dns-stack direct4-audit --state ./state --dry-run --list 0
           ./dns-stack direct4-audit --state ./state --list 0 > /dev/null
@@ -124,8 +124,8 @@ jobs:
       - name: report skipped gate
         if: steps.inputs.outputs.sources == '0'
         run: |
-          echo "::warning::一个归属库都没拉到，规模门禁未执行"
-          echo "先跑 geoip.yml 生成 geoip-latest Release，否则这个门禁形同虚设"
+          echo "::warning::no geolocation database could be fetched, so the scale gate did not run"
+          echo "Run the geoip workflow first to publish the geoip-latest release, otherwise this gate is vacuous"
 
   release:
     needs: verify
@@ -174,11 +174,11 @@ jobs:
           case "$info" in
             *"statically linked"*) ;;
             *)
-              echo "::error::$binary 不是静态链接的。HK 是 Alpine(musl)，动态链接的产物在那里跑不起来" >&2
+              echo "::error::$binary is not statically linked. The offshore node runs Alpine (musl), where a dynamically linked build will not start" >&2
               exit 1 ;;
           esac
           if command -v readelf >/dev/null && readelf -l "$binary" 2>/dev/null | grep -q INTERP; then
-            echo "::error::$binary 仍带 PT_INTERP 段，说明依赖动态链接器" >&2
+            echo "::error::$binary still carries a PT_INTERP segment, so it depends on a dynamic loader" >&2
             exit 1
           fi
 
@@ -200,10 +200,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: binaries-latest
-          name: 最新构建（滚动）
+          name: Rolling build from main
           body: |
-            由 CI 从 `${{ github.sha }}` 构建的静态二进制，供 install.sh / install-hk-classifier.sh 直接下载。
-            **不要在生产机上编译**——那正是 2026-09-07 把生产 DNS 搞停 10 分钟的起点。
+            Statically linked `dns-stack` binaries built by CI from commit `${{ github.sha }}`.
+            This release tag always points at the newest build of the `main` branch, so the
+            assets below are replaced on every push. Pin a tagged release instead if you need
+            a fixed version.
+
+            | Asset | Target |
+            | --- | --- |
+            | `dns-stack-linux-amd64` | Linux x86-64, static (no libc required) |
+            | `dns-stack-linux-arm64` | Linux ARM64, static (no libc required) |
+            | `dns-stack-windows-amd64.exe` | Windows x86-64 |
+
+            Every binary ships with a matching `.sha256` file. `install.sh` and
+            `install-hk-classifier.sh` download from here and verify the checksum before
+            installing, so there is no need for a Go toolchain on the target host.
           prerelease: true
           files: dist/*
           fail_on_unmatched_files: true
