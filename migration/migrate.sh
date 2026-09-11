@@ -100,18 +100,17 @@ SRC_NAME="$(basename "$PROJECT_ROOT")"
 tar -C "$(dirname "$PROJECT_ROOT")" -c "$SRC_NAME" | zstd -q -T0 | \
     ssh "${SSH_OPTS[@]}" "$TARGET" "zstd -d -q | tar -C $INCOMING -x"
 
-MOSPROXY_EXPECTED="$(mosproxy_expected_version "$PROJECT_ROOT")" \
-    || die "versions.lock 与 mosproxy 补丁序列不一致"
-if mosproxy_artifact_matches /opt/dns-stack/bin/mosproxy "$MOSPROXY_EXPECTED"; then
+if MOSPROXY_VERSION="$(mosproxy_artifact_version /opt/dns-stack/bin/mosproxy)" \
+   && mosproxy_artifact_matches /opt/dns-stack/bin/mosproxy "$MOSPROXY_VERSION"; then
     ssh_run "mkdir -p $INCOMING/$SRC_NAME/bin"
     scp "${SSH_OPTS[@]}" \
         /opt/dns-stack/bin/mosproxy \
         /opt/dns-stack/bin/mosproxy.sha256 \
         /opt/dns-stack/bin/mosproxy.build-id \
         "$TARGET:$INCOMING/$SRC_NAME/bin/"
-    log_ok "已附带验证过的 mosproxy 二进制(${MOSPROXY_EXPECTED})"
+    log_ok "已附带验证过的 mosproxy 二进制(${MOSPROXY_VERSION})"
 elif [[ -x /opt/dns-stack/bin/mosproxy ]]; then
-    log_err "当前 mosproxy 不含补丁指纹 ${MOSPROXY_EXPECTED}，未附带；目标机将使用源码包产物或现场构建"
+    log_err "本机 mosproxy 的版本指纹自检不通过，未附带；目标机会从 Release 拉最新版"
 fi
 log_ok "传输完成"
 
