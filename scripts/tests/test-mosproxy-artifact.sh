@@ -4,37 +4,45 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/mosproxy-artifact-common.sh"
 
-EXPECTED="$(mosproxy_expected_version "$ROOT")"
 REPO="$(mosproxy_expected_repo "$ROOT")"
-
-if [[ ! "$EXPECTED" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "artifact_version 不是 vX.Y.Z: $EXPECTED" >&2
-    exit 1
-fi
 if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-    echo "repo 不是 owner/name: $REPO" >&2
+    echo "versions.lock 的 repo 不是 owner/name: $REPO" >&2
     exit 1
 fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf -- "$WORK"' EXIT
 
-cat > "$WORK/good" <<EOF
+VERSION="v9.8.7"
+cat > "$WORK/mosproxy" <<EOF
 #!/usr/bin/env bash
-printf ' version %s\\n' '$EXPECTED'
+printf ' version %s\\n' '$VERSION'
 EOF
+chmod +x "$WORK/mosproxy"
+mosproxy_write_metadata "$WORK/mosproxy" "$VERSION"
+
+got="$(mosproxy_artifact_version "$WORK/mosproxy")"
+[[ "$got" == "$VERSION" ]] || { echo "版本应当从 build-id 读出，得到 $got" >&2; exit 1; }
+
+got="$(mosproxy_installed_version "$WORK/mosproxy")"
+[[ "$got" == "$VERSION" ]] || { echo "版本应当能从 --version 读出，得到 $got" >&2; exit 1; }
+
+mosproxy_artifact_matches "$WORK/mosproxy" "$VERSION"
+
+printf 'tampered\n' >> "$WORK/mosproxy"
+! mosproxy_artifact_matches "$WORK/mosproxy" "$VERSION"
+
+printf 'not-a-version\n' > "$WORK/mosproxy.build-id"
+! mosproxy_artifact_version "$WORK/mosproxy"
+
+rm -f "$WORK/mosproxy.build-id"
+! mosproxy_artifact_version "$WORK/mosproxy"
+
 cat > "$WORK/old" <<'EOF'
 #!/usr/bin/env bash
-echo ' version dev/unknown'
+echo ' version dns-stack/80afb0117d50-p16-25d24786b7d94d9b'
 EOF
-chmod +x "$WORK/good" "$WORK/old"
+chmod +x "$WORK/old"
+! mosproxy_installed_version "$WORK/old"
 
-mosproxy_binary_matches "$WORK/good" "$EXPECTED"
-! mosproxy_binary_matches "$WORK/old" "$EXPECTED"
-mosproxy_write_metadata "$WORK/good" "$EXPECTED"
-mosproxy_artifact_matches "$WORK/good" "$EXPECTED"
-
-printf 'tampered\n' >> "$WORK/good"
-! mosproxy_artifact_matches "$WORK/good" "$EXPECTED"
-
-echo "MOSPROXY_ARTIFACT_OK $REPO $EXPECTED"
+echo "MOSPROXY_ARTIFACT_OK $REPO (版本随 Release 走，不写死)"

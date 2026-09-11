@@ -9,10 +9,20 @@ mosproxy_lock_value() {
         | sed -E 's/.*:[[:space:]]*//; s/,[[:space:]]*$//; s/^"//; s/"$//'
 }
 
-mosproxy_expected_version() {
-    local root="$1" version
-    version="$(mosproxy_lock_value "$root" artifact_version)"
+mosproxy_artifact_version() {
+    local binary="$1" version
+    [[ -s "${binary}.build-id" ]] || return 1
+    version="$(tr -d '\r\n' < "${binary}.build-id")"
     [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    printf '%s\n' "$version"
+}
+
+mosproxy_installed_version() {
+    local binary="$1" output version
+    [[ -x "$binary" ]] || return 1
+    output="$("$binary" --version 2>&1)" || return 1
+    version="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<<"$output" | head -1)"
+    [[ -n "$version" ]] || return 1
     printf '%s\n' "$version"
 }
 
