@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
 const (
@@ -18,17 +20,13 @@ const (
 	maxUpdateBytes = 8192
 )
 
-var allowedUnits = map[string]bool{
-	"mosproxy": true, "unbound": true, "dns-stack-panel": true, "dns-stack-helper": true,
-	"dns-stack-sync-rules": true, "dns-stack-collect-polluted": true,
-	"dns-stack-renew-cert": true, "dns-stack-backup": true,
-	"dns-stack-reference-data": true, "dns-stack-classify": true,
-	"dns-stack-verify": true, "dns-stack-publish": true,
-	"dns-stack-recursive-routing": true, "dns-stack-chnroute": true, "dns-stack-cn-authority": true,
-	"dns-stack-geoip": true, "dns-stack-routing-watchdog": true,
-	"dns-stack-ecs-zone": true, "dns-stack-geo-cross": true,
-	"wg-quick@wg0": true,
-}
+var allowedUnits = func() map[string]bool {
+	out := map[string]bool{}
+	for _, m := range stack.All() {
+		out[m.Unit] = true
+	}
+	return out
+}()
 
 var allowedPriorities = map[string]bool{
 	"emerg": true, "alert": true, "crit": true, "err": true,

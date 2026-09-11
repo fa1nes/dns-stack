@@ -98,6 +98,8 @@ func main() {
 		err = cmdPanel(args)
 	case "panel-auth":
 		err = cmdPanelAuth(args)
+	case "status":
+		err = cmdStatus(args)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -118,7 +120,8 @@ func usage() {
   dns-stack <子命令> [参数]
 
 子命令:
-  domain-check    对每行域名输出形态判据结果（用于与 Python 版对拍）
+  status          一屏看完本机全部模块：分组、状态、上次/下次运行（--json 输出机器可读）
+  domain-check    对每行域名输出形态判据结果
   ipset-check     加载 CIDR 集合并对每行 IP 输出是否命中
   geoip-check     查询 IP 归属并输出 JSON 或标签
   geoip-verify    校验归属库能否解析、类型是否正确、国家码/ASN 抽查是否可信

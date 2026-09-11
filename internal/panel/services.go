@@ -1,36 +1,18 @@
 package panel
 
 import (
-	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
-var cnUnits = []string{
-	"mosproxy", "unbound", "dns-stack-recursive-routing",
-	"dns-stack-helper", "dns-stack-panel",
-	"dns-stack-sync-rules", "dns-stack-collect-polluted",
-	"dns-stack-chnroute", "dns-stack-cn-authority",
-	"dns-stack-routing-watchdog", "dns-stack-geoip",
-	"dns-stack-ecs-zone", "dns-stack-geo-cross",
-	"dns-stack-renew-cert", "dns-stack-backup", "wg-quick@wg0",
-}
-
-var globalUnits = []string{
-	"unbound", "dns-stack-helper", "dns-stack-panel",
-	"dns-stack-reference-data", "dns-stack-classify",
-	"dns-stack-verify", "dns-stack-publish",
-	"dns-stack-backup", "wg-quick@wg0",
-}
-
 func (s *Server) watchedUnits() []string {
-	if s.role() == "cn-resolver" {
-		return cnUnits
-	}
-	return globalUnits
+	return stack.UnitsForRole(s.role())
 }
 
 func (s *Server) watchedUnit(unit string) bool {
@@ -152,7 +134,7 @@ func parseServiceProps(unit string, resp map[string]any) map[string]any {
 		case "SubState":
 			entry["sub"] = value
 		case "ExecMainStartTimestamp":
-			entry["since"] = value
+			entry["since"] = epochSeconds(value)
 		case "MemoryCurrent":
 			if isDigits(value) {
 				entry["memory"] = parseInt(value, 0)
@@ -166,27 +148,55 @@ func parseServiceProps(unit string, resp map[string]any) map[string]any {
 	if timer["LoadState"] == "loaded" {
 		entry["timer_active"] = propGet(timer, "ActiveState")
 		entry["timer_sub"] = propGet(timer, "SubState")
-		entry["next"] = propOrNil(timer, "NextElapseUSecRealtime")
-		entry["last_trigger"] = propOrNil(timer, "LastTriggerUSec")
+		entry["next"] = microSeconds(timer["NextElapseUSecRealtime"])
+		entry["last_trigger"] = microSeconds(timer["LastTriggerUSec"])
 		entry["last_result"] = propOrNil(service, "Result")
 		if entry["active"] == "inactive" && timer["ActiveState"] == "active" {
 			entry["active"] = "waiting"
-			status := service["ExecMainStatus"]
-			result := service["Result"]
-			if result == "" {
-				result = "unknown"
-			}
-			sub := timer["SubState"]
-			if sub == "" {
-				sub = "active"
-			}
-			entry["sub"] = fmt.Sprintf("timer %s / %s", sub, result)
-			if status != "" && status != "0" {
+			entry["sub"] = timer["SubState"]
+			if status := service["ExecMainStatus"]; status != "" && status != "0" {
 				entry["active"] = "failed"
 			}
 		}
 	}
 	return entry
+}
+
+var systemdStampLayouts = []string{
+	"Mon 2006-01-02 15:04:05 MST",
+	"Mon 2006-01-02 15:04:05",
+	"2006-01-02 15:04:05 MST",
+}
+
+func epochSeconds(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "n/a" {
+		return nil
+	}
+	if seconds, err := strconv.ParseInt(strings.TrimPrefix(value, "@"), 10, 64); err == nil {
+		if seconds <= 0 {
+			return nil
+		}
+		return seconds
+	}
+	for _, layout := range systemdStampLayouts {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			return parsed.Unix()
+		}
+	}
+	return nil
+}
+
+func microSeconds(value string) any {
+	value = strings.TrimSpace(value)
+	if !isDigits(value) {
+		return nil
+	}
+	micros, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || micros <= 0 {
+		return nil
+	}
+	return micros / 1e6
 }
 
 func propGet(props map[string]string, key string) any {

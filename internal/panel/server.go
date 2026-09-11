@@ -139,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/collected", s.collected)
 	mux.HandleFunc("/api/audit", s.audit)
 	mux.HandleFunc("/api/services", s.services)
+	mux.HandleFunc("/api/modules", s.modules)
 	mux.HandleFunc("/api/ops", s.opsList)
 	mux.HandleFunc("/api/auth/config", s.authConfig)
 	mux.HandleFunc("/api/auth/oauth", s.authOAuth)
