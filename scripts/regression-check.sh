@@ -353,10 +353,9 @@ has "mosproxy 管道启用 pipefail(否则崩溃被判成正常退出)" \
 has "mosproxy 用 Restart=always(DNS 不该有正常退出这个状态)" \
     "$SRC/systemd/mosproxy.service" '^Restart=always'
 has "mosproxy 有重启风暴护栏" "$SRC/systemd/mosproxy.service" '^StartLimitBurst='
-has "fall_through 同请求重试补丁存在" \
-    "$SRC/patches/mosproxy-commits/0013-fix-retry-fall-through-backends-per-query.patch" \
-    'backend returned SERVFAIL'
-a "mosproxy 锁定提交与补丁序列指纹一致" bash "$SRC/scripts/tests/test-mosproxy-artifact.sh"
+has "mosproxy 由 fork 发布而非本机编译" "$SRC/versions.lock" '"build_method": "fork release"'
+hasnt "install.sh 不再在生产机编译 mosproxy" "$SRC/install.sh" 'build-mosproxy.sh'
+a "mosproxy 产物指纹校验(含篡改阴性对照)" bash "$SRC/scripts/tests/test-mosproxy-artifact.sh"
 
 sec "内核参数与日志"
 has "内核放开 rmem_max 以配合 so-rcvbuf" "$SRC/docs/sysctl-cn.conf" '^net\.core\.rmem_max'
@@ -391,7 +390,9 @@ has "门禁用真实量级的 direct4 而不是玩具数据" \
     "$SRC/.github/workflows/build.yml" 'delegated-apnic-latest'
 has "拉不到归属库时门禁明确报 skip 而不是静默通过" \
     "$SRC/.github/workflows/build.yml" '门禁形同虚设'
-has "发布依赖规模门禁" "$SRC/.github/workflows/build.yml" 'needs: \[verify, scale-gate\]'
+has "门禁自证过两个方向(判据自己不能只走一条通路)" \
+    "$SRC/.github/workflows/build.yml" '门禁自证通过'
+hasnt "出二进制不被门禁挡住" "$SRC/.github/workflows/build.yml" 'needs: \[verify, scale-gate\]'
 has "权威集合生成排在交叉计算之后" \
     "$SRC/systemd/dns-stack-cn-authority.service" 'dns-stack-geo-cross'
 has "分片表生成排在交叉计算之后" \

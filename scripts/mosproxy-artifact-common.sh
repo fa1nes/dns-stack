@@ -9,46 +9,18 @@ mosproxy_lock_value() {
         | sed -E 's/.*:[[:space:]]*//; s/,[[:space:]]*$//; s/^"//; s/"$//'
 }
 
-mosproxy_patch_count() {
-    local root="$1" patch count=0
-    for patch in "$root"/patches/mosproxy-commits/*.patch; do
-        [[ -e "$patch" ]] || continue
-        count=$((count + 1))
-    done
-    printf '%s\n' "$count"
-}
-
-mosproxy_patch_series_hash() {
-    local root="$1" patch sum count=0
-    local manifest=""
-
-    for patch in "$root"/patches/mosproxy-commits/*.patch; do
-        [[ -e "$patch" ]] || continue
-        sum="$(sha256sum "$patch" | awk '{print $1}')" || return 1
-        manifest+="${sum}  $(basename "$patch")"$'\n'
-        count=$((count + 1))
-    done
-    [[ "$count" -gt 0 ]] || return 1
-    printf '%s' "$manifest" | sha256sum | awk '{print $1}'
-}
-
 mosproxy_expected_version() {
-    local root="$1" pin expected_count actual_count series_hash locked_hash locked_version version
-    pin="$(mosproxy_lock_value "$root" pinned_commit)"
-    locked_hash="$(mosproxy_lock_value "$root" patch_series_sha256)"
-    locked_version="$(mosproxy_lock_value "$root" artifact_version)"
-    expected_count="$(mosproxy_lock_value "$root" local_patch_count)"
-    actual_count="$(mosproxy_patch_count "$root")"
-    series_hash="$(mosproxy_patch_series_hash "$root")"
-
-    [[ "$pin" =~ ^[0-9a-fA-F]{40}$ ]] || return 1
-    [[ "$expected_count" =~ ^[0-9]+$ ]] || return 1
-    [[ "$actual_count" == "$expected_count" ]] || return 1
-    [[ "$series_hash" =~ ^[0-9a-f]{64}$ ]] || return 1
-    [[ "$series_hash" == "$locked_hash" ]] || return 1
-    version="dns-stack/${pin:0:12}-p${actual_count}-${series_hash:0:16}"
-    [[ "$version" == "$locked_version" ]] || return 1
+    local root="$1" version
+    version="$(mosproxy_lock_value "$root" artifact_version)"
+    [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
     printf '%s\n' "$version"
+}
+
+mosproxy_expected_repo() {
+    local root="$1" repo
+    repo="$(mosproxy_lock_value "$root" repo)"
+    [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+    printf '%s\n' "$repo"
 }
 
 mosproxy_binary_matches() {

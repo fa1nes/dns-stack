@@ -5,10 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/mosproxy-artifact-common.sh"
 
 EXPECTED="$(mosproxy_expected_version "$ROOT")"
+REPO="$(mosproxy_expected_repo "$ROOT")"
 
-PATCH_COUNT="$(mosproxy_patch_count "$ROOT")"
-if [[ ! "$EXPECTED" =~ ^dns-stack/[0-9a-f]{12}-p${PATCH_COUNT}-[0-9a-f]{16}$ ]]; then
-    echo "版本串与实际补丁序列不符: $EXPECTED (补丁数 $PATCH_COUNT)" >&2
+if [[ ! "$EXPECTED" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "artifact_version 不是 vX.Y.Z: $EXPECTED" >&2
+    exit 1
+fi
+if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    echo "repo 不是 owner/name: $REPO" >&2
     exit 1
 fi
 
@@ -33,4 +37,4 @@ mosproxy_artifact_matches "$WORK/good" "$EXPECTED"
 printf 'tampered\n' >> "$WORK/good"
 ! mosproxy_artifact_matches "$WORK/good" "$EXPECTED"
 
-echo "MOSPROXY_ARTIFACT_OK $EXPECTED"
+echo "MOSPROXY_ARTIFACT_OK $REPO $EXPECTED"
