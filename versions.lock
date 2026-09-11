@@ -37,15 +37,15 @@
     "fallback_2": "https://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest"
   },
   "mosproxy": {
-    "_comment": "改动已提交进 fork fa1nes/mosproxy(基点 80afb01，16 个提交)，不再以 patch 序列的形式留在本仓库。二进制由 fork 自己的 release-binaries.yml 在打 tag 时构建并发布，本仓库只负责下载校验。真实命令是 `mosproxy router -c config.yaml`(不是 proxy 子命令，proxy 只是无配置文件的简易模式，不支持域名集/规则)。",
+    "_comment": "改动已提交进 fork fa1nes/mosproxy(基点 80afb01)，不再以 patch 序列的形式留在本仓库。二进制由 fork 自己的 release-binaries.yml 在打 tag 时构建并发布，本仓库只锁仓库、不锁版本：install.sh 从 releases/latest/download 拉最新 Release，版本号取自产物自带的 build-id。真实命令是 `mosproxy router -c config.yaml`(不是 proxy 子命令，proxy 只是无配置文件的简易模式，不支持域名集/规则)。",
     "repo": "fa1nes/mosproxy",
     "upstream": "https://github.com/IrineSistiana/mosproxy",
     "branch": "dev",
     "fork_base_commit": "80afb0117d50963642e49404525589820743620a",
     "fork_base_commit_date": "2026-03-10T08:47:55Z",
     "build_method": "fork release",
-    "artifact_version": "v0.2.0",
-    "artifact_validation": "embedded version + adjacent SHA256/build-id",
+    "artifact_channel": "latest release",
+    "artifact_validation": "build-id 给出版本，再要求 SHA256 与内嵌版本三者互相印证",
     "routing_cache_key": "includes matched forward tag",
     "ecs_suppression": "only for non-global client addresses (unmarked global space keeps its real prefix)",
     "fall_through_behavior": "retries transport errors and SERVFAIL on the next backend within the same query",

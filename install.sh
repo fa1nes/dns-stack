@@ -225,7 +225,7 @@ record_installed_versions() {
         done
         echo
         echo "  },"
-        echo "  \"mosproxy\": \"$(mosproxy_expected_repo "$SCRIPT_DIR" 2>/dev/null || echo unknown)@$(mosproxy_expected_version "$SCRIPT_DIR" 2>/dev/null || echo unknown)\","
+        echo "  \"mosproxy\": \"$(mosproxy_expected_repo "$SCRIPT_DIR" 2>/dev/null || echo unknown)@$(mosproxy_installed_version "$OPT_DIR/bin/mosproxy" 2>/dev/null || echo unknown)\","
         echo "  \"dns_stack\": \"$("$OPT_DIR/bin/dns-stack-go" version 2>/dev/null | awk '{print $2}' || echo unknown)\""
         echo "}"
     } > "$tmp"
@@ -395,9 +395,8 @@ install_mosproxy_candidate() {
 }
 
 download_mosproxy() {
-    local repo="$1" arch="$2" expected="$3"
-    local path="${repo}/releases/download/${expected}/mosproxy-linux-${arch}"
-    local direct="https://github.com/${path}"
+    local repo="$1" arch="$2"
+    local direct="https://github.com/${repo}/releases/latest/download/mosproxy-linux-${arch}"
     local srcs=(
         "https://ghfast.top/${direct}"
         "https://gh-proxy.com/${direct}"
@@ -405,26 +404,40 @@ download_mosproxy() {
         "${direct}"
     )
     local tmp="$OPT_DIR/bin/.mosproxy.dl" sum="${tmp}.sha256" build_id="${tmp}.build-id"
-    local u
+    local u released installed
     for u in "${srcs[@]}"; do
         rm -f "$tmp" "$sum" "$build_id"
         curl -fsSL --max-time 300 "$u" -o "$tmp" 2>/dev/null || continue
         [[ -s "$tmp" ]] || continue
         if ! curl -fsSL --max-time 60 "${u}.sha256" -o "$sum" 2>/dev/null; then
-            log_warn "  ${u%%/*}//... 取不到校验和，跳过该源"
+            log_warn "  取不到校验和，换下一个源"
             continue
         fi
         if ! curl -fsSL --max-time 60 "${u}.build-id" -o "$build_id" 2>/dev/null; then
-            log_warn "  ${u%%/*}//... 取不到构建身份，跳过该源"
+            log_warn "  取不到构建身份，换下一个源"
             continue
         fi
         chmod +x "$tmp"
-        if mosproxy_artifact_matches "$tmp" "$expected" \
-           && install_mosproxy_candidate "$tmp" "$expected" "${u}"; then
+        if ! released="$(mosproxy_artifact_version "$tmp")"; then
+            log_warn "  build-id 不是 vX.Y.Z 形式，换下一个源"
+            continue
+        fi
+        if ! mosproxy_artifact_matches "$tmp" "$released"; then
+            log_warn "  最新版 ${released} 的产物自检不通过($(du -h "$tmp" | cut -f1))，换下一个源"
+            continue
+        fi
+        installed="$(mosproxy_installed_version "$OPT_DIR/bin/mosproxy" 2>/dev/null || true)"
+        if [[ "$installed" == "$released" ]] \
+           && mosproxy_checksum_matches "$OPT_DIR/bin/mosproxy" "$sum"; then
+            mosproxy_write_metadata "$OPT_DIR/bin/mosproxy" "$released"
+            log_info "  已安装的 mosproxy 就是最新版 ${released}，保留不动"
             rm -f "$tmp" "$sum" "$build_id"
             return 0
         fi
-        log_warn "  Release 产物校验失败($(du -h "$tmp" | cut -f1))，换下一个源"
+        if install_mosproxy_candidate "$tmp" "$released" "${repo} 最新 Release ${released}"; then
+            rm -f "$tmp" "$sum" "$build_id"
+            return 0
+        fi
     done
     rm -f "$tmp" "$sum" "$build_id"
     return 1
@@ -434,7 +447,7 @@ step8_deploy_mosproxy() {
     log_info "[8/17] 部署 mosproxy..."
     mkdir -p "$OPT_DIR/bin" /etc/dns-stack/mosproxy
 
-    local mp_repo mp_arch expected bundled candidate locked_repo
+    local mp_repo mp_arch expected bundled bundled_version candidate locked_repo
     locked_repo="$(mosproxy_expected_repo "$SCRIPT_DIR")" \
         || die "versions.lock 里的 mosproxy repo 不是 owner/name 形式"
     mp_repo="$(cfg_or_default MOSPROXY_REPO "$locked_repo")"
@@ -444,33 +457,32 @@ step8_deploy_mosproxy() {
         *) mp_arch="" ;;
     esac
     [[ -n "$mp_arch" ]] || die "不支持为 $(uname -m) 部署 mosproxy"
-    expected="$(mosproxy_expected_version "$SCRIPT_DIR")" \
-        || die "versions.lock 的 mosproxy artifact_version 不是 vX.Y.Z 形式"
 
-    if mosproxy_binary_matches "$OPT_DIR/bin/mosproxy" "$expected"; then
-        mosproxy_write_metadata "$OPT_DIR/bin/mosproxy" "$expected"
-        log_info "  已安装 mosproxy 与当前补丁指纹一致，保留使用"
-    else
-        bundled=""
-        for candidate in "$SCRIPT_DIR/bin/mosproxy-linux-${mp_arch}" "$SCRIPT_DIR/bin/mosproxy"; do
-            [[ -f "$candidate" ]] && chmod +x "$candidate"
-            if mosproxy_artifact_matches "$candidate" "$expected"; then
-                bundled="$candidate"
-                break
-            fi
-        done
-
-        if [[ -n "$bundled" ]] \
-           && install_mosproxy_candidate "$bundled" "$expected" "源码包已验证产物"; then
-            :
-        elif download_mosproxy "$mp_repo" "$mp_arch" "$expected"; then
-            :
-        else
-            die "取不到 ${mp_repo} 的 ${expected} 产物(mosproxy-linux-${mp_arch})。不在生产机编译，请确认该 tag 的 Release 已发布且包含 .sha256 与 .build-id"
+    bundled=""
+    for candidate in "$SCRIPT_DIR/bin/mosproxy-linux-${mp_arch}" "$SCRIPT_DIR/bin/mosproxy"; do
+        [[ -f "$candidate" ]] || continue
+        chmod +x "$candidate"
+        if bundled_version="$(mosproxy_artifact_version "$candidate")" \
+           && mosproxy_artifact_matches "$candidate" "$bundled_version"; then
+            bundled="$candidate"
+            break
         fi
+    done
+
+    if [[ -n "$bundled" ]] \
+       && install_mosproxy_candidate "$bundled" "$bundled_version" "源码包已验证产物 ${bundled_version}"; then
+        :
+    elif download_mosproxy "$mp_repo" "$mp_arch"; then
+        :
+    else
+        die "取不到 ${mp_repo} 最新 Release 的 mosproxy-linux-${mp_arch}。不在生产机编译，请确认该仓库已发布 Release 且随产物附带 .sha256 与 .build-id"
     fi
+
+    expected="$(mosproxy_artifact_version "$OPT_DIR/bin/mosproxy")" \
+        || die "mosproxy 安装后缺少 build-id 或其格式不是 vX.Y.Z"
     mosproxy_artifact_matches "$OPT_DIR/bin/mosproxy" "$expected" \
-        || die "mosproxy 安装后的补丁指纹或 SHA256 复核失败"
+        || die "mosproxy 安装后的版本指纹或 SHA256 复核失败"
+    log_ok "  mosproxy ${expected} 就位"
 
     local tpl_rev cur_rev
     tpl_rev="$(grep -m1 -oE '^# template-rev:[[:space:]]*[0-9]+' \
