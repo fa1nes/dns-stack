@@ -157,6 +157,6 @@ dns-stack version
 | [`docs/使用指南.md`](docs/使用指南.md) | 日常运维操作 |
 | [`docs/故障模式.md`](docs/故障模式.md) | **反复出现的故障模式**——每一条都是实际踩出来的，多数不止一次 |
 | [`memory.md`](memory.md) | 架构、判定规则、验证入口、部署铁律 |
-| [`patches/FORK-NOTES.zh-CN.md`](patches/FORK-NOTES.zh-CN.md) | mosproxy fork 的补丁序列说明 |
+| [`fa1nes/mosproxy` 的 FORK-NOTES](https://github.com/fa1nes/mosproxy/blob/dev/FORK-NOTES.zh-CN.md) | mosproxy fork 改了什么、为什么 |
 
 新接手先读 `docs/故障模式.md`：这个项目最贵的经验都在那里。
