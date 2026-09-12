@@ -69,7 +69,8 @@ func TestClassifyExitPath(t *testing.T) {
 		{"www.qq.com", "cn", "direct"},
 		{"qq.com", "cn", "direct"},
 		{"github.com", "cn", "tunnel"},
-		{"github.com", "cache", "cache"},
+		{"www.qq.com", "cache", "direct"},
+		{"github.com", "cache", "tunnel"},
 		{"github.com", "foreign", "hongkong"},
 		{"github.com", "reject", "reject"},
 		{"github.com", "unknown", "unknown"},
@@ -81,11 +82,25 @@ func TestClassifyExitPath(t *testing.T) {
 		}
 	}
 
+	for _, name := range []string{"www.qq.com", "github.com", "a.b.example"} {
+		live := ClassifyExitPath(zones, name, "cn")
+		cached := ClassifyExitPath(zones, name, "cache")
+		if live != cached {
+			t.Errorf("%s 的出口不该因为命中缓存而改变: 直查 %q vs 缓存 %q", name, live, cached)
+		}
+	}
+	if ClassifyExitPath(zones, "github.com", "cache") == "cache" {
+		t.Error("缓存命中必须落到真实出口，否则占七成的流量在出口分布里整个消失")
+	}
+
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	if got := ClassifyExitPath(NewZoneSet(path), "www.qq.com", "cn"); got != "tunnel" {
 		t.Errorf("清单缺失时 = %q，期望 tunnel", got)
+	}
+	if got := ClassifyExitPath(NewZoneSet(path), "www.qq.com", "cache"); got != "tunnel" {
+		t.Errorf("清单缺失时缓存命中也应保守判为 tunnel，得到 %q", got)
 	}
 }
 

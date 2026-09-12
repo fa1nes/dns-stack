@@ -314,7 +314,7 @@ has "人工区域 NS 截断用 awk 不用 head" "$SRC/scripts/update-cn-authorit
 hasnt "cn-authority 不解除 EXIT trap 后手写清单" "$SRC/scripts/update-cn-authority.sh" '^trap - EXIT$'
 has "归属库校验走 Go 子命令" "$SRC/scripts/update-geoip.sh" 'geoip-verify --kind'
 has "拉取端会取 DB-IP 交叉库" "$SRC/scripts/update-geoip.sh" 'dbip-city\.mmdb'
-has "拉取端会取 IPinfo 交叉库" "$SRC/scripts/update-geoip.sh" 'ipinfo-lite\.mmdb'
+hasnt "不再引用需要 token 的 IPinfo 库" "$SRC/scripts/update-geoip.sh" 'ipinfo'
 has "拉取端报出可交叉源数量而非只报下载成功数" "$SRC/scripts/update-geoip.sh" '多源交叉可用源'
 has "update-geoip 的 EXIT trap 显式返回 0" "$SRC/scripts/update-geoip.sh" 'return 0'
 has "重分类期间会禁用自动发布" "$CLI" 'disable --now dns-stack-publish.timer'

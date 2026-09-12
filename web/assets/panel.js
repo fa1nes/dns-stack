@@ -899,7 +899,7 @@ function ecsWhy(e) {
     : `\nECS ${e.subnet} → 权威回 scope=0，此答案对所有子网通用`;
 }
 
-const IP_SOURCE_KIND = { qqwry: 'cn', maxmind: 'global', dbip: 'global', ipinfo: 'global', ipsb: 'online' };
+const IP_SOURCE_KIND = { qqwry: 'cn', maxmind: 'global', dbip: 'global', ipsb: 'online' };
 const IP_FIELDS = [
   ['country', '国家/地区'], ['region', '省/州'], ['city', '城市'],
   ['asn', 'ASN'], ['as_org', 'AS 组织'], ['carrier', '运营商'], ['owner', '注册主体'],
@@ -935,7 +935,7 @@ function ipFreshnessHtml(freshness) {
   if (!freshness) return '';
   const names = {
     cnip: '纯真 qqwry', asn: 'GeoLite2 ASN', city: 'GeoLite2 City',
-    dbip_asn: 'DB-IP ASN', dbip_city: 'DB-IP Country', ipinfo: 'IPinfo Lite',
+    dbip_asn: 'DB-IP ASN', dbip_city: 'DB-IP Country',
   };
   const rows = Object.keys(names).filter((k) => freshness[k]).map((k) => {
     const f = freshness[k];
@@ -1053,9 +1053,11 @@ const EXIT_CLS = { cache: 'cache', direct: 'cn', tunnel: 'foreign', hongkong: 'f
 
 const exitBadge = (path) => html`<span class="badge ${EXIT_CLS[path] || 'unknown'}">${EXIT_NAMES[path] || path}</span>`;
 
+const ROUTED_EXITS = { direct: 1, tunnel: 1, hongkong: 1 };
+
 const routeBadge = (r) => {
   const badge = html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
-  return (r.route === 'cn' || r.route === 'foreign') && r.exit_path
+  return ROUTED_EXITS[r.exit_path]
     ? html`${badge} <span class="exit-tag">${EXIT_NAMES[r.exit_path] || r.exit_path}</span>`
     : badge;
 };

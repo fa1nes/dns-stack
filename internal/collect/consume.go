@@ -38,18 +38,15 @@ func ClassifyRoute(respBy string) string {
 
 func ClassifyExitPath(zones *ZoneSet, domain, route string) string {
 	switch route {
-	case "cache":
-		return "cache"
 	case "foreign":
 		return "hongkong"
+	case "cn", "cache":
+		if zones.Covers(domain) {
+			return "direct"
+		}
+		return "tunnel"
 	}
-	if route != "cn" {
-		return route
-	}
-	if zones.Covers(domain) {
-		return "direct"
-	}
-	return "tunnel"
+	return route
 }
 
 type ZoneSet struct {
