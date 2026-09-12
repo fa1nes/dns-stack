@@ -27,7 +27,8 @@
   --r: 10px;
   --r-lg: 14px;
   --ease: cubic-bezier(.4, 0, .2, 1);
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+          "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "HarmonyOS Sans SC",
           "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
 }
@@ -277,7 +278,8 @@ body.sb-fold .fold-btn { color: var(--accent); }
 
 .stat .sub {
   font-size: 11.5px; color: var(--text-dim); margin-top: auto; padding-top: 10px;
-  font-family: var(--mono); line-height: 1.55;
+  font-family: var(--sans); font-variant-numeric: tabular-nums;
+  line-height: 1.6; overflow-wrap: anywhere;
 }
 
 .num.ok { color: var(--ok); } .num.warn { color: var(--warn); }
@@ -566,7 +568,6 @@ pre.block {
 .chart .g-line { stroke: var(--border-soft); stroke-width: 1; shape-rendering: crispEdges; }
 .chart text { font-family: var(--mono); font-size: 10px; fill: var(--text-dim); }
 .chart .g-tick { text-anchor: end; }
-.chart .g-time { text-anchor: middle; }
 .chart path { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .chart .s-cn { stroke: var(--ok); }
 .chart .s-foreign { stroke: var(--accent); }
@@ -838,10 +839,18 @@ code { overflow-wrap: anywhere; }
   .topbar h2 { font-size: 15px; }
   .page-desc { display: none; }
   .content { padding: 14px; max-width: none; }
+  .tabs:not(.main-tabs) { flex-wrap: wrap; overflow-x: visible; row-gap: 0; }
+  .tabs button { padding: 8px 10px; font-size: 12.5px; }
+  .grid { gap: 12px; margin-bottom: 14px; }
   .grid.c4 { grid-template-columns: repeat(2, 1fr); }
   .grid.c3 { grid-template-columns: 1fr; }
-  .stat .num { font-size: 21px; }
-  /* 抽屉：移动端改为从底部弹出，且中文正文与代码字号协调 */
+  .card { padding: 14px 15px; }
+  .card h3 { font-size: 13.5px; margin-bottom: 11px; }
+  .stat .num { font-size: 21px; letter-spacing: -.3px; }
+  .stat .label { font-size: 12px; margin-top: 4px; }
+  .stat .sub { font-size: 11px; padding-top: 8px; line-height: 1.55; }
+  .exit-line { font-size: 11.5px; line-height: 1.6; }
+  .exit-name { font-size: 11px; }
   .drawer {
     width: 100vw; height: 82vh; max-height: 82vh;
     top: auto; bottom: 0; right: 0; left: 0;
@@ -860,9 +869,9 @@ code { overflow-wrap: anywhere; }
   .drawer-details .dd-body { padding: 10px 12px; font-size: 13px; }
   .drawer-foot { font-size: 13px; }
   .drawer-foot .hint { font-size: 12px; margin-top: 0; }
-  .kv { grid-template-columns: 1fr; gap: 3px 0; font-size: 14px; }
-  .kv dt { margin-top: 8px; font-size: 12.5px; }
-  .kv dd { font-size: 13.5px; }
+  .kv { grid-template-columns: minmax(5.5rem, auto) 1fr; gap: 6px 10px; font-size: 13px; }
+  .kv dt { margin-top: 0; font-size: 12.5px; color: var(--text-dim); }
+  .kv dd { font-size: 13px; margin: 0; text-align: right; overflow-wrap: anywhere; }
   pre.block { font-size: 12px; }
   .hint { font-size: 12px; }
   .log-view { height: 54vh; font-size: 11px; }
@@ -872,20 +881,25 @@ code { overflow-wrap: anywhere; }
 }
 
 @media (max-width: 640px) {
-  #liveBody, #domBody, #svcBody, #auditBody { display: block; }
+  #liveBody, #domBody, #auditBody, #ovUpstreamBody { display: block; }
 
-  .table-wrap.card-rows { overflow-x: visible; }
+  .table-wrap.card-rows:has(#liveBody),
+  .table-wrap.card-rows:has(#domBody),
+  .table-wrap.card-rows:has(#auditBody),
+  .table-wrap.card-rows:has(#ovUpstreamBody) { overflow-x: visible; }
 
-  table.card-rows { display: block; }
+  table.card-rows:has(#liveBody), table.card-rows:has(#domBody),
+  table.card-rows:has(#auditBody), table.card-rows:has(#ovUpstreamBody) { display: block; }
 
-  table.card-rows thead { display: none; }
+  table.card-rows:has(#liveBody) thead, table.card-rows:has(#domBody) thead,
+  table.card-rows:has(#auditBody) thead, table.card-rows:has(#ovUpstreamBody) thead { display: none; }
 
-  #liveBody tr, #domBody tr, #svcBody tr, #auditBody tr {
+  #liveBody tr, #domBody tr, #auditBody tr, #ovUpstreamBody tr {
     display: flex; flex-wrap: wrap; align-items: center;
     gap: 2px 9px; padding: 9px 12px;
     border-bottom: 1px solid var(--border-soft);
   }
-  #liveBody td, #domBody td, #svcBody td, #auditBody td {
+  #liveBody td, #domBody td, #auditBody td, #ovUpstreamBody td {
     display: inline-flex; align-items: center;
     padding: 0; border: none; white-space: nowrap;
     font-size: 11.5px; color: var(--text-muted);
@@ -893,15 +907,20 @@ code { overflow-wrap: anywhere; }
 
   #liveBody td:nth-child(2),
   #domBody td:nth-child(1),
-  #svcBody td:nth-child(1),
+  #ovUpstreamBody td:nth-child(1),
   #auditBody td:nth-child(2) {
     order: -1; flex: 0 0 100%;
     font-size: 13.5px; color: var(--text);
     white-space: normal; word-break: break-all; line-height: 1.35;
   }
 
+  #ovUpstreamBody td:nth-child(3)::before { content: "成功率"; color: var(--text-dim); margin-right: 3px; }
+  #ovUpstreamBody td:nth-child(4)::before { content: "平均"; color: var(--text-dim); margin-right: 3px; }
+  #ovUpstreamBody td:nth-child(5)::before { content: "P95"; color: var(--text-dim); margin-right: 3px; }
+  #ovUpstreamBody td:nth-child(6) { margin-left: auto; }
+
   #liveBody td[colspan], #domBody td[colspan],
-  #svcBody td[colspan], #auditBody td[colspan] {
+  #auditBody td[colspan], #ovUpstreamBody td[colspan] {
     flex: 0 0 100%; display: block; font-size: 13px;
   }
 
@@ -914,9 +933,6 @@ code { overflow-wrap: anywhere; }
 
   #liveBody td:nth-child(9), #auditBody td:nth-child(6) { margin-left: auto; }
 
-  #svcBody td:nth-child(4)::before { content: "内存"; color: var(--text-dim); margin-right: 3px; }
-  #svcBody td:nth-child(5)::before { content: "重启"; color: var(--text-dim); margin-right: 3px; }
-  #svcBody td:nth-child(6) { flex: 0 0 100%; color: var(--text-dim); font-size: 11px; }
 
   #auditBody td:nth-child(1) { color: var(--text-dim); }
   #auditBody td:nth-child(4), #auditBody td:nth-child(5) {
@@ -1034,7 +1050,7 @@ details.card[open] > summary::before { content: '▾ '; }
 @media (max-width: 300px) {
   .mono, td, .hint, .sec-desc, .sec-note { overflow-wrap: anywhere; }
 
-  #liveBody td, #domBody td, #svcBody td, #auditBody td { white-space: normal; }
+  #liveBody td, #domBody td, #auditBody td, #ovUpstreamBody td { white-space: normal; }
   .row { gap: 4px; }
   .card { padding: 12px 13px; }
   .content { padding: 10px; }
@@ -1111,7 +1127,23 @@ details.card[open] > summary::before { content: '▾ '; }
 .mod-facts { font-size: .72rem; line-height: 1.55; }
 .mod-state { white-space: nowrap; }
 
-@media (max-width: 640px) {
-  .mod { flex-wrap: wrap; }
-  .mod-side { flex-basis: 100%; text-align: left; flex-direction: row; gap: .5rem; align-items: baseline; padding-left: 1rem; }
+@media (max-width: 860px) {
+  .sys-card { padding: 12px 14px; }
+  .sys-headline { font-size: 1rem; }
+  .sys-counts { flex-basis: 100%; order: 3; font-size: .74rem; }
+  .sys-head > button { order: 2; }
+  .sys-issues { font-size: .8rem; padding-left: 1rem; }
+
+  .mod { flex-wrap: wrap; padding: 10px 2px; gap: .4rem; }
+  .mod-main { flex: 1 1 100%; }
+  .mod-title b { font-size: .9rem; }
+  .mod-unit { font-size: .66rem; }
+  .mod-purpose { font-size: .76rem; }
+  .mod-side {
+    flex: 1 1 100%; text-align: left; flex-direction: row;
+    flex-wrap: wrap; gap: .1rem .5rem; align-items: baseline; padding-left: 1.05rem;
+  }
+  .mod-state { font-size: .78rem; }
+  .mod-facts { font-size: .7rem; }
+  .mod-group-head { font-size: .8rem; }
 }

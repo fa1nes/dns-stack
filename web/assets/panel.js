@@ -470,10 +470,10 @@ function renderOverviewStats(d) {
       m.available ? '开机至今 · 每秒 ' + (m.qps || 0) + ' 次' : '指标不可用', 'accent',
       m.available ? fmtNumFull(m.query_total) : ''),
     statCard(m.available ? hit.toFixed(1) + '%' : '—', '缓存命中率',
-      m.available ? '每 100 次查询有 ' + Math.round(hit) + ' 次免去了解析' : '',
+      m.available ? '100 次查询省下 ' + Math.round(hit) + ' 次解析' : '',
       hit >= 50 ? 'ok' : (hit >= 20 ? 'warn' : '')),
     statCard(m.available ? errR.toFixed(2) + '%' : '—', '上游失败率',
-      m.available ? '失败 ' + fmtNum(m.upstream_err_total) + ' / ' + fmtNum(m.upstream_query_total) + ' 次' : '',
+      m.available ? '失败 ' + fmtNum(m.upstream_err_total) + ' / ' + fmtNum(m.upstream_query_total) : '',
       errR > 5 ? 'err' : (errR > 1 ? 'warn' : 'ok')),
     eventsCard(ev, m),
     latencyCard(ev.latency, m),
@@ -545,7 +545,7 @@ function exitPathHtml(cn, hk) {
 function latencyCard(lat, m) {
   if (lat && lat.samples) {
     const p50 = lat.p50;
-    const sub = '一半的查询快于此 · 最慢 5% 超过 ' + dash(lat.p95, ' ms') +
+    const sub = '半数快于此 · 最慢 5% 超 ' + dash(lat.p95, ' ms') +
       (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '');
     return statCard(dash(p50, ' ms'), '响应速度（近 1 小时）', sub,
       p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')));
@@ -678,9 +678,10 @@ function drawChart(d) {
   }
 
   const tickIdx = [0, Math.floor(series.length / 2), series.length - 1];
-  const ticks = tickIdx
-    .filter((v, n) => series[v] && tickIdx.indexOf(v) === n)   // 点数少时三个下标会重合
-    .map((i) => html`<text class="g-time" x="${xAt(i)}" y="${h - 5}">${fmtClock(series[i].t)}</text>`);
+  const kept = tickIdx.filter((v, n) => series[v] && tickIdx.indexOf(v) === n);
+  const anchorAt = (i) => (i === 0 ? 'start' : (i === series.length - 1 ? 'end' : 'middle'));
+  const ticks = kept.map((i) => html`<text class="g-time" text-anchor="${anchorAt(i)}"
+      x="${xAt(i)}" y="${h - 5}">${fmtClock(series[i].t)}</text>`);
 
   const paths = keys.map((k) => {
     const dAttr = series.map(

@@ -12,7 +12,12 @@ skip() { printf "  ${C_D}–${C_0} %s${C_D}%s${C_0}\n" "$1" "${2:+  ($2)}"; SKIP
 sec()  { printf "\n${C_D}── %s ${C_0}\n" "$1"; }
 
 a() { local d="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$d"; else bad "$d"; fi; }
-code_only() { grep -vE '^[[:space:]]*#' "$1" 2>/dev/null; }
+code_only() {
+    case "$1" in
+        *.css|*.js|*.html|*.go) cat "$1" 2>/dev/null ;;
+        *) grep -vE '^[[:space:]]*#' "$1" 2>/dev/null ;;
+    esac
+}
 _grep_code() { local f="$1" p="$2" body; body="$(code_only "$f")"; grep -qE -- "$p" <<<"$body"; }
 
 has() { local d="$1" f="$2" p="$3"
@@ -179,6 +184,12 @@ has "面板判定规则同步链路是否中断" "$WEB/assets/panel.js" 'SYNC_ST
 has "概览首屏给出整机结论而不是只堆指标" "$WEB/index.html" 'id="sysBar"'
 has "模块视图按功能分组展示中文名与用途" "$WEB/assets/panel.js" 'mod-group-head'
 hasnt "服务列表不再直接渲染 systemd 原始字段" "$WEB/index.html" 'id="svcBody"'
+hasnt "移动端不再残留已删表格的样式" "$WEB/assets/panel.css" '#svcBody'
+has "上游健康表在窄屏会重排为卡片(否则整页横向溢出)" "$WEB/assets/panel.css" '#ovUpstreamBody tr'
+has "等宽字体栈带中文兜底(中英混排不再错位)" "$WEB/assets/panel.css" '"Noto Sans CJK SC", monospace'
+has "统计卡副文案用比例字体" "$WEB/assets/panel.css" '\.stat \.sub'
+hasnt "时间轴标签不再被 CSS 统一居中(末位会被裁掉)" "$WEB/assets/panel.css" 'g-time \{ text-anchor'
+has "时间轴按位置分别锚定" "$WEB/assets/panel.js" 'anchorAt'
 a "前端资源已编进二进制(改前端必须重建)" test -f "$SRC/web/embed.go"
 
 sec "机密与脱敏"
