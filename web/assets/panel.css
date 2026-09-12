@@ -273,11 +273,11 @@ body.sb-fold .fold-btn { color: var(--accent); }
 
 .exit-path { margin-top: 8px; }
 .exit-line {
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: baseline; gap: 4px 8px; flex-wrap: wrap;
   font-size: var(--fs-sm); line-height: 1.7;
 }
 .exit-name { color: var(--text-dim); flex-shrink: 0; font-size: var(--fs-sm); }
-.exit-geo { color: var(--text); font-weight: 500; }
+.exit-geo { color: var(--text); font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
 .exit-geo.dim { color: var(--text-dim); font-weight: 400; }
 .exit-ip { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-dim); margin-left: auto; }
 .exit-tag { font-size: var(--fs-xs); color: var(--text-dim); margin-left: 4px; white-space: nowrap; }
@@ -860,7 +860,7 @@ code { overflow-wrap: anywhere; }
   .tabs:not(.main-tabs) { flex-wrap: wrap; overflow-x: visible; row-gap: 0; }
   .tabs button { padding: 8px 10px; font-size: var(--fs-sm); }
   .grid { gap: 12px; margin-bottom: 14px; }
-  .grid.c4 { grid-template-columns: repeat(2, 1fr); }
+  .grid.c4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
   .grid.c3 { grid-template-columns: 1fr; }
   .card { padding: 14px 15px; }
   .card h3 { font-size: var(--fs-base); margin-bottom: 11px; }
@@ -1084,6 +1084,21 @@ details.card[open] > summary::before { content: '▾ '; }
 
   input[type="text"], input[type="search"], input[type="number"],
   input[type="password"], select { padding: 7px 10px; }
+
+  .filters button, .filters .btn, .filters label,
+  .card-toolbar button, .card-toolbar .btn {
+    font-size: 16px;
+  }
+  .filters input, .filters select, .filters button, .filters .btn,
+  .card-toolbar button, .card-toolbar .btn {
+    min-height: 40px;
+  }
+  .filters button, .filters .btn { padding: 6px 14px; }
+  .filters label { display: inline-flex; align-items: center; gap: 6px; }
+
+  .card h3 select, .card h3 button {
+    font-size: var(--fs-base); min-height: 0; padding: 4px 8px;
+  }
 }
 
 .ip-head{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}

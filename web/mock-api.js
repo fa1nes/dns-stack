@@ -50,7 +50,9 @@
     events: { last_5m: 214, last_1h: 4389, domains: 853,
               latency: { samples: 4102, avg: 12.4, p50: 1.2, p95: 486, sampled: false, slow_1s: 7 } },
     routing: { direct4_count: 5813, cn_zones_count: 270, cn_authority_count: 387,
-               chain_active: true, tunnel_active: true },
+               chain_active: true, tunnel_active: true,
+               exits: { direct_geo: { label: '中国 广东 深圳 电信' }, direct_ip: '203.0.113.1',
+                        tunnel_geo: { label: '中国 香港 阿里云' }, tunnel_ip: '198.51.100.1' } },
     upstreams: UPSTREAMS,
   };
 
@@ -72,7 +74,7 @@
       route_name: cached ? '缓存命中' : (foreign ? '香港递归' : '本机递归'),
       cache_hit: cached,
       elapsed_ms: i % 11 === 0 ? null : (cached ? 0.42 : 186.3),
-      exit_path: cached ? 'cache' : (foreign ? 'hongkong' : (i % 2 ? 'direct' : 'tunnel')),
+      exit_path: foreign ? 'hongkong' : (i % 2 ? 'direct' : 'tunnel'),
     };
   }
 

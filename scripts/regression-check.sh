@@ -189,11 +189,16 @@ has "上游健康表在窄屏会重排为卡片(否则整页横向溢出)" "$WEB
 has "等宽字体栈带中文兜底(中英混排不再错位)" "$WEB/assets/panel.css" '"Noto Sans CJK SC", monospace'
 has "字号走统一阶梯变量" "$WEB/assets/panel.css" '\-\-fs-base:'
 has "窄屏整体缩放阶梯而不是逐条覆盖" "$WEB/assets/panel.css" '\-\-fs-num: 21px'
-a "除移动端输入框的 16px 外没有字面量字号" \
-    bash -c "[ \"\$(grep -cE 'font-size: *[0-9]' '$WEB/assets/panel.css')\" = 1 ]"
+a "字面量字号只允许 16px(移动端防 iOS 聚焦缩放)" \
+    bash -c "! grep -oE 'font-size: *[0-9.]+px' '$WEB/assets/panel.css' | grep -qv '16px'"
 a "渲染模板不内联字号(会绕过阶梯)" \
     bash -c "! grep -qE 'style=\"[^\"]*font-size' '$WEB/assets/panel.js' '$WEB/index.html'"
 hasnt "统计数字不用等宽体(数值后紧跟万/亿/中文会错开)" "$WEB/assets/panel.css" '\.stat \.num \{[^}]*var\(--mono\)'
+hasnt "窄屏统计卡不硬写两列(320px 下会挤成竖排)" "$WEB/assets/panel.css" 'grid.c4 \{ grid-template-columns: repeat\(2, 1fr\)'
+has "窄屏统计卡按内容自动降列" "$WEB/assets/panel.css" 'grid\.c4 \{ grid-template-columns: repeat\(auto-fit'
+has "筛选行的按钮与输入框同高同字号" "$WEB/assets/panel.css" '\.filters button, \.filters \.btn, \.filters label'
+has "出口线在窄卡片里换行而不是被压成竖排" "$WEB/assets/panel.css" 'gap: 4px 8px; flex-wrap: wrap'
+has "假后端带真实长度的出口归属(短样例会藏住挤压)" "$WEB/mock-api.js" 'direct_geo.*label'
 has "统计卡副文案用比例字体" "$WEB/assets/panel.css" '\.stat \.sub'
 hasnt "时间轴标签不再被 CSS 统一居中(末位会被裁掉)" "$WEB/assets/panel.css" 'g-time \{ text-anchor'
 has "时间轴按位置分别锚定" "$WEB/assets/panel.js" 'anchorAt'
