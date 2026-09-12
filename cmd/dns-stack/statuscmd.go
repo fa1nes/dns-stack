@@ -161,14 +161,17 @@ func unitStatus(unit string) stack.Status {
 	}
 	if timer["LoadState"] == "loaded" {
 		status.TimerActive = timer["ActiveState"]
-		status.LastRun = parseNumber(timer["LastTriggerUSec"]) / 1e6
-		status.NextRun = parseNumber(timer["NextElapseUSecRealtime"]) / 1e6
+		status.LastRun = stack.TimerStamp(timer["LastTriggerUSec"])
+		status.NextRun = stack.TimerStamp(timer["NextElapseUSecRealtime"])
 		if status.Active == "inactive" && status.TimerActive == "active" {
 			status.Active = "waiting"
 			if code := service["ExecMainStatus"]; code != "" && code != "0" {
 				status.Active = "failed"
 			}
 		}
+	}
+	if status.LastRun == 0 {
+		status.LastRun = stack.ServiceStamp(service["ExecMainStartTimestamp"])
 	}
 	return status
 }

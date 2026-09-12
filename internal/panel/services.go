@@ -3,7 +3,6 @@ package panel
 import (
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -148,8 +147,8 @@ func parseServiceProps(unit string, resp map[string]any) map[string]any {
 	if timer["LoadState"] == "loaded" {
 		entry["timer_active"] = propGet(timer, "ActiveState")
 		entry["timer_sub"] = propGet(timer, "SubState")
-		entry["next"] = microSeconds(timer["NextElapseUSecRealtime"])
-		entry["last_trigger"] = microSeconds(timer["LastTriggerUSec"])
+		entry["next"] = timerSeconds(timer["NextElapseUSecRealtime"])
+		entry["last_trigger"] = timerSeconds(timer["LastTriggerUSec"])
 		entry["last_result"] = propOrNil(service, "Result")
 		if entry["active"] == "inactive" && timer["ActiveState"] == "active" {
 			entry["active"] = "waiting"
@@ -162,42 +161,9 @@ func parseServiceProps(unit string, resp map[string]any) map[string]any {
 	return entry
 }
 
-var systemdStampLayouts = []string{
-	"Mon 2006-01-02 15:04:05 MST",
-	"Mon 2006-01-02 15:04:05",
-	"2006-01-02 15:04:05 MST",
-}
+func epochSeconds(value string) any { return nilIfZero(stack.ServiceStamp(value)) }
 
-func epochSeconds(value string) any {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "n/a" {
-		return nil
-	}
-	if seconds, err := strconv.ParseInt(strings.TrimPrefix(value, "@"), 10, 64); err == nil {
-		if seconds <= 0 {
-			return nil
-		}
-		return seconds
-	}
-	for _, layout := range systemdStampLayouts {
-		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
-			return parsed.Unix()
-		}
-	}
-	return nil
-}
-
-func microSeconds(value string) any {
-	value = strings.TrimSpace(value)
-	if !isDigits(value) {
-		return nil
-	}
-	micros, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || micros <= 0 {
-		return nil
-	}
-	return micros / 1e6
-}
+func timerSeconds(value string) any { return nilIfZero(stack.TimerStamp(value)) }
 
 func propGet(props map[string]string, key string) any {
 	if value, ok := props[key]; ok {
