@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/domain"
+	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
@@ -24,17 +25,20 @@ const (
 )
 
 type PullResult struct {
-	Domains       int `json:"domains"`
-	NewCandidates int `json:"new_candidates"`
-	Direct4       int `json:"direct4_prefixes"`
-	CNCIDRs       int `json:"cn_cidrs"`
-	PollutedCIDRs int `json:"polluted_cidrs"`
+	Domains        int    `json:"domains"`
+	NewCandidates  int    `json:"new_candidates"`
+	Direct4        int    `json:"direct4_prefixes"`
+	CNCIDRs        int    `json:"cn_cidrs"`
+	PollutedCIDRs  int    `json:"polluted_cidrs"`
+	DisputedPrefix int    `json:"disputed_prefixes"`
+	DisputedNote   string `json:"disputed_note,omitempty"`
 }
 
 type pullPayload struct {
 	Domains       []collectorCandidate `json:"domains"`
 	PollutedCIDRs []string             `json:"polluted_cidrs"`
 	CNCIDRs       []string             `json:"cn_cidrs"`
+	GeoDisputed   string               `json:"geo_disputed"`
 }
 
 type collectorCandidate struct {
@@ -133,6 +137,8 @@ func (e *Engine) Pull() (PullResult, error) {
 			return result, err
 		}
 	}
+	result.DisputedPrefix, result.DisputedNote = e.storeDisputed(payload.GeoDisputed)
+
 	if len(payload.PollutedCIDRs) > 0 {
 		if err := e.Store.ReplaceCIDRs("polluted", map[string][]string{pollutedSource: payload.PollutedCIDRs}); err != nil {
 			restoreDirect4()
@@ -150,6 +156,41 @@ func (e *Engine) Pull() (PullResult, error) {
 	}
 	result.NewCandidates = inserted
 	return result, nil
+}
+
+func (e *Engine) storeDisputed(body string) (int, string) {
+	if strings.TrimSpace(body) == "" {
+		return 0, "国内节点没有回传多源争议清单"
+	}
+	path := e.DisputedPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return 0, "无法创建争议清单目录: " + err.Error()
+	}
+	temp := path + ".tmp"
+	if err := os.WriteFile(temp, []byte(body), 0o644); err != nil {
+		return 0, "写入争议清单失败: " + err.Error()
+	}
+	snapshot, err := geoaudit.LoadSnapshot(temp)
+	if err != nil {
+		os.Remove(temp)
+		return 0, "回传的争议清单无法解析: " + err.Error()
+	}
+	if snapshot.Kind != geoaudit.KindDisputed {
+		os.Remove(temp)
+		return 0, fmt.Sprintf("回传清单声明的 kind 是 %q，期望 %q，拒绝按错误方向使用",
+			snapshot.Kind, geoaudit.KindDisputed)
+	}
+	if len(snapshot.Sources) < geoaudit.MinSources {
+		os.Remove(temp)
+		return 0, fmt.Sprintf("回传清单只有 %d 个归属库参与交叉（至少 %d 个），不予采用",
+			len(snapshot.Sources), geoaudit.MinSources)
+	}
+	if err := os.Rename(temp, path); err != nil {
+		os.Remove(temp)
+		return 0, "落盘争议清单失败: " + err.Error()
+	}
+	e.disputed = nil
+	return snapshot.Prefixes, ""
 }
 
 func globalPrefixesOf(values []string) ([]string, error) {

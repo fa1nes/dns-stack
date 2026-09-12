@@ -67,6 +67,7 @@ var (
 
 type Mainland interface {
 	IsMainland(addr netip.Addr) bool
+	Judgeable(addr netip.Addr) bool
 }
 
 type Input struct {
@@ -223,10 +224,10 @@ func staticStatus(override, landing string, polluted bool, route, reason string)
 }
 
 func landingVerdict(cnIPs, foreignIPs []netip.Addr, mainland Mainland) string {
-	judged := judgeableOnly(cnIPs)
+	judged := judgeableOnly(cnIPs, mainland)
 	global := globalOnly(cnIPs)
 	if len(global) == 0 {
-		judged, global = judgeableOnly(foreignIPs), globalOnly(foreignIPs)
+		judged, global = judgeableOnly(foreignIPs, mainland), globalOnly(foreignIPs)
 	}
 	if len(global) == 0 {
 		return LandingNoAnswer
@@ -260,15 +261,18 @@ func globalOnly(addrs []netip.Addr) []netip.Addr {
 	return out
 }
 
-func judgeable(addr netip.Addr) bool {
+func judgeable(addr netip.Addr, mainland Mainland) bool {
 	addr = addr.Unmap()
-	return addr.Is4() && ipset.IsGlobalAddr(addr)
+	if !addr.Is4() || !ipset.IsGlobalAddr(addr) {
+		return false
+	}
+	return mainland == nil || mainland.Judgeable(addr)
 }
 
-func judgeableOnly(addrs []netip.Addr) []netip.Addr {
+func judgeableOnly(addrs []netip.Addr, mainland Mainland) []netip.Addr {
 	out := addrs[:0:0]
 	for _, addr := range addrs {
-		if judgeable(addr) {
+		if judgeable(addr, mainland) {
 			out = append(out, addr)
 		}
 	}
@@ -292,7 +296,7 @@ func sharesGeoSteeredChain(left, right []string) bool {
 }
 
 func splitHorizonCN(cnIPs, foreignIPs []netip.Addr, mainland Mainland) bool {
-	cnJudged := judgeableOnly(cnIPs)
+	cnJudged := judgeableOnly(cnIPs, mainland)
 	if len(cnJudged) == 0 {
 		return false
 	}
@@ -301,7 +305,7 @@ func splitHorizonCN(cnIPs, foreignIPs []netip.Addr, mainland Mainland) bool {
 			return false
 		}
 	}
-	foreignJudged := judgeableOnly(foreignIPs)
+	foreignJudged := judgeableOnly(foreignIPs, mainland)
 	if len(foreignJudged) == 0 {
 		return false
 	}

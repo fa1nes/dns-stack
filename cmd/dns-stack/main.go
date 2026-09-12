@@ -193,6 +193,7 @@ func cmdCollect(args []string) error {
 			"domains":        rows,
 			"polluted_cidrs": collect.LoadPollutedCIDRs(*stateDir),
 			"cn_cidrs":       collect.LoadCNCIDRs(*stateDir),
+			"geo_disputed":   collect.LoadGeoDisputed(*stateDir),
 		})
 	}
 	return fmt.Errorf("未知子命令: collect %s", sub)

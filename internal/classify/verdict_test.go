@@ -9,17 +9,39 @@ import (
 	"github.com/dns-stack/dns-stack/internal/resolve"
 )
 
-type fakeMainland map[netip.Addr]struct{}
+type fakeMainland struct {
+	cn       map[netip.Addr]struct{}
+	disputed map[netip.Addr]struct{}
+}
 
 func (f fakeMainland) IsMainland(addr netip.Addr) bool {
-	_, ok := f[addr]
+	if !f.Judgeable(addr) {
+		return false
+	}
+	_, ok := f.cn[addr]
 	return ok
 }
 
+func (f fakeMainland) Judgeable(addr netip.Addr) bool {
+	_, disputed := f.disputed[addr]
+	return !disputed
+}
+
 func mainlandOf(values ...string) fakeMainland {
-	out := fakeMainland{}
+	out := fakeMainland{cn: map[netip.Addr]struct{}{}, disputed: map[netip.Addr]struct{}{}}
 	for _, value := range values {
-		out[netip.MustParseAddr(value)] = struct{}{}
+		out.cn[netip.MustParseAddr(value)] = struct{}{}
+	}
+	return out
+}
+
+func (f fakeMainland) withDisputed(values ...string) fakeMainland {
+	out := fakeMainland{cn: f.cn, disputed: map[netip.Addr]struct{}{}}
+	for addr := range f.disputed {
+		out.disputed[addr] = struct{}{}
+	}
+	for _, value := range values {
+		out.disputed[netip.MustParseAddr(value)] = struct{}{}
 	}
 	return out
 }
@@ -49,7 +71,7 @@ func pollutedOf(values ...string) *cidrutil.Set {
 	return set
 }
 
-var noMainland = fakeMainland{}
+var noMainland = mainlandOf()
 
 func decide(t *testing.T, name string, cn, foreign *resolve.Outcome, opts ...func(*decideOpts)) Verdict {
 	t.Helper()
@@ -184,6 +206,57 @@ func TestUnjudgeableAnswerNeverClaimsOffshore(t *testing.T) {
 		answer(nil, "125.89.169.195"), answer(nil, "2620:149:af0::10"),
 		withMainland(mainlandOf("125.89.169.195")))
 	expect(t, "境外侧没有可判据的地址时不得声称分水", foreign6.Reason, ReasonViewsConflict)
+}
+
+func TestDisputedAddressIsNoLongerMainlandEvidence(t *testing.T) {
+	clean := mainlandOf("125.89.169.195")
+	crossed := clean.withDisputed("125.89.169.195")
+
+	before := decide(t, "reg-cn-run-offshore.example",
+		answer(nil, "125.89.169.195"), answer(nil, "17.253.200.10"), withMainland(clean))
+	expect(t, "没有交叉时按 direct4 晋级", before.Status, StatusCN)
+	expect(t, "reason", before.Reason, ReasonSplitHorizon)
+
+	after := decide(t, "reg-cn-run-offshore.example",
+		answer(nil, "125.89.169.195"), answer(nil, "17.253.200.10"), withMainland(crossed))
+	expect(t, "多源判为境外的段不得再作为大陆证据", after.Status, StatusUnknown)
+	expect(t, "证据被撤走后退回保守判定", after.Reason, ReasonViewsConflict)
+	expect(t, "route", after.Route, RouteForeign)
+}
+
+func TestDisputedAddressAbstainsRatherThanVotingOffshore(t *testing.T) {
+	crossed := mainlandOf("125.89.169.195", "140.205.31.96").withDisputed("125.89.169.195")
+
+	v := decide(t, "partly-disputed.example",
+		answer(nil, "125.89.169.195", "140.205.31.96"),
+		answer(nil, "17.253.200.10"), withMainland(crossed))
+	expect(t, "剩余未争议地址仍算大陆落点", v.Landing, LandingMainland)
+	expect(t, "reason", v.Reason, ReasonSplitHorizon)
+
+	allDisputed := mainlandOf("125.89.169.195").withDisputed("125.89.169.195")
+	none := decide(t, "all-disputed.example",
+		answer(nil, "125.89.169.195"), answer(nil, "125.89.169.195"),
+		withMainland(allDisputed))
+	expect(t, "全部争议时落点是判据缺失，不是境外", none.Landing, LandingUnjudged)
+	expect(t, "status", none.Status, StatusUnknown)
+}
+
+func TestDisputedForeignAddressCannotFakeASplitHorizon(t *testing.T) {
+	crossed := mainlandOf("125.89.169.195", "140.205.31.96").withDisputed("140.205.31.96")
+	v := decide(t, "foreign-disputed.example",
+		answer(nil, "125.89.169.195"), answer(nil, "140.205.31.96"),
+		withMainland(crossed))
+	expect(t, "境外侧只剩争议地址就没有对照，不得声称分水", v.Reason, ReasonViewsConflict)
+	expect(t, "status", v.Status, StatusUnknown)
+}
+
+func TestPollutionVerdictIsUnaffectedByDisputes(t *testing.T) {
+	crossed := mainlandOf("157.240.7.20").withDisputed("157.240.7.20")
+	v := decide(t, "blocked.example",
+		answer(nil, "157.240.7.20"), answer(nil, "93.184.216.34"),
+		withPolluted("157.240.7.20"), withMainland(crossed))
+	expect(t, "污染判据不依赖归属交叉，必须照常成立", v.Status, StatusGFW)
+	expect(t, "reason", v.Reason, ReasonCNViewPolluted)
 }
 
 func TestSplitHorizonRejectsMixedCNView(t *testing.T) {

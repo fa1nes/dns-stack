@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/domain"
+	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 	"github.com/dns-stack/dns-stack/internal/resolve"
 )
@@ -39,6 +41,10 @@ type Config struct {
 	AuthorityConcurrency int
 	RecheckMaxAge        time.Duration
 	PublishMaxStale      time.Duration
+
+	DisputedPath string
+	CrossMaxAge  time.Duration
+	RequireCross bool
 
 	Repository    string
 	Branch        string
@@ -75,6 +81,10 @@ func LoadConfig(path string) (Config, error) {
 		AuthorityConcurrency: envPositive(env, "AUTHORITY_CONCURRENCY", 8),
 		RecheckMaxAge:        time.Duration(envPositive(env, "RULE_RECHECK_MAX_AGE_SEC", 6*3600)) * time.Second,
 		PublishMaxStale:      time.Duration(envPositive(env, "RULE_PUBLISH_MAX_STALE_SEC", 86400)) * time.Second,
+
+		DisputedPath: firstNonEmpty(os.Getenv("DNS_STACK_GEO_DISPUTED_FILE"), env["GEO_DISPUTED_FILE"]),
+		CrossMaxAge:  time.Duration(envPositive(env, "GEO_CROSS_MAX_AGE_SEC", 48*3600)) * time.Second,
+		RequireCross: envBool(env, "RULE_REQUIRE_CROSS", true),
 
 		Repository:    env["GITHUB_REPOSITORY"],
 		Branch:        envOr(env, "GITHUB_BRANCH", "main"),
@@ -126,6 +136,16 @@ func envPositive(env map[string]string, key string, fallback int) int {
 	return value
 }
 
+func envBool(env map[string]string, key string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(env[key])) {
+	case "0", "false", "no", "off":
+		return false
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return fallback
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if v := strings.TrimSpace(value); v != "" {
@@ -141,6 +161,7 @@ type Engine struct {
 
 	now      func() time.Time
 	direct4  *ipset.Set
+	disputed *ipset.Set
 	psl      *domain.PSL
 	cn       *resolve.Client
 	foreign  *resolve.Client
@@ -181,19 +202,73 @@ func (e *Engine) Direct4() (*ipset.Set, error) {
 	return e.direct4, nil
 }
 
+func (e *Engine) DisputedPath() string {
+	if path := strings.TrimSpace(e.Config.DisputedPath); path != "" {
+		return path
+	}
+	return filepath.Join(e.Config.StateDir, "chnroute", "geo-disputed.txt")
+}
+
+func (e *Engine) Disputed() (*ipset.Set, error) {
+	if e.disputed != nil {
+		return e.disputed, nil
+	}
+	path := e.DisputedPath()
+	snapshot, err := geoaudit.LoadSnapshot(path)
+	if err != nil {
+		return nil, fmt.Errorf("读不到多源争议清单 %s（%w）。"+
+			"没有交叉验证就把 direct4 当落点判据，会把注册在中国、实际运营在境外的网段"+
+			"误判成大陆并直连，答案可能已被污染。先跑一次 classify pull 取回清单，"+
+			"或显式设置 RULE_REQUIRE_CROSS=0 承担这个风险", path, err)
+	}
+	if snapshot.Kind != geoaudit.KindDisputed {
+		return nil, fmt.Errorf("%s 声明的 kind 是 %q，期望 %q，拒绝按错误的方向使用",
+			path, snapshot.Kind, geoaudit.KindDisputed)
+	}
+	if len(snapshot.Sources) < geoaudit.MinSources {
+		return nil, fmt.Errorf("%s 只有 %d 个归属库参与交叉（至少 %d 个），判据不成立",
+			path, len(snapshot.Sources), geoaudit.MinSources)
+	}
+	if age := snapshot.Age(e.now()); snapshot.GeneratedAt == 0 || age > e.Config.CrossMaxAge {
+		return nil, fmt.Errorf("多源争议清单已陈旧 %v（上限 %v）。"+
+			"生成侧只在交叉验证成立时才写这个文件，陈旧通常意味着国内节点的 geo-cross 出了问题",
+			age.Round(time.Hour), e.Config.CrossMaxAge)
+	}
+	e.disputed = snapshot.Set
+	return e.disputed, nil
+}
+
 func (e *Engine) Mainland() (Mainland, error) {
 	set, err := e.Direct4()
 	if err != nil {
 		return nil, err
 	}
-	return direct4Matcher{set}, nil
+	disputed, err := e.Disputed()
+	if err != nil {
+		if e.Config.RequireCross {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "[警告] %v\n", err)
+		fmt.Fprintf(os.Stderr, "[警告]   本轮不做跨库交叉，被多源判为境外的段仍会当作大陆落点\n")
+	}
+	return direct4Matcher{set: set, disputed: disputed}, nil
 }
 
-type direct4Matcher struct{ set *ipset.Set }
+type direct4Matcher struct {
+	set      *ipset.Set
+	disputed *ipset.Set
+}
 
 func (m direct4Matcher) IsMainland(addr netip.Addr) bool {
+	return m.Judgeable(addr) && m.set.Contains(addr.Unmap())
+}
+
+func (m direct4Matcher) Judgeable(addr netip.Addr) bool {
 	addr = addr.Unmap()
-	return addr.Is4() && ipset.IsGlobalAddr(addr) && m.set.Contains(addr)
+	if !addr.Is4() || !ipset.IsGlobalAddr(addr) {
+		return false
+	}
+	return m.disputed == nil || !m.disputed.Contains(addr)
 }
 
 func (e *Engine) PSL() (*domain.PSL, error) {

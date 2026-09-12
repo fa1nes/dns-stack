@@ -32,6 +32,23 @@ func LoadPollutedCIDRs(stateDir string) []string {
 	return formatPrefixes(keys(seen))
 }
 
+const maxGeoDisputedBytes = 4 << 20
+
+func LoadGeoDisputed(stateDir string) string {
+	if stateDir == "" {
+		stateDir = DefaultStateDir
+	}
+	info, err := os.Stat(filepath.Join(stateDir, "chnroute", "geo-disputed.txt"))
+	if err != nil || info.Size() > maxGeoDisputedBytes {
+		return ""
+	}
+	body, err := os.ReadFile(filepath.Join(stateDir, "chnroute", "geo-disputed.txt"))
+	if err != nil {
+		return ""
+	}
+	return string(body)
+}
+
 func LoadCNCIDRs(stateDir string) []string {
 	if stateDir == "" {
 		stateDir = DefaultStateDir
