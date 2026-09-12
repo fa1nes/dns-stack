@@ -145,19 +145,77 @@ func (s *Store) migrate() error {
 	return s.setMeta("schema_version", fmt.Sprint(SchemaVersion))
 }
 
+var v6DomainColumns = [][2]string{
+	{"last_result", "TEXT"},
+	{"last_decisive_at", "INTEGER"},
+	{"status_changed_at", "INTEGER"},
+	{"runtime_route", "TEXT NOT NULL DEFAULT 'unknown'"},
+	{"runtime_reason", "TEXT"},
+	{"landing", "TEXT NOT NULL DEFAULT 'no_answer'"},
+	{"cn_ips", "TEXT NOT NULL DEFAULT ''"},
+	{"foreign_ips", "TEXT NOT NULL DEFAULT ''"},
+	{"cname_chain", "TEXT NOT NULL DEFAULT ''"},
+	{"static_rule", "TEXT NOT NULL DEFAULT 'none'"},
+	{"static_rule_source", "TEXT"},
+	{"publication_scope", "TEXT NOT NULL DEFAULT 'private'"},
+}
+
+func (s *Store) columnsOf(table string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) migrateToV6() error {
-	legacy, err := s.tableExists("classification_observations")
+	legacyObservations, err := s.tableExists("classification_observations")
 	if err != nil {
 		return err
 	}
+	legacyRuns, err := s.tableExists("classification_runs")
+	if err != nil {
+		return err
+	}
+	existing, err := s.columnsOf("domains")
+	if err != nil {
+		return err
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if legacy {
+
+	for _, column := range v6DomainColumns {
+		if existing[column[0]] {
+			continue
+		}
+		if _, err := tx.Exec(`ALTER TABLE domains ADD COLUMN ` + column[0] + ` ` + column[1]); err != nil {
+			return fmt.Errorf("补列 domains.%s 失败: %w", column[0], err)
+		}
+	}
+	if existing["cname_chain_json"] {
+		if _, err := tx.Exec(`UPDATE domains SET cname_chain=''
+			WHERE cname_chain IS NULL OR cname_chain=''`); err != nil {
+			return err
+		}
+	}
+
+	if legacyObservations {
 		if _, err := tx.Exec(`INSERT INTO observations(domain, observed_at, status, route, reason, landing, final_ips)
-			SELECT domain, observed_at, status, runtime_route, reason, 'no_answer', ''
+			SELECT domain, observed_at, status,
+			       COALESCE(runtime_route, 'unknown'), COALESCE(reason, ''), 'no_answer', ''
 			FROM classification_observations`); err != nil {
 			return err
 		}
@@ -165,6 +223,19 @@ func (s *Store) migrateToV6() error {
 			return err
 		}
 	}
+	if legacyRuns {
+		if _, err := tx.Exec(`INSERT INTO runs(mode, started_at, completed_at, requested_count,
+				checked_count, changed_count, guard_ok, guard, error)
+			SELECT mode, started_at, completed_at, requested_count,
+			       checked_count, changed_count, guard_ok, COALESCE(guard_json, ''), error
+			FROM classification_runs`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DROP TABLE classification_runs`); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.Exec(`DELETE FROM schema_meta WHERE key='classification_epoch_observation_id'`); err != nil {
 		return err
 	}
