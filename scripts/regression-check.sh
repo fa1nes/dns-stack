@@ -187,6 +187,13 @@ hasnt "服务列表不再直接渲染 systemd 原始字段" "$WEB/index.html" 'i
 hasnt "移动端不再残留已删表格的样式" "$WEB/assets/panel.css" '#svcBody'
 has "上游健康表在窄屏会重排为卡片(否则整页横向溢出)" "$WEB/assets/panel.css" '#ovUpstreamBody tr'
 has "等宽字体栈带中文兜底(中英混排不再错位)" "$WEB/assets/panel.css" '"Noto Sans CJK SC", monospace'
+has "字号走统一阶梯变量" "$WEB/assets/panel.css" '\-\-fs-base:'
+has "窄屏整体缩放阶梯而不是逐条覆盖" "$WEB/assets/panel.css" '\-\-fs-num: 21px'
+a "除移动端输入框的 16px 外没有字面量字号" \
+    bash -c "[ \"\$(grep -cE 'font-size: *[0-9]' '$WEB/assets/panel.css')\" = 1 ]"
+a "渲染模板不内联字号(会绕过阶梯)" \
+    bash -c "! grep -qE 'style=\"[^\"]*font-size' '$WEB/assets/panel.js' '$WEB/index.html'"
+hasnt "统计数字不用等宽体(数值后紧跟万/亿/中文会错开)" "$WEB/assets/panel.css" '\.stat \.num \{[^}]*var\(--mono\)'
 has "统计卡副文案用比例字体" "$WEB/assets/panel.css" '\.stat \.sub'
 hasnt "时间轴标签不再被 CSS 统一居中(末位会被裁掉)" "$WEB/assets/panel.css" 'g-time \{ text-anchor'
 has "时间轴按位置分别锚定" "$WEB/assets/panel.js" 'anchorAt'

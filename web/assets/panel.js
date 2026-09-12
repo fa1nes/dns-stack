@@ -450,7 +450,7 @@ function renderOverviewUpstreams(list) {
       <td class="mono" style="color:${rc}">${ratio === null || ratio === undefined ? '—' : ratio + '%'}</td>
       <td class="mono">${dash(u.avg_latency_ms, ' ms')}</td>
       <td class="mono">${dash(u.p95_latency_ms, ' ms')}</td>
-      <td class="mono dim">${u.direction || '—'}</td>
+      <td class="dim">${u.direction || '—'}</td>
     </tr>`;
   })}`);
 }
@@ -561,7 +561,7 @@ function renderOverviewSystem(sys) {
   const bar = (pct, label, detail) => {
     const cls = pct > 90 ? 'err' : (pct > 75 ? 'warn' : '');
     return html`<div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;font-size:12.5px">
+      <div class="res-head">
         <span>${label}</span><span class="mono dim">${detail}</span>
       </div>
       <div class="progress"><div class="fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
@@ -1338,7 +1338,7 @@ async function showDomain(domain) {
           blocks.push(html`<div class="hint">无应答记录（状态：${statuses || '查询失败'}）</div>`);
         }
         parts.push(html`<div style="margin-bottom:12px">
-          <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:5px">${SERVER_NAMES[server] || server}</div>
+          <div class="probe-head">${SERVER_NAMES[server] || server}</div>
           ${blocks}</div>`);
       });
     }
@@ -2317,7 +2317,7 @@ async function loadAudit() {
       <td class="mono">${x.operation}</td>
       <td><span class="badge ${x.ok ? 'ok' : 'err'}">${x.ok ? '成功' : '失败'}</span></td>
       <td class="mono wrap dim">${x.args || '—'}</td>
-      <td class="wrap mono" style="color:var(--text-muted);font-size:11px">${(x.message || '').slice(0, 200)}</td>
+      <td class="wrap mono audit-msg">${(x.message || '').slice(0, 200)}</td>
       <td>${x.id === null || x.id === undefined ? ''
           : html`<button class="row-del" data-aid="${x.id}" title="删除这条审计记录">删除</button>`}</td>
     </tr>`)}`);
