@@ -155,8 +155,10 @@ func Decide(in Input, override string, mainland Mainland, polluted *cidrutil.Set
 			route, reason = RouteCN, ReasonSharedGeoDNSChain
 		case splitHorizonCN(cn.ips, foreign.ips, mainland):
 			route, reason = RouteCN, ReasonSplitHorizon
+			anomalous = mergeAddrs(cn.abnormal, foreign.abnormal)
 		default:
-			route, reason = RouteForeign, ReasonViewsConflict
+			route, reason, anomalous = RouteForeign, ReasonViewsConflict,
+				mergeAddrs(cn.abnormal, foreign.abnormal)
 		}
 	case cn.usable:
 		route, reason = RouteCN, "foreign_"+foreign.reason+"_fallback_cn"
