@@ -67,18 +67,6 @@ jobs:
           gate dbip-asn.mmdb "$DBIP_MIN_BYTES"
           gate dbip-city.mmdb "$DBIP_MIN_BYTES"
 
-          if [ -n "${IPINFO_TOKEN:-}" ]; then
-            curl -fsSL --retry 3 --max-time 600 -o dist/ipinfo-lite.mmdb \
-              "https://ipinfo.io/data/free/country_asn.mmdb?token=${IPINFO_TOKEN}"
-            gate ipinfo-lite.mmdb "$DBIP_MIN_BYTES"
-            echo "ipinfo=yes" >> "$GITHUB_ENV"
-          else
-            echo "IPINFO_TOKEN is not configured, skipping IPinfo Lite (other sources are unaffected)"
-            echo "ipinfo=no" >> "$GITHUB_ENV"
-          fi
-        env:
-          IPINFO_TOKEN: ${{ secrets.IPINFO_TOKEN }}
-
       - name: setup go
         uses: actions/setup-go@v5
         with:
@@ -103,7 +91,6 @@ jobs:
           verify cnip      dist/qqwry.ipdb
           verify dbip_asn  dist/dbip-asn.mmdb
           verify dbip_city dist/dbip-city.mmdb
-          verify ipinfo    dist/ipinfo-lite.mmdb
 
       - name: checksums
         run: |

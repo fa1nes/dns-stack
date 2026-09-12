@@ -67,7 +67,6 @@ func DefaultSources(geoDir string) []Source {
 		{Name: "qqwry", Path: filepath.Join(geoDir, "qqwry.ipdb"), Kind: "ipdb"},
 		{Name: "maxmind", Path: filepath.Join(geoDir, "GeoLite2-City.mmdb"), Kind: "mmdb"},
 		{Name: "dbip", Path: filepath.Join(geoDir, "dbip-city.mmdb"), Kind: "mmdb"},
-		{Name: "ipinfo", Path: filepath.Join(geoDir, "ipinfo-lite.mmdb"), Kind: "mmdb"},
 	}
 }
 

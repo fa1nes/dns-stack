@@ -29,15 +29,6 @@ func (s *Server) dbipDB() *geoip.DBIP {
 	return s.dbip
 }
 
-func (s *Server) ipinfoDB() *geoip.IPInfo {
-	s.geoMu.Lock()
-	defer s.geoMu.Unlock()
-	if s.ipinfo == nil {
-		s.ipinfo = geoip.NewIPInfo(s.statePath("geoip/ipinfo-lite.mmdb"))
-	}
-	return s.ipinfo
-}
-
 func (s *Server) databaseFreshness() map[string]any {
 	out := map[string]any{}
 	now := s.now().Unix()
@@ -60,9 +51,6 @@ func (s *Server) databaseFreshness() map[string]any {
 		if entry, ok := dbip[kind].(map[string]any); ok {
 			add("dbip_"+kind, entry)
 		}
-	}
-	if status := s.ipinfoDB().Status(); truthyValue(status["available"]) {
-		add("ipinfo", status)
 	}
 	return out
 }
@@ -226,9 +214,6 @@ func (s *Server) ipLookup(w http.ResponseWriter, r *http.Request) {
 
 	sources := local.Sources(target)
 	sources = append(sources, s.dbipDB().Lookup(target))
-	if ipinfo := s.ipinfoDB().Lookup(target); ipinfo.Available {
-		sources = append(sources, ipinfo)
-	}
 
 	var wg sync.WaitGroup
 	var ptr []string

@@ -39,9 +39,8 @@ if [[ -z "$RELEASE_BASE" && -n "$RELEASE_REPO" ]]; then
 fi
 DBIP_ASN_URL="${GEOIP_DBIP_ASN_URL:-${RELEASE_BASE:+$RELEASE_BASE/dbip-asn.mmdb}}"
 DBIP_CITY_URL="${GEOIP_DBIP_CITY_URL:-${RELEASE_BASE:+$RELEASE_BASE/dbip-city.mmdb}}"
-IPINFO_URL="${GEOIP_IPINFO_URL:-${RELEASE_BASE:+$RELEASE_BASE/ipinfo-lite.mmdb}}"
 
-for var in ASN CITY CNIP DBIP_ASN DBIP_CITY IPINFO; do
+for var in ASN CITY CNIP DBIP_ASN DBIP_CITY; do
     val="$(cfg_get "GEOIP_${var}_URL")"
     [[ -n "$val" ]] && printf -v "${var}_URL" '%s' "$val"
 done
@@ -118,10 +117,10 @@ if [[ "$WANT_CITY" == "1" ]]; then
     fetch_db city "$CITY_URL" "$GEOIP_DIR/GeoLite2-City.mmdb" "$CITY_MIN_BYTES" && city_ok=1
 fi
 
-dbip_asn_ok=0; dbip_city_ok=0; ipinfo_ok=0
-if [[ -z "$DBIP_CITY_URL" && -z "$IPINFO_URL" ]]; then
-    log_warn "未配置 GEOIP_RELEASE_REPO / GITHUB_REPOSITORY，跳过 DB-IP 与 IPinfo"
-    log_warn "  这两个库是多源交叉判据的第三、第四个源，缺了会退回只信 APNIC + qqwry"
+dbip_asn_ok=0; dbip_city_ok=0
+if [[ -z "$DBIP_CITY_URL" ]]; then
+    log_warn "未配置 GEOIP_RELEASE_REPO / GITHUB_REPOSITORY，跳过 DB-IP"
+    log_warn "  它是多源交叉判据的第三个源，缺了会退回只信 APNIC + qqwry"
 else
     [[ -n "$DBIP_ASN_URL" ]] \
         && fetch_db dbip_asn "$DBIP_ASN_URL" "$GEOIP_DIR/dbip-asn.mmdb" "$CROSS_MIN_BYTES" \
@@ -129,9 +128,6 @@ else
     [[ -n "$DBIP_CITY_URL" ]] \
         && fetch_db dbip_city "$DBIP_CITY_URL" "$GEOIP_DIR/dbip-city.mmdb" "$CROSS_MIN_BYTES" \
         && dbip_city_ok=1
-    [[ -n "$IPINFO_URL" ]] \
-        && fetch_db ipinfo "$IPINFO_URL" "$GEOIP_DIR/ipinfo-lite.mmdb" "$CROSS_MIN_BYTES" \
-        && ipinfo_ok=1
 fi
 
 updated=""
@@ -140,7 +136,6 @@ updated=""
 [[ "$city_ok" == "1" ]] && updated="$updated City"
 [[ "$dbip_asn_ok" == "1" ]] && updated="$updated DB-IP-ASN"
 [[ "$dbip_city_ok" == "1" ]] && updated="$updated DB-IP-Country"
-[[ "$ipinfo_ok" == "1" ]] && updated="$updated IPinfo"
 if [[ -f "$GEOIP_DIR/GeoLite2-ASN.mmdb" || -f "$GEOIP_DIR/qqwry.ipdb" ]]; then
     log_ok "归属库就绪（本次更新:${updated:- 无，沿用现有库}）"
 else
@@ -150,7 +145,7 @@ fi
 cross_sources=0
 cross_names=""
 for entry in "qqwry.ipdb:qqwry" "GeoLite2-City.mmdb:MaxMind" \
-             "dbip-city.mmdb:DB-IP" "ipinfo-lite.mmdb:IPinfo"; do
+             "dbip-city.mmdb:DB-IP"; do
     file="${entry%%:*}"; name="${entry##*:}"
     if [[ -s "$GEOIP_DIR/$file" ]]; then
         cross_sources=$((cross_sources + 1))

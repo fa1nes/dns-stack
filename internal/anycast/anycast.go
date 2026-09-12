@@ -33,7 +33,6 @@ type Config struct {
 	UnboundCtl string
 	GeoIP      *geoip.GeoDB
 	DBIP       *geoip.DBIP
-	IPInfo     *geoip.IPInfo
 	DryRun     bool
 }
 
@@ -258,11 +257,6 @@ func (c Config) sharedByAnySource(ip string) (int, string, []string) {
 	if c.DBIP != nil {
 		if rec := c.DBIP.Lookup(ip).Record; rec != nil {
 			probes = append(probes, probe{"dbip", rec["asn"]})
-		}
-	}
-	if c.IPInfo != nil {
-		if rec := c.IPInfo.Lookup(ip).Record; rec != nil {
-			probes = append(probes, probe{"ipinfo", rec["asn"]})
 		}
 	}
 	firstASN, firstLabel := 0, ""

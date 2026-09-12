@@ -68,7 +68,7 @@ func verifyMMDB(path, kind string) error {
 	}
 
 	switch kind {
-	case "city", "dbip_city", "ipinfo":
+	case "city", "dbip_city":
 		cn, err := reader.Get("114.114.114.114")
 		if err != nil {
 			return fmt.Errorf("抽查 114.114.114.114 失败：%w", err)
@@ -101,7 +101,7 @@ func verifyMMDB(path, kind string) error {
 
 func cmdGeoIPVerify(args []string) error {
 	fs := flag.NewFlagSet("geoip-verify", flag.ContinueOnError)
-	kind := fs.String("kind", "", "库类型: asn|city|cnip|dbip_asn|dbip_city|ipinfo")
+	kind := fs.String("kind", "", "库类型: asn|city|cnip|dbip_asn|dbip_city")
 	file := fs.String("file", "", "库文件路径")
 	if err := fs.Parse(args); err != nil {
 		return err

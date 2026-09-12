@@ -113,12 +113,12 @@ qcloud/cdnhwc/ourdvsss/wscdns 等）——此前只有境外 CDN，中国 CDN �
 |---|---|---|
 | `direct4` | APNIC 官方 delegated 记录 | 递归出口路由、ECS 冷启动 |
 | 国内归属 | qqwry/IPDB | 展示、ECS 缓存分片、多源交叉；不在解析关键路径查询 |
-| 境外归属 | MaxMind / DB-IP / IPinfo MMDB | 展示、共享 anycast 离线审计、多源交叉 |
+| 境外归属 | MaxMind / DB-IP MMDB | 展示、共享 anycast 离线审计、多源交叉 |
 | PSL | 当前有效的 ICANN Public Suffix List | 注册域/公共后缀判定 |
 
 归属库由 `.github/workflows/geoip.yml` 每天镜像到本仓库的 `geoip-latest` 滚动 Release，生产端
 `scripts/update-geoip.sh` 从那里拉取。**只有带国家码的库才进得了交叉判据**：qqwry、GeoLite2-City、
-dbip-city、ipinfo-lite 四个；GeoLite2-ASN 与 dbip-asn 一个国家码都没有，拿它们交叉等于放一个
+dbip-city 三个；GeoLite2-ASN 与 dbip-asn 一个国家码都没有，拿它们交叉等于放一个
 永不投票的源。拉取端与 CI 都用同一个 `dns-stack geoip-verify` 做库类型核对与国家码抽查，
 并在末尾报出**可交叉源数量**——只数"下载成功几个"回答不了"交叉验证还跑不跑得起来"。
 
@@ -162,7 +162,7 @@ ECS 白名单与争议清单求交。**做过阴性对照**：拆掉第 1 层或
 生产侧同款判据在 `regression-check.sh`（`dns-stack ipset-check --overlap`）。
 
 ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆、但多源判为境外的段**不打标**。
-**注意能力边界**：dbip-city 与 ipinfo-lite 都没有省份与 ISP 字段，所以分片表的「省+运营商」归一
+**注意能力边界**：dbip-city 没有省份与 ISP 字段，所以分片表的「省+运营商」归一
 **无法**做多源交叉，能交叉的只有「这段到底在不在中国」。
 
 `collapse` 后不能用网段首地址代表整段；护栏按覆盖地址数量或区间覆盖，不按条目数量猜数据健康。`direct4`、CIDR 元数据和发布包写入要原子化，后续写入失败必须恢复前一版。
@@ -202,7 +202,7 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 | `internal/domain` | 域名形态判据、PSL |
 | `internal/ipset` | IPv4 CIDR 集合、区间覆盖、全局地址判据 |
 | `internal/cidrutil` | v4/v6 通用的 CIDR 区间运算（`math/big`）：collapse、二分集合、合并扫描求首个重叠 |
-| `internal/geoip` | MaxMind/DB-IP/IPinfo MMDB 与 qqwry IPDB 只读查询 |
+| `internal/geoip` | MaxMind/DB-IP MMDB 与 qqwry IPDB 只读查询 |
 | `internal/infra` | Unbound infra 快照解析 |
 | `internal/ruleset` | 由 infra 快照生成直连路由集与 ECS 白名单 |
 | `internal/resolvetest` | 只在测试里用的最小权威服务器，单独成包以免脚手架被链进生产二进制 |
@@ -403,7 +403,7 @@ CLI `dns-stack migration-restore`、前端「试算导入 / 导入并覆盖」�
 ### 7.6 2026-09-07：把新归属库接进递归判据
 
 **起点是一个"判据从未被接上"**：`geoip.yml` 每天把 5 个库发到 Release，但拉取端只拉前 3 个，
-`dbip-*`/`ipinfo-lite` 在 CN 机器上根本不存在；`direct4-audit` 能算出结果，而**全仓库没有任何代码读它**。
+`dbip-*` 在 CN 机器上根本不存在；`direct4-audit` 能算出结果，而**全仓库没有任何代码读它**。
 判据链两头都断，中间那段写得再好也没用。
 
 💥 **本轮把生产 DNS 搞停过约 10 分钟**：在生产机**手工裸跑**了没做过规模测试的 `ecs-zone`，

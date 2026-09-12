@@ -55,7 +55,6 @@ type Server struct {
 	geoMu        sync.Mutex
 	geo          *geoip.GeoDB
 	dbip         *geoip.DBIP
-	ipinfo       *geoip.IPInfo
 	online       *geoip.OnlineLookup
 	geoOnline    *geoip.OnlineLookup
 

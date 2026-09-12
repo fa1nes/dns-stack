@@ -535,7 +535,6 @@ func cmdSharedAnycast(args []string) error {
 		DBIP: geoip.NewDBIP(
 			filepath.Join(*state, "geoip", "dbip-asn.mmdb"),
 			filepath.Join(*state, "geoip", "dbip-city.mmdb")),
-		IPInfo: geoip.NewIPInfo(filepath.Join(*state, "geoip", "ipinfo-lite.mmdb")),
 	})
 	if err != nil {
 		return err

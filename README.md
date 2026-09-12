@@ -135,7 +135,7 @@ dns-stack version
 | 工作流 | 作用 |
 |---|---|
 | `.github/workflows/build.yml` | `gofmt` + `go vet` + `go test`，再交叉编译 linux/amd64、linux/arm64、windows/amd64，打 tag 时附到 Release |
-| `.github/workflows/geoip.yml` | 每日把五个上游归属库镜像到本仓库的 `geoip-latest` 滚动 Release，带体积门槛与**已知地址抽查**（只看文件大小不够，格式变了文件照样够大）。生产端由 `scripts/update-geoip.sh` 拉取，多出来的 DB-IP 与 IPinfo 是权威落点交叉验证的第三、第四个源 |
+| `.github/workflows/geoip.yml` | 每日把四个上游归属库镜像到本仓库的 `geoip-latest` 滚动 Release，带体积门槛与**已知地址抽查**（只看文件大小不够，格式变了文件照样够大）。生产端由 `scripts/update-geoip.sh` 拉取，多出来的 DB-IP 是权威落点交叉验证的第三个源 |
 
 ---
 
