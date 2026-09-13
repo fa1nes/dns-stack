@@ -2612,6 +2612,197 @@ async function loadBootstrap() {
   resetFilterControls();
   bindEvents();
   await Promise.all([loadBootstrap(), loadOpsMeta()]);
+  initSelects();
   const hash = location.hash.replace('#', '');
   switchPage(PAGE_TITLES[hash] ? hash : 'overview');
 })();
+
+const SELECT_SHEET_BREAKPOINT = 860;
+
+function selectOptions(sel) {
+  return Array.from(sel.options).map((o) => ({
+    value: o.value, label: o.textContent.trim(),
+    disabled: o.disabled, selected: o.selected,
+  }));
+}
+
+function closeAllSelects(except) {
+  $$('.xsel.open').forEach((el) => {
+    if (el === except) return;
+    el.classList.remove('open');
+    const list = el._list;
+    if (list) list.remove();
+    el._list = null;
+    const mask = el._mask;
+    if (mask) mask.remove();
+    el._mask = null;
+    const btn = el.querySelector('.xsel-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function renderSelectLabel(wrap) {
+  const sel = wrap._select;
+  const btn = wrap.querySelector('.xsel-btn');
+  const picked = sel.options[sel.selectedIndex];
+  btn.querySelector('.xsel-text').textContent = picked ? picked.textContent.trim() : '';
+  btn.disabled = sel.disabled;
+  wrap.classList.toggle('disabled', sel.disabled);
+}
+
+function commitSelect(wrap, value) {
+  const sel = wrap._select;
+  if (sel.value !== value) {
+    sel.value = value;
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  renderSelectLabel(wrap);
+  closeAllSelects();
+}
+
+function moveSelectCursor(list, delta) {
+  const items = Array.from(list.querySelectorAll('.xsel-opt:not([aria-disabled="true"])'));
+  if (!items.length) return;
+  const current = list.querySelector('.xsel-opt.cursor');
+  let index = current ? items.indexOf(current) : -1;
+  index = (index + delta + items.length) % items.length;
+  items.forEach((el) => el.classList.remove('cursor'));
+  const next = items[index];
+  next.classList.add('cursor');
+  next.scrollIntoView({ block: 'nearest' });
+}
+
+function openSelect(wrap) {
+  const sel = wrap._select;
+  if (sel.disabled) return;
+  closeAllSelects(wrap);
+  const sheet = window.innerWidth <= SELECT_SHEET_BREAKPOINT;
+  const options = selectOptions(sel);
+
+  const list = document.createElement('div');
+  list.className = 'xsel-list' + (sheet ? ' sheet' : '');
+  list.setAttribute('role', 'listbox');
+  if (sheet && wrap._label) {
+    const head = document.createElement('div');
+    head.className = 'xsel-sheet-head';
+    head.textContent = wrap._label;
+    list.appendChild(head);
+  }
+  const body = document.createElement('div');
+  body.className = 'xsel-scroll';
+  options.forEach((opt) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'xsel-opt' + (opt.selected ? ' selected' : '');
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(opt.selected));
+    if (opt.disabled) item.setAttribute('aria-disabled', 'true');
+    item.textContent = opt.label;
+    if (opt.selected) item.classList.add('cursor');
+    if (!opt.disabled) {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        commitSelect(wrap, opt.value);
+      });
+    }
+    body.appendChild(item);
+  });
+  list.appendChild(body);
+
+  if (sheet) {
+    const mask = document.createElement('div');
+    mask.className = 'xsel-mask';
+    mask.addEventListener('click', () => closeAllSelects());
+    document.body.appendChild(mask);
+    document.body.appendChild(list);
+    wrap._mask = mask;
+    requestAnimationFrame(() => { mask.classList.add('in'); list.classList.add('in'); });
+  } else {
+    wrap.appendChild(list);
+  }
+  wrap._list = list;
+  wrap.classList.add('open');
+  wrap.querySelector('.xsel-btn').setAttribute('aria-expanded', 'true');
+  const active = list.querySelector('.xsel-opt.cursor');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function enhanceSelect(sel) {
+  if (sel._enhanced) return;
+  sel._enhanced = true;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'xsel' + (sel.classList.contains('sel-sm') ? ' sm' : '');
+  wrap._select = sel;
+  wrap._label = sel.getAttribute('title') || sel.getAttribute('aria-label') || '';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'xsel-btn';
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  if (wrap._label) btn.setAttribute('aria-label', wrap._label);
+  btn.innerHTML = '<span class="xsel-text"></span><span class="xsel-caret" aria-hidden="true"></span>';
+
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(btn);
+  wrap.appendChild(sel);
+  sel.classList.add('xsel-native');
+  sel.setAttribute('tabindex', '-1');
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (wrap.classList.contains('open')) { closeAllSelects(); return; }
+    openSelect(wrap);
+  });
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!wrap.classList.contains('open')) { openSelect(wrap); return; }
+      moveSelectCursor(wrap._list, e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (!wrap.classList.contains('open')) return;
+      e.preventDefault();
+      const cursor = wrap._list.querySelector('.xsel-opt.cursor');
+      if (cursor) cursor.click();
+      return;
+    }
+    if (e.key === 'Escape' && wrap.classList.contains('open')) {
+      e.preventDefault();
+      closeAllSelects();
+    }
+  });
+  sel.addEventListener('change', () => renderSelectLabel(wrap));
+  renderSelectLabel(wrap);
+}
+
+function refreshEnhancedSelects(root) {
+  $$('select', root || document).forEach((sel) => {
+    if (sel._enhanced) { renderSelectLabel(sel.parentNode); return; }
+    enhanceSelect(sel);
+  });
+}
+
+function initSelects() {
+  refreshEnhancedSelects();
+  document.addEventListener('click', () => closeAllSelects());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllSelects();
+  });
+  window.addEventListener('resize', () => closeAllSelects());
+  const observer = new MutationObserver((records) => {
+    let touched = false;
+    records.forEach((rec) => {
+      if (rec.target && rec.target.tagName === 'SELECT') { touched = true; return; }
+      rec.addedNodes.forEach((node) => {
+        if (node.nodeType !== 1) return;
+        if (node.tagName === 'SELECT' || node.querySelector('select')) touched = true;
+      });
+    });
+    if (touched) refreshEnhancedSelects();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}

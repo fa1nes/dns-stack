@@ -81,7 +81,7 @@
         <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
         <div class="grid c2">
           <div class="card">
-            <h3>请求量趋势 <select id="tsSpan" class="sel-sm" autocomplete="off">
+            <h3>请求量趋势 <select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
               <option value="3600">近 1 小时</option>
               <option value="21600">近 6 小时</option>
               <option value="86400">近 24 小时</option>
@@ -122,17 +122,17 @@
         <div class="tab-panel active" id="qtab-live">
           <div class="filters">
             <input type="search" id="fDomain" class="grow" placeholder="域名包含…（回车搜索）" autocomplete="off">
-            <select id="fQtype" autocomplete="off"><option value="">全部类型</option>
+            <select id="fQtype" title="记录类型" autocomplete="off"><option value="">全部类型</option>
               <option>A</option><option>AAAA</option><option>CNAME</option><option>HTTPS</option>
               <option>MX</option><option>TXT</option><option>NS</option><option>SOA</option><option>PTR</option></select>
-            <select id="fRoute" autocomplete="off"><option value="">全部路由</option>
+            <select id="fRoute" title="出口路由" autocomplete="off"><option value="">全部路由</option>
               <option value="cn">本机递归</option><option value="foreign">香港递归</option>
               <option value="cache">缓存命中</option><option value="reject">已拒绝</option></select>
-            <select id="fRcode" autocomplete="off"><option value="">全部状态</option>
+            <select id="fRcode" title="响应状态" autocomplete="off"><option value="">全部状态</option>
               <option>NOERROR</option><option>NXDOMAIN</option><option>SERVFAIL</option><option>REFUSED</option></select>
             <select id="fRespBy" title="按实际响应的上游筛选" autocomplete="off"><option value="">全部上游</option>
               <option value="cache">缓存直接返回</option></select>
-            <select id="fSince" autocomplete="off"><option value="0">不限时间</option>
+            <select id="fSince" title="时间范围" autocomplete="off"><option value="0">不限时间</option>
               <option value="300">近 5 分钟</option><option value="3600">近 1 小时</option>
               <option value="86400">近 24 小时</option><option value="604800">近 7 天</option></select>
             <button id="btnSearch" class="primary">查询</button>
@@ -199,10 +199,10 @@
           </div>
           <div class="filters">
             <input type="search" id="domSearch" class="grow" placeholder="域名包含…" autocomplete="off">
-            <select id="domRoute" autocomplete="off"><option value="">全部路由</option>
+            <select id="domRoute" title="出口路由" autocomplete="off"><option value="">全部路由</option>
               <option value="cn">本机递归</option><option value="foreign">香港递归</option>
               <option value="cache">缓存命中</option></select>
-            <select id="domLimit" autocomplete="off"><option value="50">每页 50</option><option value="100">每页 100</option>
+            <select id="domLimit" title="每页条数" autocomplete="off"><option value="50">每页 50</option><option value="100">每页 100</option>
               <option value="200">每页 200</option></select>
             <button id="btnDomSearch" class="primary">查询</button>
           </div>
@@ -239,7 +239,7 @@
           <div class="card">
             <div class="filters flat m0">
               <input type="text" id="testDomain" class="grow" placeholder="要测试的域名，如 www.example.com" autocomplete="off">
-              <select id="testQtype" autocomplete="off"><option>A</option><option>AAAA</option><option>CNAME</option>
+              <select id="testQtype" title="查询类型" autocomplete="off"><option>A</option><option>AAAA</option><option>CNAME</option>
                 <option>HTTPS</option><option>MX</option><option>TXT</option><option>NS</option><option>SOA</option></select>
               <input type="text" id="testSubnet" style="width:11.5rem"
                      placeholder="客户端子网（可选）" autocomplete="off"
@@ -274,17 +274,17 @@
         <div class="tab-panel" id="ttab-logs">
           <div class="filters">
             <label>服务
-              <select id="logUnit" autocomplete="off">
+              <select id="logUnit" title="日志来源" autocomplete="off">
               </select>
             </label>
             <label>等级
-              <select id="logPriority" autocomplete="off">
+              <select id="logPriority" title="日志级别" autocomplete="off">
                 <option value="">全部</option><option value="err">错误及以上</option>
                 <option value="warning">警告及以上</option><option value="info">信息及以上</option>
               </select>
             </label>
             <label>行数
-              <select id="logLines" autocomplete="off"><option value="200">200</option><option value="500">500</option>
+              <select id="logLines" title="显示行数" autocomplete="off"><option value="200">200</option><option value="500">500</option>
                 <option value="1000">1000</option><option value="2000">2000</option></select>
             </label>
             <input type="search" id="logSearch" class="grow" placeholder="关键字过滤…" autocomplete="off">
@@ -486,7 +486,7 @@
               <div id="cacheInfo"></div>
               <div class="filters flat">
                 <label>乐观缓存
-                  <select id="cacheTtl" autocomplete="off">
+                  <select id="cacheTtl" title="缓存 TTL" autocomplete="off">
                     <option value="0">关闭</option>
                     <option value="3600">1 小时</option>
                     <option value="86400">1 天</option>
