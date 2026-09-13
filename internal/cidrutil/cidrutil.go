@@ -147,6 +147,96 @@ func CollapsePrefixes(prefixes []netip.Prefix) []netip.Prefix {
 	return append(collapseFamily(v4, false), collapseFamily(v6, true)...)
 }
 
+func splitFamilies(prefixes []netip.Prefix) ([]span, []span) {
+	var v4, v6 []span
+	for _, p := range prefixes {
+		if !p.IsValid() {
+			continue
+		}
+		s := spansOfPrefix(p)
+		if p.Addr().Is6() {
+			v6 = append(v6, s)
+		} else {
+			v4 = append(v4, s)
+		}
+	}
+	return v4, v6
+}
+
+func intersectSpans(a, b []span) []span {
+	a, b = mergeSpans(a), mergeSpans(b)
+	var out []span
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		lo, hi := a[i].lo, a[i].hi
+		if b[j].lo.Cmp(lo) > 0 {
+			lo = b[j].lo
+		}
+		if b[j].hi.Cmp(hi) < 0 {
+			hi = b[j].hi
+		}
+		if lo.Cmp(hi) <= 0 {
+			out = append(out, span{lo: new(big.Int).Set(lo), hi: new(big.Int).Set(hi)})
+		}
+		if a[i].hi.Cmp(b[j].hi) < 0 {
+			i++
+		} else {
+			j++
+		}
+	}
+	return out
+}
+
+func subtractSpans(a, b []span) []span {
+	a, b = mergeSpans(a), mergeSpans(b)
+	one := big.NewInt(1)
+	var out []span
+	j := 0
+	for _, cur := range a {
+		lo := new(big.Int).Set(cur.lo)
+		for j < len(b) && b[j].hi.Cmp(lo) < 0 {
+			j++
+		}
+		for k := j; k < len(b) && b[k].lo.Cmp(cur.hi) <= 0; k++ {
+			if b[k].lo.Cmp(lo) > 0 {
+				out = append(out, span{lo: lo, hi: new(big.Int).Sub(b[k].lo, one)})
+			}
+			if next := new(big.Int).Add(b[k].hi, one); next.Cmp(lo) > 0 {
+				lo = next
+			}
+			if lo.Cmp(cur.hi) > 0 {
+				break
+			}
+		}
+		if lo.Cmp(cur.hi) <= 0 {
+			out = append(out, span{lo: lo, hi: new(big.Int).Set(cur.hi)})
+		}
+	}
+	return out
+}
+
+func spansToPrefixes(v4, v6 []span) []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range v4 {
+		out = append(out, rangePrefixes(s.lo, s.hi, false)...)
+	}
+	for _, s := range v6 {
+		out = append(out, rangePrefixes(s.lo, s.hi, true)...)
+	}
+	return out
+}
+
+func Intersect(base, mask []netip.Prefix) []netip.Prefix {
+	b4, b6 := splitFamilies(base)
+	m4, m6 := splitFamilies(mask)
+	return spansToPrefixes(intersectSpans(b4, m4), intersectSpans(b6, m6))
+}
+
+func Subtract(base, remove []netip.Prefix) []netip.Prefix {
+	b4, b6 := splitFamilies(base)
+	r4, r6 := splitFamilies(remove)
+	return spansToPrefixes(subtractSpans(b4, r4), subtractSpans(b6, r6))
+}
+
 func Overlaps(a, b netip.Prefix) bool {
 	if a.Addr().Is6() != b.Addr().Is6() {
 		return false
