@@ -39,7 +39,8 @@ func cmdSyncRules(args []string) error {
 
 	keys := config.ReadKeys(*configPath,
 		"GITHUB_RAW_BASE", "GITHUB_MIRROR_1", "GITHUB_MIRROR_2",
-		"MOSPROXY_API", "RULE_BUNDLE_HISTORY_KEEP", "RECURSIVE_PORT")
+		"MOSPROXY_API", "RULE_BUNDLE_HISTORY_KEEP", "RECURSIVE_PORT",
+		"CDN_RULES_BASE", "DNS_STACK_BINARY_REPO", "GITHUB_BRANCH")
 
 	opt := rulesync.Options{
 		StateDir:    *stateDir,
@@ -91,7 +92,18 @@ func cmdSyncRules(args []string) error {
 		}
 	}
 	if *only != "bundle" {
-		res, err := rulesync.SyncCDN(ctx, opt)
+		cdnOpt := opt
+		cdnOpt.Sources = cdnRuleSources(keys)
+		if len(cdnOpt.Sources) == 0 {
+			fmt.Println("[信息] CDN 规则集未配置来源，跳过（CDN 命中判据会整体弃权）")
+			fmt.Println("        它由代码仓库的 cdn-rules Action 生成，和规则包不在同一个仓库；")
+			fmt.Println("        在 config.env 里配 CDN_RULES_BASE 或 DNS_STACK_BINARY_REPO 即可")
+			if len(failed) > 0 {
+				return fmt.Errorf("%s", strings.Join(failed, "; "))
+			}
+			return nil
+		}
+		res, err := rulesync.SyncCDN(ctx, cdnOpt)
 		switch {
 		case err != nil:
 			failed = append(failed, fmt.Sprintf("CDN 规则集: %v", err))
@@ -106,6 +118,24 @@ func cmdSyncRules(args []string) error {
 		return fmt.Errorf("%s", strings.Join(failed, "; "))
 	}
 	return nil
+}
+
+func cdnRuleSources(keys map[string]string) []string {
+	if base := strings.TrimSpace(keys["CDN_RULES_BASE"]); base != "" {
+		return []string{strings.TrimRight(base, "/")}
+	}
+	repo := strings.TrimSpace(keys["DNS_STACK_BINARY_REPO"])
+	if repo == "" {
+		return nil
+	}
+	branch := strings.TrimSpace(keys["GITHUB_BRANCH"])
+	if branch == "" {
+		branch = "main"
+	}
+	return []string{
+		"https://raw.githubusercontent.com/" + repo + "/" + branch,
+		"https://cdn.jsdelivr.net/gh/" + repo + "@" + branch,
+	}
 }
 
 func reloadMosproxy(ctx context.Context, client *http.Client, api string) error {
