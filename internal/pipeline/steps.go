@@ -85,6 +85,10 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 			Dest: filepath.Join(dir, "dbip-city.mmdb")})
 	}
 
+	if rt.Preview {
+		rt.Infof("预览模式：跳过归属库下载（%d 个来源）", len(specs))
+		return nil
+	}
 	var updated, unchanged []string
 	for i := range specs {
 		specs[i].Verify = verifierFor(specs[i].Kind)
@@ -184,6 +188,12 @@ func stepChnroute(ctx context.Context, rt *Runtime) error {
 		os.Remove(temp)
 		return err
 	}
+	if rt.Preview {
+		rt.Infof("预览：direct4 %d -> %d 条网段", countPrefixes(out), report.Networks)
+		rt.Infof("预览模式：没有加载 nft 集合、没有覆盖 %s", out)
+		os.Remove(temp)
+		return nil
+	}
 	if err := rt.LoadNFTSet(ctx, cfg.DirectSet, loaded.Set.Prefixes()); err != nil {
 		os.Remove(temp)
 		return err
@@ -204,7 +214,10 @@ func stepGeoCross(ctx context.Context, rt *Runtime) error {
 	if err != nil {
 		return err
 	}
-	if err := geoaudit.WriteSnapshots(cfg.Chnroute("geo-disputed.txt"), cfg.Chnroute("geo-promoted.txt"), report); err != nil {
+	if rt.Preview {
+		rt.Infof("预览模式：没有覆盖争议/晋级清单")
+	} else if err := geoaudit.WriteSnapshots(
+		cfg.Chnroute("geo-disputed.txt"), cfg.Chnroute("geo-promoted.txt"), report); err != nil {
 		return err
 	}
 	if report.FailOpen != "" {
@@ -227,6 +240,7 @@ func stepAnycast(ctx context.Context, rt *Runtime) error {
 			filepath.Join(cfg.GeoDir(), "dbip-asn.mmdb"),
 			filepath.Join(cfg.GeoDir(), "dbip-city.mmdb"),
 		),
+		DryRun: rt.Preview,
 	})
 	if err != nil {
 		return err
@@ -234,6 +248,9 @@ func stepAnycast(ctx context.Context, rt *Runtime) error {
 	if report.Note != "" {
 		rt.Warnf("本轮未产出（%s），保留上一版清单", report.Note)
 		return nil
+	}
+	if rt.Preview {
+		rt.Infof("预览模式：共享 anycast 清单未落盘")
 	}
 	rt.Infof("infra %d 个地址，候选 %d 个，识别为共享 anycast %d 个",
 		report.InfraIPs, report.Candidates, len(report.Shared))
@@ -285,6 +302,12 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		return err
 	}
 
+	if rt.Preview {
+		rt.previewAuthority(resultPath, tempResult, tempECS)
+		os.Remove(tempResult)
+		os.Remove(tempECS)
+		return nil
+	}
 	if err := rt.commitAuthoritySet(ctx, resultPath, tempResult); err != nil {
 		os.Remove(tempECS)
 		return err
@@ -316,13 +339,17 @@ func stepECSZone(ctx context.Context, rt *Runtime) error {
 	}
 	covered, total := ecszone.DirectCoverage(merged, direct)
 	out := cfg.Path("ecs-ip-zone.txt")
-	temp := out + ".new"
-	if err := os.WriteFile(temp, []byte(ecszone.Render(merged)), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, out); err != nil {
-		os.Remove(temp)
-		return err
+	if rt.Preview {
+		rt.Infof("预览：分片表 %d -> %d 行，未覆盖 %s", ecszone.CountDataLines(out), len(merged), out)
+	} else {
+		temp := out + ".new"
+		if err := os.WriteFile(temp, []byte(ecszone.Render(merged)), 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(temp, out); err != nil {
+			os.Remove(temp)
+			return err
+		}
 	}
 	percent := 0.0
 	if total > 0 {
@@ -333,10 +360,12 @@ func stepECSZone(ctx context.Context, rt *Runtime) error {
 	rt.Infof("覆盖 direct4 地址空间 %.1f%%（%d / %d）", percent, covered, total)
 
 	unidentified := cfg.Chnroute("ecs-zone-unidentified.txt")
-	if err := os.WriteFile(unidentified,
+	if rt.Preview {
+		rt.Infof("预览：待识别网段 %d 个地址（未落盘）", stats.UnidentifiedCN)
+	} else if err := os.WriteFile(unidentified,
 		[]byte(ecszone.RenderUnidentified(stats.Unidentified, stats.UnidentifiedCN)), 0o644); err != nil {
 		rt.Warnf("待识别网段清单写入失败：%v", err)
-	} else if stats.UnidentifiedCN > 0 {
+	} else if stats.UnidentifiedCN > 0 && !rt.Preview {
 		rt.Infof("待识别网段已落盘 %s（%d 个大陆地址在归属库里查不到省份或运营商）",
 			unidentified, stats.UnidentifiedCN)
 	}

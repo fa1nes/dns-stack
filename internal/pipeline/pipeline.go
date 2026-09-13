@@ -66,6 +66,7 @@ type Options struct {
 	Only     []string
 	Force    bool
 	DryRun   bool
+	Preview  bool
 	Out      io.Writer
 	Now      func() time.Time
 }

@@ -17,7 +17,10 @@ import (
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
-const manualNSLimit = 8
+const (
+	manualNSLimit        = 8
+	DefaultMaxECSEntries = 20000
+)
 
 type authorityPair struct {
 	Zone string
@@ -330,4 +333,16 @@ func (r *Runtime) commitECSConf(ctx context.Context, staged string) error {
 	}
 	r.Infof("ECS 白名单已更新：%d -> %d 条（已热重载，缓存保留）", old, fresh)
 	return nil
+}
+
+func (r *Runtime) previewAuthority(liveRoute, stagedRoute, stagedECS string) {
+	oldRoute, newRoute := countPrefixes(liveRoute), countPrefixes(stagedRoute)
+	oldECS, newECS := countECSLines(r.Config.ECSConfPath), countECSLines(stagedECS)
+	r.Infof("预览：墙内权威网段 %d -> %d 条", oldRoute, newRoute)
+	r.Infof("预览：ECS 白名单 %d -> %d 条（%+d）", oldECS, newECS, newECS-oldECS)
+	if newECS > DefaultMaxECSEntries {
+		r.Warnf("新白名单 %d 条已超过上限 %d，正式执行时累积保留会被丢弃",
+			newECS, DefaultMaxECSEntries)
+	}
+	r.Infof("预览模式：没有改动 nft 集合、没有改动 %s、没有 reload unbound", r.Config.ECSConfPath)
 }

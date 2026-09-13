@@ -116,8 +116,9 @@ func (c Config) Chnroute(name string) string { return c.Path("chnroute", name) }
 func (c Config) GeoDir() string { return c.Path("geoip") }
 
 type Runtime struct {
-	Config Config
-	Out    io.Writer
+	Config  Config
+	Out     io.Writer
+	Preview bool
 
 	geo    *geoip.GeoDB
 	geoSet bool
