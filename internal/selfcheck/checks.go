@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cdn"
+	"github.com/dns-stack/dns-stack/internal/cdnrules"
+	"github.com/dns-stack/dns-stack/internal/rulesync"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
@@ -207,7 +209,42 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 	c.ok("CDN 地理调度区域已识别", "%d 个，如 %s", len(steered), strings.Join(sample, ", "))
 }
 
-func checkResolution(ctx context.Context, opt Options, report *Report) {
+func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
+	if opt.Role != stack.RoleCNResolver {
+		return nil
+	}
+	c := &checker{report: report, group: "CDN 直连规则集"}
+	path := rulesync.CDNPath(opt.StateDir)
+	set, err := cdnrules.Load(path)
+	if err != nil {
+		c.warn("规则集可用", "读不到 %s: %v（CDN 命中判据本轮整体弃权）", path, err)
+		return nil
+	}
+	withNets := 0
+	mainland := 0
+	for _, p := range set.Providers() {
+		if p.PrefixCount() > 0 {
+			withNets++
+		}
+		if p.HasMainland() {
+			mainland++
+		}
+	}
+	if withNets == 0 {
+		c.fail("规则集有前缀证据",
+			"%d 个 provider 全都没有前缀，判据会对所有域名弃权——等于规则集从未接上",
+			len(set.Providers()))
+		return set
+	}
+	c.ok("规则集可用", "provider %d 个(%d 个有前缀证据，%d 个有大陆节点段)，前缀 %d 条",
+		len(set.Providers()), withNets, mainland, set.PrefixCount())
+	if age, ok := fileAge(path, now); ok && age > 72*time.Hour {
+		c.warn("规则集新鲜度", "已 %s 未更新，检查 cdn-rules Action 与 dns-stack-sync-rules", humanAge(age))
+	}
+	return set
+}
+
+func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *cdnrules.Set) {
 	if opt.Role != stack.RoleCNResolver {
 		return
 	}
@@ -226,6 +263,7 @@ func checkResolution(ctx context.Context, opt Options, report *Report) {
 	)
 	resolver := "127.0.0.1:5335"
 	differentiated, comparable := 0, 0
+	var offshoreHits, mismatched []string
 	for _, probe := range probes {
 		north, errN := queryWithSubnet(ctx, resolver, probe.domain, beijing)
 		south, errS := queryWithSubnet(ctx, resolver, probe.domain, guangdong)
@@ -234,15 +272,43 @@ func checkResolution(ctx context.Context, opt Options, report *Report) {
 			continue
 		}
 		comparable++
-		if strings.Join(north, ",") != strings.Join(south, ",") {
+		if joinAddrs(north, ",") != joinAddrs(south, ",") {
 			differentiated++
 			c.ok(probe.label+" 按子网分化", "北京 %s / 广东 %s",
-				strings.Join(north, " "), strings.Join(south, " "))
+				joinAddrs(north, " "), joinAddrs(south, " "))
+		} else {
+			c.warn(probe.label+" 按子网分化",
+				"两地答案相同(%s)——该域名的权威没收到 ECS，或它本来就没有国内节点",
+				joinAddrs(north, " "))
+		}
+		if cdnSet == nil {
 			continue
 		}
-		c.warn(probe.label+" 按子网分化",
-			"两地答案相同(%s)——该域名的权威没收到 ECS，或它本来就没有国内节点",
-			strings.Join(north, " "))
+		for _, addr := range north {
+			owner, prefix, isMainland, hit := cdnSet.Owner(addr)
+			switch {
+			case !hit:
+				mismatched = append(mismatched, fmt.Sprintf("%s->%s", probe.domain, addr))
+			case isMainland:
+				c.ok(probe.label+" 命中大陆 CDN 节点", "%s 属于 %s %s", addr, owner.Name, prefix)
+			case owner.HasMainland():
+				offshoreHits = append(offshoreHits,
+					fmt.Sprintf("%s->%s(%s 境外段，但该 CDN 有大陆段)", probe.domain, addr, owner.Name))
+			default:
+				c.skip(probe.label+" 命中大陆 CDN 节点",
+					"%s 属于 %s，但规则集里该 CDN 没有大陆段可比对", addr, owner.Name)
+			}
+		}
+	}
+	if cdnSet != nil {
+		if len(offshoreHits) > 0 {
+			c.warn("大陆有节点却拿到境外节点", "%s——ECS 可能没送达该权威", strings.Join(offshoreHits, ", "))
+		}
+		if len(mismatched) > 0 {
+			c.warn("答案不属于任何已知 CDN 段",
+				"%s——可能是自建源站，也可能是投毒地址，用 dns-stack cdn-rules lookup 复核",
+				strings.Join(mismatched, ", "))
+		}
 	}
 	if comparable == 0 {
 		c.skip("ECS 就近整体判据", "没有可比较的域名，本轮判据没有回答任何问题")

@@ -6,12 +6,13 @@ import (
 	"net"
 	"net/netip"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 )
 
-func queryWithSubnet(ctx context.Context, server, name, subnet string) ([]string, error) {
+func queryWithSubnet(ctx context.Context, server, name, subnet string) ([]netip.Addr, error) {
 	prefix, err := netip.ParsePrefix(subnet)
 	if err != nil {
 		return nil, err
@@ -43,12 +44,20 @@ func queryWithSubnet(ctx context.Context, server, name, subnet string) ([]string
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	var out []netip.Addr
 	for _, rr := range msg.Answers {
 		if addr, ok := rr.A(); ok {
-			out = append(out, addr.String())
+			out = append(out, addr)
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Compare(out[j]) < 0 })
 	return out, nil
+}
+
+func joinAddrs(addrs []netip.Addr, sep string) string {
+	parts := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		parts = append(parts, a.String())
+	}
+	return strings.Join(parts, sep)
 }

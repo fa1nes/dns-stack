@@ -2,6 +2,8 @@ package selfcheck
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +11,31 @@ import (
 	"strings"
 	"time"
 )
+
+func fileSum(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func readRecordedSum(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum, _, _ := strings.Cut(strings.TrimSpace(string(body)), " ")
+	if len(sum) != 64 {
+		return "", fmt.Errorf("%s 里不是一条 sha256 记录", path)
+	}
+	return sum, nil
+}
 
 type Level string
 
@@ -97,6 +124,7 @@ type Options struct {
 	Role       string
 	Out        io.Writer
 	Quick      bool
+	Full       bool
 	Now        func() time.Time
 }
 
@@ -166,10 +194,25 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 	now := opt.now()
 
 	checkModules(ctx, opt, &report)
+	checkFailedUnits(ctx, &report)
+	checkBinaryProvenance(opt, &report)
 	checkRoutingData(opt, &report, now)
 	checkECSWhitelist(opt, &report, now)
+	cdnSet := checkCDNRuleset(opt, &report, now)
 	if !opt.Quick {
-		checkResolution(ctx, opt, &report)
+		checkNFTSets(ctx, opt, &report)
+		checkCollector(ctx, opt, &report, now)
+		checkThrottling(ctx, opt, &report)
+		checkResolverPair(ctx, opt, &report)
+		checkResolution(ctx, opt, &report, cdnSet)
+	}
+	if opt.Full {
+		checkBackupFreshness(opt, &report, now)
+		checkEntrypoints(ctx, opt, &report)
+		checkSecretsPermissions(opt, &report)
+		checkConntrack(opt, &report)
+		checkGeoIPFreshness(opt, &report, now)
+		checkPanel(ctx, opt, &report)
 	}
 	return report, nil
 }
