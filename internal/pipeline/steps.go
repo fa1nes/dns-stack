@@ -89,10 +89,16 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 		rt.Infof("预览模式：跳过归属库下载（%d 个来源）", len(specs))
 		return nil
 	}
-	var updated, unchanged []string
+	budget, cancel := context.WithTimeout(ctx, stepFetchBudget)
+	defer cancel()
+	var updated, unchanged, skipped []string
 	for i := range specs {
+		if budget.Err() != nil {
+			skipped = append(skipped, specs[i].Kind)
+			continue
+		}
 		specs[i].Verify = verifierFor(specs[i].Kind)
-		result, err := rt.Fetch(ctx, specs[i])
+		result, err := rt.Fetch(budget, specs[i])
 		if err != nil {
 			rt.Warnf("%s 下载失败，保留现有库不变：%v", specs[i].Kind, err)
 			continue
@@ -109,6 +115,10 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 	}
 	if len(unchanged) > 0 {
 		rt.Infof("已是最新：%s", strings.Join(unchanged, " "))
+	}
+	if len(skipped) > 0 {
+		rt.Warnf("本步骤 %s 预算用尽，未尝试：%s（沿用现有库，下一轮重试）",
+			stepFetchBudget, strings.Join(skipped, " "))
 	}
 
 	if !exists(filepath.Join(dir, "GeoLite2-ASN.mmdb")) && !exists(filepath.Join(dir, "qqwry.ipdb")) {

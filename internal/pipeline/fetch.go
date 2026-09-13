@@ -7,11 +7,23 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+const (
+	minSpeedBytes   = 8192
+	speedWindow     = 20 * time.Second
+	headerTimeout   = 20 * time.Second
+	attemptTimeout  = 5 * time.Minute
+	connectTimeout  = 10 * time.Second
+	stepFetchBudget = 12 * time.Minute
+)
+
+var tunnelFirstHosts = []string{"github.com", "objects.githubusercontent.com", "raw.githubusercontent.com"}
 
 type FetchResult struct {
 	Path       string
@@ -28,19 +40,49 @@ type fetchSpec struct {
 	Verify   func(path string) error
 }
 
-func clientFor(localAddr string, timeout time.Duration) *http.Client {
-	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
+type paceReader struct {
+	inner  io.Reader
+	last   time.Time
+	acc    int64
+	total  int64
+	failed error
+}
+
+func (p *paceReader) Read(buf []byte) (int, error) {
+	if p.failed != nil {
+		return 0, p.failed
+	}
+	n, err := p.inner.Read(buf)
+	p.acc += int64(n)
+	p.total += int64(n)
+	if p.last.IsZero() {
+		p.last = time.Now()
+	}
+	if elapsed := time.Since(p.last); elapsed >= speedWindow {
+		rate := p.acc * int64(time.Second) / int64(elapsed)
+		if rate < minSpeedBytes {
+			p.failed = fmt.Errorf("持续 %s 平均速度 %d B/s 低于下限 %d B/s，判定为僵死连接",
+				speedWindow, rate, minSpeedBytes)
+			return n, p.failed
+		}
+		p.last, p.acc = time.Now(), 0
+	}
+	return n, err
+}
+
+func clientFor(localAddr string) *http.Client {
+	dialer := &net.Dialer{Timeout: connectTimeout, KeepAlive: 30 * time.Second}
 	if localAddr != "" {
 		if addr, err := netip.ParseAddr(localAddr); err == nil {
 			dialer.LocalAddr = &net.TCPAddr{IP: net.IP(addr.AsSlice())}
 		}
 	}
 	return &http.Client{
-		Timeout: timeout,
+		Timeout: attemptTimeout,
 		Transport: &http.Transport{
 			DialContext:           dialer.DialContext,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 60 * time.Second,
+			TLSHandshakeTimeout:   connectTimeout,
+			ResponseHeaderTimeout: headerTimeout,
 			MaxIdleConnsPerHost:   2,
 		},
 	}
@@ -50,7 +92,21 @@ func etagPath(dest string) string {
 	return filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".etag")
 }
 
-func download(ctx context.Context, client *http.Client, url, temp, etag string) (int64, bool, error) {
+func prefersTunnel(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	for _, known := range tunnelFirstHosts {
+		if host == known || strings.HasSuffix(host, "."+known) {
+			return true
+		}
+	}
+	return false
+}
+
+func download(ctx context.Context, client *http.Client, url, dest, etag string) (int64, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0, false, err
@@ -70,22 +126,24 @@ func download(ctx context.Context, client *http.Client, url, temp, etag string) 
 	if resp.StatusCode != http.StatusOK {
 		return 0, false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+
+	temp := dest + ".part"
 	file, err := os.Create(temp)
 	if err != nil {
 		return 0, false, err
 	}
-	written, copyErr := io.Copy(file, resp.Body)
+	paced := &paceReader{inner: resp.Body}
+	written, copyErr := io.Copy(file, paced)
 	closeErr := file.Close()
-	if copyErr != nil {
+	if copyErr != nil || closeErr != nil {
 		os.Remove(temp)
-		return 0, false, copyErr
-	}
-	if closeErr != nil {
-		os.Remove(temp)
+		if copyErr != nil {
+			return 0, false, copyErr
+		}
 		return 0, false, closeErr
 	}
 	if tag := strings.TrimSpace(resp.Header.Get("ETag")); tag != "" {
-		os.WriteFile(etagPath(strings.TrimSuffix(temp, ".part")), []byte(tag), 0o644)
+		os.WriteFile(etagPath(dest), []byte(tag), 0o644)
 	}
 	return written, false, nil
 }
@@ -107,36 +165,42 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 		}
 	}
 
-	attempts := []struct {
+	type attempt struct {
 		label  string
 		local  string
-		wait   time.Duration
 		tunnel bool
-	}{
-		{"直连", "", 7 * time.Minute, false},
-		{"隧道 " + r.Config.TunnelIf, r.Config.TunnelAddr, 7 * time.Minute, true},
+	}
+	attempts := []attempt{
+		{"直连", "", false},
+		{"隧道 " + r.Config.TunnelIf, r.Config.TunnelAddr, true},
+	}
+	if prefersTunnel(spec.URL) {
+		attempts[0], attempts[1] = attempts[1], attempts[0]
 	}
 
 	var lastErr error
-	for _, attempt := range attempts {
-		written, notModified, err := download(ctx, clientFor(attempt.local, attempt.wait), spec.URL, temp, etag)
+	for _, item := range attempts {
+		if ctx.Err() != nil {
+			return FetchResult{}, ctx.Err()
+		}
+		written, notModified, err := download(ctx, clientFor(item.local), spec.URL, spec.Dest, etag)
 		if err != nil {
 			lastErr = err
-			r.Warnf("%s 经%s下载失败：%v", spec.Kind, attempt.label, err)
+			r.Warnf("%s 经%s下载失败：%v", spec.Kind, item.label, err)
 			continue
 		}
 		if notModified {
-			return FetchResult{Path: spec.Dest, NotChanged: true, ViaTunnel: attempt.tunnel}, nil
+			return FetchResult{Path: spec.Dest, NotChanged: true, ViaTunnel: item.tunnel}, nil
 		}
 		if written < spec.MinBytes {
 			lastErr = fmt.Errorf("仅 %d 字节（下限 %d），判定为残缺下载", written, spec.MinBytes)
-			r.Warnf("%s 经%s下载残缺：%v", spec.Kind, attempt.label, lastErr)
+			r.Warnf("%s 经%s下载残缺：%v", spec.Kind, item.label, lastErr)
 			continue
 		}
 		if spec.Verify != nil {
 			if err := spec.Verify(temp); err != nil {
 				lastErr = fmt.Errorf("完整性校验未通过: %w", err)
-				r.Warnf("%s 经%s下载后校验失败：%v", spec.Kind, attempt.label, err)
+				r.Warnf("%s 经%s下载后校验失败：%v", spec.Kind, item.label, err)
 				continue
 			}
 		}
@@ -146,7 +210,7 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 		if err := os.Rename(temp, spec.Dest); err != nil {
 			return FetchResult{}, err
 		}
-		return FetchResult{Path: spec.Dest, Bytes: written, ViaTunnel: attempt.tunnel}, nil
+		return FetchResult{Path: spec.Dest, Bytes: written, ViaTunnel: item.tunnel}, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("下载未成功")
