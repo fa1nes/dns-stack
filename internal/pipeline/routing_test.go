@@ -1,10 +1,13 @@
 package pipeline
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
 func routingFixture() RoutingConfig {
@@ -112,7 +115,22 @@ func TestRoutingConfigDefaultsMatchTheShell(t *testing.T) {
 	}
 }
 
-func TestSetSemanticsAssertsPrivateRangesAreAbsent(t *testing.T) {
+func TestNonGlobalProbesCoverTheRangesGlobalOnlyFilters(t *testing.T) {
+	for _, probe := range nonGlobalProbes {
+		addr, err := netip.ParseAddr(probe)
+		if err != nil {
+			t.Fatalf("探针 %q 不是合法地址: %v", probe, err)
+		}
+		if ipset.IsGlobalAddr(addr) {
+			t.Errorf("%s 是全局地址，拿它当非全局探针会把正常集合误判成被污染", probe)
+		}
+	}
+	if len(nonGlobalProbes) < 4 {
+		t.Error("探针太少，混进一两个保留段就抽查不到")
+	}
+}
+
+func TestSetSemanticsChecksTheRuleNotOneSampleAddress(t *testing.T) {
 	body, err := os.ReadFile("routing.go")
 	if err != nil {
 		t.Fatal(err)
@@ -122,17 +140,39 @@ func TestSetSemanticsAssertsPrivateRangesAreAbsent(t *testing.T) {
 	if start < 0 {
 		t.Fatal("找不到 verifySetSemantics")
 	}
-	end := strings.Index(text[start:], "\nfunc ")
-	body2 := text[start : start+end]
-	if strings.Contains(body2, "if !rc.inSet(ctx, rc.Config.TunnelAddr)") {
-		t.Fatal("隧道地址是私有段，direct4 只含大陆公网网段——" +
-			"断言它必须在集合内会让 routing-setup 永远起不来（含 watchdog 的自动修复）")
+	section := text[start : start+strings.Index(text[start:], "\nfunc ")]
+	if strings.Contains(section, "rc.inSet(ctx, rc.Config.TunnelAddr)") {
+		t.Fatal("不要拿隧道地址当样本：它在两条加载路径下一个在集合内一个不在，" +
+			"任一方向的断言都只覆盖一半情形。应当直接断言集合不含非全局网段")
 	}
-	if !strings.Contains(body2, "if rc.inSet(ctx, rc.Config.TunnelAddr)") {
-		t.Error("应当反过来断言隧道地址不在集合内，以此检出被污染的来源")
+	if !strings.Contains(section, "nonGlobalProbes") {
+		t.Error("应当抽查一组保留地址来验证集合语义")
 	}
-	if !strings.Contains(body2, "endpoints[0]") {
+	if !strings.Contains(section, "endpoints[0]") {
 		t.Error("隧道对端必须仍然断言为不在集合内——它是境外地址，进了集合就会直连吃污染")
+	}
+}
+
+func TestCacheRestoreGoesThroughTheSameFilterAsRoutingData(t *testing.T) {
+	body, err := os.ReadFile("routing.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	start := strings.Index(text, "func (rc RoutingConfig) ensureSetLoaded")
+	if start < 0 {
+		t.Fatal("找不到 ensureSetLoaded")
+	}
+	section := text[start : start+strings.Index(text[start:], "\nfunc ")]
+	if strings.Contains(section, "CachedNFT") || strings.Contains(section, `"nft", "-f"`) {
+		t.Fatal("不要再从 direct4.nft 缓存恢复：写它的 shell 已被删除，那是个永不更新且未过滤的孤儿文件，" +
+			"从它恢复会得到与 routing-data 不同的集合")
+	}
+	if !strings.Contains(section, "GlobalOnly: true") {
+		t.Error("恢复路径必须用和 routing-data 相同的全局性过滤，否则同一个集合会有两个版本")
+	}
+	if !strings.Contains(section, `Chnroute("direct4.txt")`) {
+		t.Error("应当从权威源文件 direct4.txt 恢复")
 	}
 }
 

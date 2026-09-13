@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
 const (
@@ -36,7 +38,6 @@ type RoutingConfig struct {
 	FailMode    string
 	MinEntries  int
 	EndpointSet string
-	CachedNFT   string
 }
 
 func LoadRoutingConfig(cfg Config) RoutingConfig {
@@ -48,7 +49,6 @@ func LoadRoutingConfig(cfg Config) RoutingConfig {
 		FailMode:    pick(cfg.Value("TUNNEL_FAIL_MODE"), DefaultFailMode),
 		MinEntries:  cfg.Int("MIN_SET_ENTRIES", DefaultMinSetEntries),
 		EndpointSet: pick(cfg.Value("NFT_ENDPOINT_SET"), DefaultEndpointSet),
-		CachedNFT:   cfg.Chnroute("direct4.nft"),
 	}
 	rc.WGConf = pick(cfg.Value("WG_CONF"), "/etc/wireguard/"+cfg.TunnelIf+".conf")
 	return rc
@@ -298,25 +298,46 @@ func (rc RoutingConfig) ensureSetLoaded(ctx context.Context, rt *Runtime) {
 	if rt.NFTSetCount(ctx, rc.Config.DirectSet) >= rc.MinEntries {
 		return
 	}
-	if _, err := os.Stat(rc.CachedNFT); err != nil {
+	source := rc.Config.Chnroute("direct4.txt")
+	file, err := os.Open(source)
+	if err != nil {
+		rt.Warnf("集合为空且读不到 %s，无法恢复: %v", source, err)
 		return
 	}
-	rt.Infof("集合为空，从缓存恢复：%s", rc.CachedNFT)
-	if _, err := run(ctx, "nft", "-f", rc.CachedNFT); err != nil {
-		rt.Warnf("缓存恢复失败: %v", err)
+	defer file.Close()
+	loaded, err := ipset.LoadReader(file, ipset.LoadOptions{GlobalOnly: true})
+	if err != nil {
+		rt.Warnf("解析 %s 失败: %v", source, err)
+		return
+	}
+	rt.Infof("集合为空，从 %s 恢复（与 routing-data 同一套全局性过滤）", source)
+	if err := rt.LoadNFTSet(ctx, rc.Config.DirectSet, loaded.Set.Prefixes()); err != nil {
+		rt.Warnf("恢复失败: %v", err)
 		return
 	}
 	rt.Infof("已恢复 %d 条", rt.NFTSetCount(ctx, rc.Config.DirectSet))
 }
 
+var nonGlobalProbes = []string{
+	"0.0.0.0", "10.0.0.1", "127.0.0.1", "169.254.0.1",
+	"172.16.0.1", "192.168.0.1", "100.64.0.1", "224.0.0.1",
+}
+
 func (rc RoutingConfig) verifySetSemantics(ctx context.Context, rt *Runtime) error {
 	var bad []string
-	if rc.inSet(ctx, rc.Config.TunnelAddr) {
+	var leaked []string
+	for _, probe := range nonGlobalProbes {
+		if rc.inSet(ctx, probe) {
+			leaked = append(leaked, probe)
+		}
+	}
+	if len(leaked) > 0 {
 		bad = append(bad, fmt.Sprintf(
-			"隧道地址 %s 竟在直连集合内——direct4 只应含大陆公网网段，混进私有段说明来源被污染",
-			rc.Config.TunnelAddr))
+			"直连集合里混进了非全局网段 %s——direct4 只应含大陆公网网段。"+
+				"两条加载路径给出不同内容时就会这样，用 routing-data --only chnroute --force 重建",
+			strings.Join(leaked, ", ")))
 	} else {
-		rt.Infof("隧道地址 %s 不在直连集合内（符合预期：私有段不属于大陆公网）", rc.Config.TunnelAddr)
+		rt.Infof("集合里没有非全局网段（抽查 %d 个保留地址）", len(nonGlobalProbes))
 	}
 	if sample := strings.TrimSpace(rc.Config.Value("PUBLIC_IPV4")); sample == "" {
 		rt.Warnf("config.env 未配置 PUBLIC_IPV4，跳过大陆样本校验")
