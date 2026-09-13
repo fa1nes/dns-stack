@@ -4,24 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/netfetch"
 )
 
-const (
-	minSpeedBytes   = 8192
-	speedWindow     = 20 * time.Second
-	headerTimeout   = 20 * time.Second
-	attemptTimeout  = 5 * time.Minute
-	connectTimeout  = 10 * time.Second
-	stepFetchBudget = 12 * time.Minute
-)
+const stepFetchBudget = 12 * time.Minute
 
 var tunnelFirstHosts = []string{"github.com", "objects.githubusercontent.com", "raw.githubusercontent.com"}
 
@@ -38,54 +31,6 @@ type fetchSpec struct {
 	Dest     string
 	MinBytes int64
 	Verify   func(path string) error
-}
-
-type paceReader struct {
-	inner  io.Reader
-	last   time.Time
-	acc    int64
-	total  int64
-	failed error
-}
-
-func (p *paceReader) Read(buf []byte) (int, error) {
-	if p.failed != nil {
-		return 0, p.failed
-	}
-	n, err := p.inner.Read(buf)
-	p.acc += int64(n)
-	p.total += int64(n)
-	if p.last.IsZero() {
-		p.last = time.Now()
-	}
-	if elapsed := time.Since(p.last); elapsed >= speedWindow {
-		rate := p.acc * int64(time.Second) / int64(elapsed)
-		if rate < minSpeedBytes {
-			p.failed = fmt.Errorf("持续 %s 平均速度 %d B/s 低于下限 %d B/s，判定为僵死连接",
-				speedWindow, rate, minSpeedBytes)
-			return n, p.failed
-		}
-		p.last, p.acc = time.Now(), 0
-	}
-	return n, err
-}
-
-func clientFor(localAddr string) *http.Client {
-	dialer := &net.Dialer{Timeout: connectTimeout, KeepAlive: 30 * time.Second}
-	if localAddr != "" {
-		if addr, err := netip.ParseAddr(localAddr); err == nil {
-			dialer.LocalAddr = &net.TCPAddr{IP: net.IP(addr.AsSlice())}
-		}
-	}
-	return &http.Client{
-		Timeout: attemptTimeout,
-		Transport: &http.Transport{
-			DialContext:           dialer.DialContext,
-			TLSHandshakeTimeout:   connectTimeout,
-			ResponseHeaderTimeout: headerTimeout,
-			MaxIdleConnsPerHost:   2,
-		},
-	}
 }
 
 func etagPath(dest string) string {
@@ -106,10 +51,10 @@ func prefersTunnel(rawURL string) bool {
 	return false
 }
 
-func download(ctx context.Context, client *http.Client, url, dest, etag string) (int64, bool, error) {
+func download(ctx context.Context, client *http.Client, url, dest, etag string) (int64, bool, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, false, err
+		return 0, false, "", err
 	}
 	req.Header.Set("User-Agent", "dns-stack")
 	if etag != "" {
@@ -117,35 +62,31 @@ func download(ctx context.Context, client *http.Client, url, dest, etag string) 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, false, err
+		return 0, false, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
-		return 0, true, nil
+		return 0, true, "", nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return 0, false, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return 0, false, "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
 	temp := dest + ".part"
 	file, err := os.Create(temp)
 	if err != nil {
-		return 0, false, err
+		return 0, false, "", err
 	}
-	paced := &paceReader{inner: resp.Body}
-	written, copyErr := io.Copy(file, paced)
+	written, copyErr := io.Copy(file, netfetch.Paced(resp.Body))
 	closeErr := file.Close()
 	if copyErr != nil || closeErr != nil {
 		os.Remove(temp)
 		if copyErr != nil {
-			return 0, false, copyErr
+			return 0, false, "", copyErr
 		}
-		return 0, false, closeErr
+		return 0, false, "", closeErr
 	}
-	if tag := strings.TrimSpace(resp.Header.Get("ETag")); tag != "" {
-		os.WriteFile(etagPath(dest), []byte(tag), 0o644)
-	}
-	return written, false, nil
+	return written, false, strings.TrimSpace(resp.Header.Get("ETag")), nil
 }
 
 func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error) {
@@ -183,7 +124,7 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 		if ctx.Err() != nil {
 			return FetchResult{}, ctx.Err()
 		}
-		written, notModified, err := download(ctx, clientFor(item.local), spec.URL, spec.Dest, etag)
+		written, notModified, freshTag, err := download(ctx, netfetch.Client(item.local), spec.URL, spec.Dest, etag)
 		if err != nil {
 			lastErr = err
 			r.Warnf("%s 经%s下载失败：%v", spec.Kind, item.label, err)
@@ -209,6 +150,11 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 		}
 		if err := os.Rename(temp, spec.Dest); err != nil {
 			return FetchResult{}, err
+		}
+		if freshTag != "" {
+			os.WriteFile(etagPath(spec.Dest), []byte(freshTag), 0o644)
+		} else {
+			os.Remove(etagPath(spec.Dest))
 		}
 		return FetchResult{Path: spec.Dest, Bytes: written, ViaTunnel: item.tunnel}, nil
 	}
