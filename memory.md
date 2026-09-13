@@ -5,7 +5,11 @@
 ## 1. 不可违反的目标
 
 1. 绝不能把境外域名误纳入国内直连或国内权威集合。
-2. ECS 只发给有明确国内业务证据的权威，不能把境外权威误纳入白名单。
+2. ECS 只发给有明确国内业务证据的权威，或 `internal/cdn` 列出的已知 geo-steering CDN；
+   除这两类外不能把境外权威纳入白名单。2026-09-13 主人明确定调：CDN 就近优先于这条的严格版本，
+   因为拿不到 ECS 的 Akamai/Apple 只能按隧道出口调度，把国内用户导去香港。
+   **geo-steering CDN 的境外权威一律只进 ECS 白名单、永不进直连集合**（`internal/ruleset`），
+   这条不依赖 shared-anycast 清单是否新鲜。
 3. 境外权威位置本身不是 GFW 证据；自动 `foreign-dns` 规则只能来自明确的 `cn_view_polluted` 观测。
 4. 非全局地址、无最终 A/AAAA、公共后缀、保留域、格式错误域名和 IP 字面量都不是地理或递归判定证据。
 5. 不使用本系统历史 DNS 结果作为递归输入；IP/CIDR 观测只能用于审计或客户端裸 IP 规则。
@@ -207,9 +211,20 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 | `internal/ruleset` | 由 infra 快照生成直连路由集与 ECS 白名单 |
 | `internal/resolvetest` | 只在测试里用的最小权威服务器，单独成包以免脚手架被链进生产二进制 |
 
-关键脚本（shell 只保留它擅长的编排）：`update-chnroute.sh`、`update-cn-authority.sh`、
-`update-geoip.sh`、`collect-polluted-ip.sh`、`sync-rules.sh`、`setup-recursive-routing.sh`、
-`preflight.sh`、`regression-check.sh`、`migration/*.sh`。
+| `internal/cdn` | CDN 后缀表与共享 DNS ASN 表的**唯一真相源**（geo-steering / 多租户两个标志） |
+| `internal/pipeline` | 分流数据流水线：按依赖顺序串起 6 个步骤，各步自带周期与时间戳 |
+| `internal/selfcheck` | 运行时回归判据（只观察在跑的系统，不 grep 源码） |
+
+关键脚本（2026-09-13 起只剩 shell 真正擅长的部分）：`collect-polluted-ip.sh`、`sync-rules.sh`、
+`setup-recursive-routing.sh`、`backup.sh`、`doh-path.sh`、`preflight.sh`、`migration/*.sh`。
+`update-chnroute.sh` / `update-geoip.sh` / `update-cn-authority.sh` / `renew-cert.sh` /
+`routing-watchdog.sh` 已并入 `dns-stack routing-data|maintenance|routing-watchdog`；
+`regression-check.sh` 换成 `dns-stack selfcheck`。
+
+⚠️ **把 shell 改写成 Go 时要逐条清点 curl 的保护参数**。`update-geoip.sh` 的
+`--speed-limit 8192 --speed-time 20` 在第一版 Go 端口里丢了，只剩总超时；CN 直连 GitHub Release
+正好是"连得上但不淌数据"，于是流水线整步挂死，`cn-authority` 的 15 分钟刷新停摆。
+现在 `internal/pipeline/fetch.go` 有速度下限 + 步骤总预算，且 github.com 直接走隧道。
 
 Go 模块：`go.mod` 声明 Go 1.26，**除 SQLite 驱动外不引入第三方依赖**。目标包括 Windows、
 Linux amd64、Linux arm64。**Linux 产物是完全静态的 ELF**（CI 用 `file` + `readelf -l` 断言
