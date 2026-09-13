@@ -1,6 +1,9 @@
 package cdn
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 type Trait uint8
 
@@ -9,30 +12,124 @@ const (
 	TraitGeoSteering
 )
 
-var geoSteeringRoots = []string{
-	"akadns.net", "akadns6.net", "akagtm.org", "akam.net", "akamai.net",
-	"akamaiedge.net", "akamaiedge-staging.net", "akamaihd.net", "akamaized.net",
-	"akamaistream.net", "akamaitechnologies.com", "akaquill.net",
-	"edgekey.net", "edgekey-staging.net", "edgesuite.net",
+type Operator struct {
+	ID    string
+	Name  string
+	Roots []string
+	ASNs  []int
+}
 
-	"aaplimg.com", "apple-dns.net", "cdn-apple.com",
+var operators = []Operator{
+	{
+		ID: "akamai", Name: "Akamai",
+		Roots: []string{
+			"akadns.net", "akadns6.net", "akagtm.org", "akam.net", "akamai.net",
+			"akamaiedge.net", "akamaiedge-staging.net", "akamaihd.net", "akamaized.net",
+			"akamaistream.net", "akamaitechnologies.com", "akaquill.net",
+			"edgekey.net", "edgekey-staging.net", "edgesuite.net",
+		},
+		ASNs: []int{12222, 16625, 16702, 20940, 21342, 32787, 33905, 35994},
+	},
+	{
+		ID: "apple", Name: "Apple",
+		Roots: []string{"aaplimg.com", "apple-dns.net", "cdn-apple.com"},
+	},
+	{
+		ID: "microsoft", Name: "Microsoft",
+		Roots: []string{
+			"azure-dns.com", "azure-dns.net", "azure-dns.org", "azure-dns.info",
+			"azureedge.net", "azurefd.net", "tm-azurefd.net", "trafficmanager.net",
+			"msedge.net", "a-msedge.net", "l-msedge.net", "s-msedge.net",
+		},
+		ASNs: []int{8068, 8075},
+	},
+	{
+		ID: "amazon", Name: "AWS",
+		Roots: []string{"cloudfront.net"},
+		ASNs:  []int{7224, 14618, 16509},
+	},
+	{
+		ID: "cloudflare", Name: "Cloudflare",
+		Roots: []string{"cloudflare.net"},
+		ASNs:  []int{13335},
+	},
+	{
+		ID: "fastly", Name: "Fastly",
+		Roots: []string{"fastly.net", "fastlylb.net"},
+		ASNs:  []int{54113, 394192},
+	},
+	{
+		ID: "imperva", Name: "Imperva",
+		Roots: []string{"incapdns.net", "impervadns.net"},
+		ASNs:  []int{19551},
+	},
+	{
+		ID: "cdn77", Name: "CDN77",
+		Roots: []string{"cdn77.org"},
+	},
+	{
+		ID: "gcore", Name: "G-Core",
+		Roots: []string{"gcdn.co", "gcorelabs.com"},
+	},
+	{
+		ID: "bunny", Name: "Bunny",
+		Roots: []string{"b-cdn.net", "bunnycdn.com"},
+	},
+	{
+		ID: "cachefly", Name: "CacheFly",
+		Roots: []string{"cachefly.net"},
+	},
+	{
+		ID: "edgecast", Name: "Edgecast",
+		Roots: []string{"edgecastcdn.net"},
+	},
+	{
+		ID: "edgio", Name: "Edgio",
+		Roots: []string{"llnwd.net", "footprint.net"},
+	},
+	{
+		ID: "stackpath", Name: "StackPath",
+		Roots: []string{"hwcdn.net", "stackpathcdn.com"},
+	},
+	{
+		ID: "alibaba", Name: "阿里云",
+		Roots: []string{
+			"alicdn.com", "alikunlun.com", "kunlunsl.com", "kunlunca.com", "kunlunar.com",
+			"alidns.com", "hichina.com", "aliyuncs.com",
+		},
+	},
+	{
+		ID: "tencent", Name: "腾讯云",
+		Roots: []string{
+			"myqcloud.com", "qcloudcdn.com", "ourdvsss.com", "tcdnvod.com", "cdngslb.com",
+			"cdntip.com", "dnsv1.com", "dnsv2.com", "dnsv3.com", "dnsv4.com", "dnsv5.com",
+		},
+	},
+	{
+		ID: "huawei", Name: "华为云",
+		Roots: []string{
+			"cdnhwc1.com", "cdnhwc2.com", "cdnhwc3.com", "cdnhwc5.com",
+			"dbankcdn.cn", "dbankcdn.com", "livehwc3.cn",
+		},
+	},
+	{
+		ID: "wangsu", Name: "网宿",
+		Roots: []string{"wscdns.com", "lxdns.com", "cdn20.com"},
+	},
+	{
+		ID: "baidu", Name: "百度云",
+		Roots: []string{"bdydns.com"},
+	},
+	{
+		ID: "qiniu", Name: "七牛云",
+		Roots: []string{"qiniudns.com"},
+	},
+}
 
-	"azure-dns.com", "azure-dns.net", "azure-dns.org", "azure-dns.info",
-	"azureedge.net", "azurefd.net", "tm-azurefd.net", "trafficmanager.net",
-	"msedge.net", "a-msedge.net", "l-msedge.net", "s-msedge.net",
-
-	"cloudfront.net", "cloudflare.net", "fastly.net", "fastlylb.net",
-	"cdn77.org", "incapdns.net", "impervadns.net", "gcdn.co", "gcorelabs.com",
-	"b-cdn.net", "bunnycdn.com", "cachefly.net", "edgecastcdn.net",
-	"footprint.net", "llnwd.net", "hwcdn.net", "stackpathcdn.com",
-
-	"alicdn.com", "alikunlun.com", "kunlunsl.com", "kunlunca.com", "kunlunar.com",
-	"alidns.com", "hichina.com", "aliyuncs.com",
-	"wscdns.com", "lxdns.com", "cdn20.com", "bdydns.com", "qiniudns.com",
-	"myqcloud.com", "qcloudcdn.com", "ourdvsss.com", "tcdnvod.com", "cdngslb.com",
-	"cdntip.com", "dnsv1.com", "dnsv2.com", "dnsv3.com", "dnsv4.com", "dnsv5.com",
-	"cdnhwc1.com", "cdnhwc2.com", "cdnhwc3.com", "cdnhwc5.com",
-	"dbankcdn.cn", "dbankcdn.com", "livehwc3.cn",
+var dnsOnlyAS = map[int]string{
+	26496: "GoDaddy", 398101: "GoDaddy",
+	33517: "Dyn", 33070: "Dyn",
+	30060: "Verisign",
 }
 
 var sharedTenancyRoots = []string{
@@ -49,7 +146,20 @@ var sharedTenancyRoots = []string{
 	"upaiyun.com", "example.com", "example.net", "example.org",
 }
 
-var suffixes = buildTable()
+var (
+	geoSteeringRoots = collectRoots()
+	suffixes         = buildTable()
+	rootOwner        = buildRootOwner()
+	sharedDNSAS      = buildSharedDNSAS()
+)
+
+func collectRoots() []string {
+	out := make([]string, 0, 64)
+	for _, op := range operators {
+		out = append(out, op.Roots...)
+	}
+	return out
+}
 
 func buildTable() map[string]Trait {
 	table := make(map[string]Trait, len(geoSteeringRoots)+len(sharedTenancyRoots))
@@ -62,9 +172,32 @@ func buildTable() map[string]Trait {
 	return table
 }
 
+func buildRootOwner() map[string]string {
+	table := make(map[string]string, len(geoSteeringRoots))
+	for _, op := range operators {
+		for _, root := range op.Roots {
+			table[root] = op.ID
+		}
+	}
+	return table
+}
+
+func buildSharedDNSAS() map[int]string {
+	table := make(map[int]string, len(dnsOnlyAS)+16)
+	for asn, label := range dnsOnlyAS {
+		table[asn] = label
+	}
+	for _, op := range operators {
+		for _, asn := range op.ASNs {
+			table[asn] = op.Name
+		}
+	}
+	return table
+}
+
 func Traits(name string) Trait {
 	var out Trait
-	for rest := strings.ToLower(strings.TrimRight(name, ".")); rest != ""; {
+	for rest := normalize(name); rest != ""; {
 		out |= suffixes[rest]
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
@@ -85,20 +218,41 @@ func GeoSteeringRoots() []string {
 	return out
 }
 
-var sharedDNSAS = map[int]string{
-	16509: "AWS", 14618: "AWS", 7224: "AWS",
-	20940: "Akamai", 21342: "Akamai", 16625: "Akamai", 35994: "Akamai",
-	32787: "Akamai", 12222: "Akamai", 16702: "Akamai", 33905: "Akamai",
-	13335: "Cloudflare",
-	26496: "GoDaddy", 398101: "GoDaddy",
-	33517: "Dyn", 33070: "Dyn",
-	30060: "Verisign",
-	19551: "Incapsula",
-	54113: "Fastly", 394192: "Fastly",
-	8068: "Microsoft", 8075: "Microsoft",
+func Operators() []Operator {
+	out := make([]Operator, len(operators))
+	for i, op := range operators {
+		out[i] = Operator{
+			ID:    op.ID,
+			Name:  op.Name,
+			Roots: append([]string(nil), op.Roots...),
+			ASNs:  append([]int(nil), op.ASNs...),
+		}
+		sort.Strings(out[i].Roots)
+		sort.Ints(out[i].ASNs)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func OperatorFor(name string) (string, bool) {
+	for rest := normalize(name); rest != ""; {
+		if id, ok := rootOwner[rest]; ok {
+			return id, true
+		}
+		dot := strings.IndexByte(rest, '.')
+		if dot < 0 {
+			break
+		}
+		rest = rest[dot+1:]
+	}
+	return "", false
 }
 
 func SharedDNSProvider(asn int) (string, bool) {
 	label, ok := sharedDNSAS[asn]
 	return label, ok
+}
+
+func normalize(name string) string {
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(name), "."))
 }
