@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 每 6 小时推进一次例行维护(证书 6 小时 / 备份 24 小时)
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

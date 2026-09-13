@@ -1,0 +1,9 @@
+[Unit]
+Description=dns-stack 例行维护(TLS 证书续签 + 备份)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/bin/dns-stack-go maintenance
+TimeoutStartSec=45min
+IOSchedulingClass=idle
+Nice=10

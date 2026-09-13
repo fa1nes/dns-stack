@@ -337,7 +337,7 @@ if [[ -r "$GEO_ASN" ]]; then
         && ok "City 库就绪(省份标注可用)" \
         || warn "City 库缺失" "运营商识别不受影响，省份标注会减少"
 else
-    warn "未安装 ASN 归属库" "面板与 dns-stack test 不显示运营商；跑 scripts/update-geoip.sh"
+    warn "未安装 ASN 归属库" "面板与 dns-stack test 不显示运营商；跑 dns-stack-go routing-data --only geoip --force"
 fi
 
 echo

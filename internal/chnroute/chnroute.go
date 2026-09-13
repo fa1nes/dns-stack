@@ -380,3 +380,26 @@ func groupDigits(value uint64) string {
 	}
 	return b.String()
 }
+
+func VerifyDelegated(path string, minEntries int) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	count := 0
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		if strings.Contains(sc.Text(), "|CN|ipv4|") {
+			count++
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	if count < minEntries {
+		return fmt.Errorf("CN IPv4 记录仅 %d 条，低于护栏阈值 %d，判定为残缺数据", count, minEntries)
+	}
+	return nil
+}

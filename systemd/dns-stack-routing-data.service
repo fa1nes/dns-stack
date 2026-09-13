@@ -1,0 +1,12 @@
+[Unit]
+Description=dns-stack 分流数据流水线(归属库/大陆网段/交叉校验/anycast/国内权威/ECS 分片)
+After=wg-quick@wg0.service dns-stack-recursive-routing.service unbound.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/bin/dns-stack-go routing-data
+TimeoutStartSec=30min
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6

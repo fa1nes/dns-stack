@@ -96,10 +96,10 @@ func (s *Server) PreStartCheck() error {
 		return fmt.Errorf("面板配置为监听 %s(非本机)，但尚未设置访问密码。请先执行: sudo dns-stack panel-password（拒绝以无密码状态对外监听）", s.cfg.Addr)
 	}
 	if _, err := os.ReadFile(s.cfg.CertPath); err != nil {
-		return fmt.Errorf("面板配置为监听 %s，但读不到 TLS 证书副本: %s。请执行: sudo /opt/dns-stack/dns-stack/scripts/renew-cert.sh --sync-panel-cert（拒绝以明文 HTTP 对外监听，那会让密码在网络上裸奔）", s.cfg.Addr, s.cfg.CertPath)
+		return fmt.Errorf("面板配置为监听 %s，但读不到 TLS 证书副本: %s。请执行: sudo /opt/dns-stack/bin/dns-stack-go maintenance --sync-panel-cert（拒绝以明文 HTTP 对外监听，那会让密码在网络上裸奔）", s.cfg.Addr, s.cfg.CertPath)
 	}
 	if _, err := os.ReadFile(s.cfg.KeyPath); err != nil {
-		return fmt.Errorf("面板配置为监听 %s，但读不到 TLS 私钥副本: %s。请执行: sudo /opt/dns-stack/dns-stack/scripts/renew-cert.sh --sync-panel-cert（拒绝以明文 HTTP 对外监听）", s.cfg.Addr, s.cfg.KeyPath)
+		return fmt.Errorf("面板配置为监听 %s，但读不到 TLS 私钥副本: %s。请执行: sudo /opt/dns-stack/bin/dns-stack-go maintenance --sync-panel-cert（拒绝以明文 HTTP 对外监听）", s.cfg.Addr, s.cfg.KeyPath)
 	}
 	return nil
 }

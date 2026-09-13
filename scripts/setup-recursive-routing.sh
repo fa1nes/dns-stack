@@ -202,11 +202,11 @@ do_apply() {
     entries="$(set_entry_count)"
     if [[ "$entries" -lt "$MIN_SET_ENTRIES" ]]; then
         log_err "直连集合仅 $entries 条（要求 ≥ $MIN_SET_ENTRIES），拒绝安装分流链"
-        log_err "集合过小会把国内递归查询也全导进隧道。请先执行 update-chnroute.sh"
+        log_err "集合过小会把国内递归查询也全导进隧道。请先执行 dns-stack-go routing-data --only chnroute --force"
         exit 1
     fi
     log_info "直连集合约 $entries 条，校验语义"
-    verify_set_semantics || die "集合语义校验未通过，拒绝安装分流链（请先执行 update-chnroute.sh）"
+    verify_set_semantics || die "集合语义校验未通过，拒绝安装分流链（请先执行 dns-stack-go routing-data --only chnroute --force）"
 
     nft add table inet "$NFT_TABLE"
 

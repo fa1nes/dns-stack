@@ -89,44 +89,14 @@ var modules = []Module{
 	{
 		Unit: "dns-stack-routing-watchdog", Name: "分流看门狗", Group: GroupResolve,
 		Purpose: "定期确认分流规则还在内核里，被其他程序刷掉时自动补回",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver}, Every: time.Minute,
+		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver}, Every: time.Minute,
 	},
 
 	{
-		Unit: "dns-stack-chnroute", Name: "大陆网段", Group: GroupRouting,
-		Purpose: "从 APNIC 官方委派记录重建大陆 IPv4 网段表，是所有归属判定的底座",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver},
-		Artifact: "chnroute/direct4.txt", Every: 24 * time.Hour,
-	},
-	{
-		Unit: "dns-stack-cn-authority", Name: "国内权威地址", Group: GroupRouting,
-		Purpose: "记录国内域名的权威服务器地址，让它们的查询走直连而不是绕香港",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver},
-		Artifact: "chnroute/cn-authority.txt", Every: 15 * time.Minute,
-	},
-	{
-		Unit: "dns-stack-shared-anycast", Name: "共享 anycast 识别", Group: GroupRouting,
-		Purpose: "识别多租户 DNS 服务商的共享节点，避免把它们误当成国内权威",
+		Unit: "dns-stack-routing-data", Name: "分流数据流水线", Group: GroupRouting,
+		Purpose: "按依赖顺序重建归属库、大陆网段、交叉校验、共享 anycast、国内权威与 ECS 分片",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
-		Artifact: "chnroute/shared-anycast.txt", Every: time.Hour,
-	},
-	{
-		Unit: "dns-stack-geoip", Name: "归属库更新", Group: GroupRouting,
-		Purpose: "更新纯真/MaxMind/DB-IP 归属库，IP 查省市运营商靠它",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver},
-		Artifact: "geoip/qqwry.ipdb", Every: 24 * time.Hour,
-	},
-	{
-		Unit: "dns-stack-geo-cross", Name: "归属交叉校验", Group: GroupRouting,
-		Purpose: "拿多个归属库互相对照，挑出「纯真说是大陆、别家说不是」的争议网段",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
-		Artifact: "chnroute/geo-disputed.txt", Every: 24 * time.Hour,
-	},
-	{
-		Unit: "dns-stack-ecs-zone", Name: "ECS 缓存分片", Group: GroupRouting,
-		Purpose: "按省份+运营商切分缓存，让 CDN 给你的是本地节点而不是外省节点",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
-		Artifact: "ecs-ip-zone.txt", Every: 24 * time.Hour,
+		Artifact: "chnroute/direct4.txt", Every: 15 * time.Minute, Critical: true,
 	},
 	{
 		Unit: "dns-stack-collect-polluted", Name: "污染 IP 采集", Group: GroupRouting,
@@ -175,14 +145,9 @@ var modules = []Module{
 		Kind:    KindDaemon, Impl: ImplGo, Roles: both, Critical: true,
 	},
 	{
-		Unit: "dns-stack-renew-cert", Name: "证书续签", Group: GroupOps,
-		Purpose: "检查 TLS 证书剩余天数，到期前自动续签",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver}, Every: 6 * time.Hour,
-	},
-	{
-		Unit: "dns-stack-backup", Name: "自动备份", Group: GroupOps,
-		Purpose: "每天备份数据库、配置与规则",
-		Kind:    KindJob, Impl: ImplShell, Roles: both, Every: 24 * time.Hour,
+		Unit: "dns-stack-maintenance", Name: "例行维护", Group: GroupOps,
+		Purpose: "检查并续签 TLS 证书，每天备份数据库、配置与规则",
+		Kind:    KindJob, Impl: ImplGo, Roles: both, Every: 6 * time.Hour,
 	},
 }
 

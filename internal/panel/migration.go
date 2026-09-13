@@ -53,8 +53,8 @@ func migrationExcluded(cfg Config) []migrationSkipped {
 		{Path: cfg.ConfigPath, Reason: "含部署凭据，迁移导出一律不带密钥；用 config.example.env 重新填"},
 		{Path: filepath.ToSlash(filepath.Dir(cfg.AuthPath)), Reason: "面板密码、TOTP 密钥与证书副本，同上"},
 		{Path: cfg.DBPath, Reason: "查询库体积大且可重建；观测数据用 /api/export?dataset=queries|domains 导出"},
-		{Path: joinState(cfg, "chnroute/delegated-apnic-latest.txt"), Reason: "APNIC 原始快照，update-chnroute.sh 会重新下载"},
-		{Path: joinState(cfg, "geoip"), Reason: "归属库体积大，update-geoip.sh 会重新下载"},
+		{Path: joinState(cfg, "chnroute/delegated-apnic-latest.txt"), Reason: "APNIC 原始快照，dns-stack routing-data 会重新下载"},
+		{Path: joinState(cfg, "geoip"), Reason: "归属库体积大，dns-stack routing-data 会重新下载"},
 		{Path: joinState(cfg, "git-state"), Reason: "含规则仓库的 deploy key 与工作区，属于凭据"},
 	}
 }
@@ -101,7 +101,7 @@ func migrationEntries(cfg Config) []migrationEntry {
 		{archive: "state/chnroute/ecs-accum-state.tsv", source: joinState(cfg, "chnroute/ecs-accum-state.tsv"),
 			note: "ECS 累积计时，缺了会让白名单重新从零累积"},
 		{archive: "ecs/dns-stack-ecs.conf", source: ecs,
-			note: "Unbound 的 ECS 白名单，update-cn-authority.sh 可重新生成"},
+			note: "Unbound 的 ECS 白名单，dns-stack routing-data 可重新生成"},
 	}
 	return entries
 }

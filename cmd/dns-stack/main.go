@@ -64,6 +64,12 @@ func main() {
 		err = cmdCollect(args)
 	case "classify":
 		err = cmdClassify(args)
+	case "routing-data":
+		err = cmdRoutingData(args)
+	case "maintenance":
+		err = cmdMaintenance(args)
+	case "routing-watchdog":
+		err = cmdRoutingWatchdog(args)
 	case "shared-anycast":
 		err = cmdSharedAnycast(args)
 	case "ecs-zone":
@@ -100,6 +106,8 @@ func main() {
 		err = cmdPanelAuth(args)
 	case "status":
 		err = cmdStatus(args)
+	case "selfcheck":
+		err = cmdSelfCheck(args)
 	case "help", "-h", "--help":
 		usage()
 	default:

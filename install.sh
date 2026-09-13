@@ -680,11 +680,7 @@ step15_cert() {
     log_info "[15/17] 配置 TLS 证书(DoH 公网入口需要)..."
     ensure_tls_cert
 
-    cp -a "$SCRIPT_DIR/systemd/dns-stack-renew-cert.service" /etc/systemd/system/ 2>/dev/null || true
-    cp -a "$SCRIPT_DIR/systemd/dns-stack-renew-cert.timer" /etc/systemd/system/ 2>/dev/null || true
-    systemctl daemon-reload
-    systemctl enable --now dns-stack-renew-cert.timer 2>/dev/null || true
-    log_ok "证书就绪，续签 timer 已启用"
+    log_ok "证书就绪，续签由 dns-stack-maintenance.timer 承担"
 }
 
 install_timers() {
@@ -704,34 +700,22 @@ install_timers() {
 }
 
 step_backup_timer() {
-    log_info "启用自动备份..."
-    install_timers dns-stack-backup
-    log_ok "自动备份已启用(每日 04:00，保留策略见 config.env)"
+    log_info "启用例行维护(证书续签 + 自动备份)..."
+    install_timers dns-stack-maintenance
+    log_ok "例行维护已启用(证书每 6 小时检查 / 备份每 24 小时，保留策略见 config.env)"
 }
 
 step_cn_timers() {
     log_info "启用国内角色的定时任务..."
-    install_timers dns-stack-sync-rules dns-stack-collect-polluted \
-                   dns-stack-chnroute dns-stack-cn-authority dns-stack-ecs-zone dns-stack-geoip \
-                   dns-stack-shared-anycast dns-stack-geo-cross
-    log_ok "定时任务已启用(规则同步 5 分钟 / 污染采集 6 小时 / 大陆 IP 表每日 / 墙内权威 15 分钟 / ECS 分片每日 / 归属库每周 / 共享 anycast 每小时 / 多源交叉每日)"
-    if [[ ! -f "$STATE_DIR/chnroute/shared-anycast.txt" ]]; then
-        log_info "首次生成共享 anycast 权威清单(失败不影响安装)..."
-        systemctl start dns-stack-shared-anycast.service 2>/dev/null \
-            && log_ok "共享 anycast 清单已就绪" \
-            || log_warn "共享 anycast 清单未生成，稍后由 timer 重试"
-    fi
-    if [[ ! -f "$STATE_DIR/geoip/GeoLite2-ASN.mmdb" ]]; then
-        log_info "首次拉取 IP 归属库(失败不影响安装)..."
-        systemctl start dns-stack-geoip.service 2>/dev/null \
-            && log_ok "归属库已就绪" \
-            || log_warn "归属库拉取未成功，稍后由 dns-stack-geoip.timer 重试"
-    fi
-    if [[ ! -f "$STATE_DIR/chnroute/geo-disputed.txt" ]]; then
-        log_info "首次生成多归属库交叉清单(失败不影响安装)..."
-        systemctl start dns-stack-geo-cross.service 2>/dev/null \
-            && log_ok "多源交叉清单已就绪" \
-            || log_warn "多源交叉清单未生成，稍后由 dns-stack-geo-cross.timer 重试"
+    install_timers dns-stack-sync-rules dns-stack-collect-polluted dns-stack-routing-data
+    log_ok "定时任务已启用(规则同步 5 分钟 / 污染采集 6 小时 / 分流数据流水线 15 分钟)"
+    log_info "  流水线内部各步骤自带周期：归属库与大陆网段每日、共享 anycast 每小时、"
+    log_info "  国内权威与 ECS 白名单每 15 分钟，按依赖顺序串行执行"
+    if [[ ! -f "$STATE_DIR/chnroute/geo-disputed.txt" || ! -f "$STATE_DIR/geoip/GeoLite2-ASN.mmdb" ]]; then
+        log_info "首次执行分流数据流水线(失败不影响安装)..."
+        systemctl start dns-stack-routing-data.service 2>/dev/null \
+            && log_ok "分流数据已就绪" \
+            || log_warn "分流数据未完整生成，稍后由 dns-stack-routing-data.timer 重试"
     fi
 }
 
@@ -790,7 +774,7 @@ step_recursive_routing() {
     fi
     if ! ip link show wg0 >/dev/null 2>&1; then
         log_warn "  未找到 wg0 隧道，跳过递归分流配置"
-        log_warn "  隧道就绪后执行: systemctl start dns-stack-chnroute dns-stack-recursive-routing"
+        log_warn "  隧道就绪后执行: systemctl start dns-stack-routing-data dns-stack-recursive-routing"
         return 0
     fi
 
@@ -803,10 +787,10 @@ step_recursive_routing() {
     systemctl enable dns-stack-recursive-routing.service 2>/dev/null || true
     systemctl enable --now dns-stack-routing-watchdog.timer 2>/dev/null || true
 
-    if "$SCRIPT_DIR/scripts/update-chnroute.sh"; then
+    if "$OPT_DIR/bin/dns-stack-go" routing-data --only geoip,chnroute --force; then
         if systemctl start dns-stack-recursive-routing.service; then
             log_ok "递归出口分流已启用(大陆直连 / 境外经隧道)"
-            "$SCRIPT_DIR/scripts/update-cn-authority.sh" >/dev/null 2>&1 \
+            "$OPT_DIR/bin/dns-stack-go" routing-data --force >/dev/null 2>&1 \
                 && log_ok "墙内域名权威集合已初始化" \
                 || log_info "  墙内权威集合待 Unbound 积累数据后由 timer 自动生成"
         else
@@ -814,7 +798,7 @@ step_recursive_routing() {
         fi
     else
         log_warn "  大陆 IP 集合构建失败，暂不安装分流链(维持全部直连)"
-        log_warn "  网络恢复后执行: systemctl start dns-stack-chnroute dns-stack-recursive-routing"
+        log_warn "  网络恢复后执行: systemctl start dns-stack-routing-data dns-stack-recursive-routing"
     fi
 }
 

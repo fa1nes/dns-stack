@@ -309,11 +309,7 @@ func (h *Helper) opRefreshRouting(map[string]any) result {
 	if missing := h.routingPrerequisiteError(); missing != "" {
 		return failure("缺少 " + missing + "，未改动分流产物")
 	}
-	return h.runSteps([]step{
-		{"direct4", []string{h.scriptPath("scripts", "update-chnroute.sh")}, 900 * time.Second},
-		{"cn-authority", []string{h.scriptPath("scripts", "update-cn-authority.sh")}, 300 * time.Second},
-		{"ecs-zone", []string{h.goBin, "ecs-zone"}, 900 * time.Second},
-	})
+	return h.run([]string{h.goBin, "routing-data", "--force"}, 1800*time.Second, false)
 }
 
 func (h *Helper) opPullCandidates(map[string]any) result {
@@ -389,11 +385,11 @@ func (h *Helper) opMigrationRestore(args map[string]any) result {
 }
 
 func (h *Helper) opCertCheck(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "renew-cert.sh"), "--check-only"}, 60*time.Second, false)
+	return h.run([]string{h.goBin, "maintenance", "--check-cert"}, 60*time.Second, false)
 }
 
 func (h *Helper) opCertRenew(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "renew-cert.sh")}, 180*time.Second, false)
+	return h.run([]string{h.goBin, "maintenance", "--only", "renew-cert", "--force"}, 300*time.Second, false)
 }
 
 func (h *Helper) opCertInfo(map[string]any) result {

@@ -453,3 +453,10 @@ func FormatAddr(value uint32) string {
 		byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value),
 	}).String()
 }
+
+func WriteSnapshots(disputedPath, promotedPath string, report Report) error {
+	if err := Write(disputedPath, KindDisputed, report.DisputeNeed, report.Sources, report.Disputed); err != nil {
+		return err
+	}
+	return Write(promotedPath, KindPromoted, report.PromoteNeed, report.Sources, report.Promoted)
+}
