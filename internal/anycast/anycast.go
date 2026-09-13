@@ -11,21 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
-
-var sharedDNSAS = map[int]string{
-	16509: "AWS", 14618: "AWS", 7224: "AWS",
-	20940: "Akamai", 21342: "Akamai", 16625: "Akamai", 35994: "Akamai",
-	32787: "Akamai", 12222: "Akamai",
-	13335: "Cloudflare",
-	26496: "GoDaddy", 398101: "GoDaddy",
-	33517: "Dyn", 33070: "Dyn",
-	30060: "Verisign",
-	19551: "Incapsula",
-}
 
 type Config struct {
 	StateDir   string
@@ -266,7 +256,7 @@ func (c Config) sharedByAnySource(ip string) (int, string, []string) {
 		if !ok {
 			continue
 		}
-		label, shared := sharedDNSAS[asn]
+		label, shared := cdn.SharedDNSProvider(asn)
 		if !shared {
 			continue
 		}

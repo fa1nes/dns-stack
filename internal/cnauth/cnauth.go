@@ -50,17 +50,19 @@ type Options struct {
 }
 
 type Result struct {
-	Zones          int
-	MatchedZones   int
-	ForcedZones    int
-	DeadZones      int
-	RoutePrefixes  int
-	ECSPrefixes    int
-	SharedExcluded int
-	DisputedCut    int
-	PromotedUsed   int
-	AccumKept      int
-	RTOSeen        bool
+	Zones           int
+	MatchedZones    int
+	ForcedZones     int
+	DeadZones       int
+	RoutePrefixes   int
+	ECSPrefixes     int
+	SharedExcluded  int
+	DisputedCut     int
+	PromotedUsed    int
+	SteeredZones    int
+	SteeredECSAddrs int
+	AccumKept       int
+	RTOSeen         bool
 }
 
 func (o Options) now() time.Time {
@@ -423,6 +425,18 @@ func Run(opt Options) (Result, error) {
 		p.infof("  区域：%s", joinSample(zones, 8))
 	}
 
+	res.SteeredZones = len(built.SteeredZones)
+	res.SteeredECSAddrs = built.SteeredECSAddrs
+	if len(built.SteeredZones) > 0 {
+		p.infof("CDN 地理调度区域 %d 个、权威 %d 个地址纳入 ECS 白名单（按 /%d 聚合，一律不进直连集合）",
+			len(built.SteeredZones), built.SteeredECSAddrs, ruleset.SteeredECSBits)
+		set := map[string]struct{}{}
+		for _, zone := range built.SteeredZones {
+			set[zone] = struct{}{}
+		}
+		p.infof("  区域：%s", joinSample(set, 10))
+	}
+
 	res.PromotedUsed = len(built.PromotedUsed)
 	if len(built.PromotedUsed) > 0 {
 		zones := zonesOf(built.PromotedUsed)
@@ -643,7 +657,7 @@ func writeAccumState(p printer, path string, state map[string]int64) error {
 
 func writeECSConf(path string, targets map[netip.Prefix]struct{}) error {
 	var b strings.Builder
-	b.WriteString("# 由 update-cn-authority.sh 自动生成，请勿手工编辑\n")
+	b.WriteString("# 由 dns-stack routing-data 自动生成，请勿手工编辑\n")
 	b.WriteString("# 只有列在这里的权威会收到客户端子网(ECS)。\n")
 	b.WriteString("server:\n")
 	for _, prefix := range collapsePrefixes(targets) {

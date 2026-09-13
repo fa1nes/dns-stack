@@ -81,19 +81,6 @@ func TestServesCNZoneMatchesExactAndSuffix(t *testing.T) {
 	}
 }
 
-func TestSharedDNSASTableCoversTheProvidersWeCareAbout(t *testing.T) {
-	for asn, want := range map[int]string{
-		16509: "AWS", 20940: "Akamai", 13335: "Cloudflare", 30060: "Verisign",
-	} {
-		if got := sharedDNSAS[asn]; got != want {
-			t.Errorf("AS%d 应当标为 %s，得到 %q", asn, want, got)
-		}
-	}
-	if _, shared := sharedDNSAS[4134]; shared {
-		t.Error("中国电信 AS4134 不该被当成共享 DNS 托管商")
-	}
-}
-
 func TestMissingGeoIPFailsOpenAndSaysSo(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "shared-anycast.txt")

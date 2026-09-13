@@ -294,3 +294,77 @@ func TestIPv6OnlyZoneIsSkipped(t *testing.T) {
 		t.Fatalf("ipv6-only zone leaked into result: matched=%v route=%v ecs=%v", r.MatchedZones, r.RoutePrefixes, r.ECSPrefixes)
 	}
 }
+
+func TestGeoSteeredForeignAuthorityGetsECSButNeverDirectRoute(t *testing.T) {
+	cfg := testConfig(t)
+	s := parseInfra(t, strings.Join([]string{
+		"95.100.173.192 akamaiedge.net. rto 10",
+		"2.22.230.65 akam.net. rto 10",
+		"193.108.88.128 akadns.net. rto 10",
+		"13.107.236.206 azure-dns.com. rto 10",
+		"8.8.8.8 foreign.com. rto 10",
+	}, "\n"))
+	r, err := Build(s, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"95.100.173.192", "2.22.230.65", "193.108.88.128", "13.107.236.206"} {
+		addr := netip.MustParseAddr(want)
+		covered := false
+		for _, prefix := range r.ECSPrefixes {
+			if prefix.Contains(addr) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			t.Errorf("%s 是 geo-steering CDN 权威，必须进 ECS 白名单，否则 CDN 只能按隧道出口调度", want)
+		}
+		for _, prefix := range r.RoutePrefixes {
+			if prefix.Contains(addr) {
+				t.Errorf("%s 是境外权威，进了直连集合 %v——直连会吃 GFW 污染", want, prefix)
+			}
+		}
+	}
+	for _, prefix := range r.ECSPrefixes {
+		if prefix.Contains(netip.MustParseAddr("8.8.8.8")) {
+			t.Errorf("非 CDN 的境外权威 8.8.8.8 不该进 ECS 白名单: %v", prefix)
+		}
+	}
+	if len(r.SteeredZones) != 4 {
+		t.Errorf("应当记录 4 个 geo-steering 区域，得到 %v", r.SteeredZones)
+	}
+}
+
+func TestGeoSteeredZoneWithMainlandAuthorityKeepsForeignOnesOutOfRoute(t *testing.T) {
+	cfg := testConfig(t)
+	s := parseInfra(t, strings.Join([]string{
+		"1.1.1.5 alicdn.com. rto 10",
+		"95.100.173.192 alicdn.com. rto 10",
+	}, "\n"))
+	r, err := Build(s, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := netip.MustParseAddr("95.100.173.192")
+	for _, prefix := range r.RoutePrefixes {
+		if prefix.Contains(foreign) {
+			t.Fatalf("同区域里的境外 CDN 权威混进了直连集合 %v", prefix)
+		}
+	}
+	if !containsAddr(r.RoutePrefixes, netip.MustParseAddr("1.1.1.5")) {
+		t.Fatalf("同区域里的大陆权威应当保留直连: %v", r.RoutePrefixes)
+	}
+	if !containsAddr(r.ECSPrefixes, foreign) {
+		t.Fatalf("境外 CDN 权威仍要收 ECS: %v", r.ECSPrefixes)
+	}
+}
+
+func containsAddr(prefixes []netip.Prefix, addr netip.Addr) bool {
+	for _, prefix := range prefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}

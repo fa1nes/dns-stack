@@ -3,6 +3,7 @@ package classify
 import (
 	"net/netip"
 
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 	"github.com/dns-stack/dns-stack/internal/resolve"
@@ -288,7 +289,7 @@ func sharesGeoSteeredChain(left, right []string) bool {
 		seen[name] = struct{}{}
 	}
 	for _, name := range left {
-		if _, ok := seen[name]; ok && isGeoSteered(name) {
+		if _, ok := seen[name]; ok && cdn.IsGeoSteered(name) {
 			return true
 		}
 	}

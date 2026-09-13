@@ -9,41 +9,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
-func TestProviderSuffixMatchingRespectsLabelBoundaries(t *testing.T) {
-	shouldMatch := []string{
-		"fastly.net", "a.b.fastly.net", "akamaiedge.net", "edge.akamaiedge.net",
-		"alicdn.com", "img.alicdn.com", "aliyuncs.com", "example.com",
-	}
-	for _, name := range shouldMatch {
-		if !IsSharedTenancyRoot(name) {
-			t.Errorf("%s 应当被识别为多租户共享根域", name)
-		}
-	}
-	shouldNotMatch := []string{
-		"notfastly.net", "evil-example.com", "fastly.net.evil.com",
-		"myakamaiedge.net", "qq.com", "baidu.com", "net", "com",
-	}
-	for _, name := range shouldNotMatch {
-		if IsSharedTenancyRoot(name) {
-			t.Errorf("%s 不该命中共享根域判据（按标签边界匹配才不会误伤）", name)
-		}
-	}
-}
-
-func TestGeoSteeringRootsAreAlwaysSharedTenancy(t *testing.T) {
-	for _, root := range geoSteeringRoots {
-		if !isGeoSteered(root) {
-			t.Errorf("%s 应当带 geo-steering 标志", root)
-		}
-		if !IsSharedTenancyRoot(root) {
-			t.Errorf("%s 带 geo-steering 却不带多租户标志——这两个集合的包含关系必须由构造保证", root)
-		}
-	}
-	if isGeoSteered("qq.com") {
-		t.Error("普通域名不该被当成 geo-steering 链")
-	}
-}
-
 func testPSL(t *testing.T) *domain.PSL {
 	t.Helper()
 	var body []string

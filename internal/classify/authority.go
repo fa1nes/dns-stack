@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dns-stack/dns-stack/internal/authority"
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/domain"
 	"github.com/dns-stack/dns-stack/internal/resolve"
 )
@@ -111,7 +112,7 @@ func (e *Engine) ClassifyAuthority(ctx context.Context, limit int) (AuthorityRep
 	for _, v := range verdicts {
 		switch v.Verdict {
 		case authority.VerdictCN:
-			if IsSharedTenancyRoot(v.Domain) {
+			if cdn.IsSharedTenancy(v.Domain) {
 				sharedBlocked = append(sharedBlocked, v.Domain)
 				continue
 			}

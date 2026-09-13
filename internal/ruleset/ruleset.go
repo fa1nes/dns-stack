@@ -9,12 +9,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/domain"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
 const DeadRTOMillis = 120000
+
+const SteeredECSBits = 24
 
 type Config struct {
 	Direct        *ipset.Set
@@ -66,6 +69,8 @@ type Result struct {
 	SharedExcluded   []string
 	DisputedExcluded []string
 	PromotedUsed     []string
+	SteeredZones     []string
+	SteeredECSAddrs  int
 	RTOSeen          bool
 
 	DirectECSPrefixes int
@@ -122,6 +127,17 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	sharedExcluded := make(map[string]struct{})
 	disputedExcluded := make(map[string]struct{})
 	promotedUsed := make(map[string]struct{})
+	steeredECS := make(map[string]struct{})
+	steeredZones := make(map[string]struct{})
+	steer := func(zone string, e infra.Entry) bool {
+		if !e.IP.Is4() || !ipset.IsGlobalPrefix(netip.PrefixFrom(e.IP, 32)) {
+			return false
+		}
+		ecsExtra = append(ecsExtra, netip.PrefixFrom(e.IP, SteeredECSBits).Masked())
+		steeredECS[e.IP.String()] = struct{}{}
+		steeredZones[zone] = struct{}{}
+		return true
+	}
 	for zone, entries := range zones {
 		if defect := domain.ZoneDefect(zone, cfg.PSL); defect != "" {
 			r.Defective[defect] = append(r.Defective[defect], zone)
@@ -141,7 +157,13 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 				break
 			}
 		}
+		steered := cdn.IsGeoSteered(zone)
 		if !forced && !hasCN {
+			if steered {
+				for _, e := range entries {
+					steer(zone, e)
+				}
+			}
 			continue
 		}
 		dead := false
@@ -190,6 +212,10 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 				ecsExact = append(ecsExact, netip.PrefixFrom(e.IP, 32))
 				continue
 			}
+			if steered && !cfg.mainlandEvidence(e.IP) {
+				steer(zone, e)
+				continue
+			}
 			if _, shared := cfg.SharedAnycast[e.IP]; shared {
 				ecsExtra = append(ecsExtra, netip.PrefixFrom(e.IP, 32))
 				sharedExcluded[e.IP.String()] = struct{}{}
@@ -209,6 +235,10 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	for ip := range promotedUsed {
 		r.PromotedUsed = append(r.PromotedUsed, ip)
 	}
+	for zone := range steeredZones {
+		r.SteeredZones = append(r.SteeredZones, zone)
+	}
+	r.SteeredECSAddrs = len(steeredECS)
 	allECS := append(append([]netip.Prefix{}, ecsExact...), ecsExtra...)
 	directECS := directECSPrefixes(cfg)
 	r.DirectECSPrefixes = len(directECS)
@@ -224,6 +254,7 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	sort.Strings(r.SharedExcluded)
 	sort.Strings(r.DisputedExcluded)
 	sort.Strings(r.PromotedUsed)
+	sort.Strings(r.SteeredZones)
 	for key := range r.Defective {
 		sort.Strings(r.Defective[key])
 	}

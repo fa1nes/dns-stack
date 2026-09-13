@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
@@ -207,7 +208,7 @@ func coveredByPublishedParent(name string, names map[string]struct{}) bool {
 			return false
 		}
 		rest = rest[dot+1:]
-		if _, ok := names[rest]; ok && !IsSharedTenancyRoot(rest) {
+		if _, ok := names[rest]; ok && !cdn.IsSharedTenancy(rest) {
 			return true
 		}
 	}
