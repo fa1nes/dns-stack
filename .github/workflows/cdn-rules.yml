@@ -1,0 +1,150 @@
+name: cdn-rules
+
+on:
+  schedule:
+    - cron: "40 4 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "internal/cdn/**"
+      - "internal/cdnrules/**"
+      - "cmd/dns-stack/cdnrulescmd.go"
+      - ".github/workflows/cdn-rules.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cdn-rules
+  cancel-in-progress: false
+
+env:
+  RULESET: cdn-direct.txt
+  MIN_PREFIXES: "1000"
+  MIN_PROVIDERS: "18"
+  MAX_SHRINK_PERCENT: "20"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build dns-stack
+        run: go build -trimpath -buildvcs=false -o ./dns-stack ./cmd/dns-stack
+
+      - name: mainland baseline from APNIC
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL --retry 3 --retry-delay 5 --max-time 300 \
+            --speed-limit 4096 --speed-time 30 \
+            https://ftp.apnic.net/stats/apnic/delegated-apnic-latest -o apnic.txt
+          awk -F'|' '$2=="CN" && $3=="ipv4" && ($7=="allocated" || $7=="assigned") {
+              n=$5; b=32; while (n > 1) { n /= 2; b-- } print $4"/"b
+          }' apnic.txt > mainland.txt
+          awk -F'|' '$2=="CN" && $3=="ipv6" && ($7=="allocated" || $7=="assigned") {
+              print $4"/"$5
+          }' apnic.txt >> mainland.txt
+          lines=$(wc -l < mainland.txt)
+          echo "mainland baseline: ${lines} prefixes"
+          if [ "$lines" -lt 1000 ]; then
+            echo "::error::APNIC 只给出 ${lines} 条大陆网段，远低于真实规模；用它切分会把几乎所有 CDN 段判成境外" >&2
+            exit 1
+          fi
+
+      - name: build ruleset
+        run: |
+          set -Eeuo pipefail
+          ./dns-stack cdn-rules build \
+            --mainland mainland.txt \
+            --out "dist/${RULESET}" \
+            --min-prefixes "${MIN_PREFIXES}"
+
+      - name: verify ruleset
+        run: |
+          set -Eeuo pipefail
+          ./dns-stack cdn-rules verify \
+            --file "dist/${RULESET}" \
+            --min-providers "${MIN_PROVIDERS}" \
+            --min-prefixes "${MIN_PREFIXES}" \
+            --require-nets cloudflare,fastly,amazon,akamai,microsoft \
+            --expect 104.16.0.1=cloudflare \
+            --expect 151.101.1.1=fastly
+
+      - name: prove the verifier can fail
+        run: |
+          set -Eeuo pipefail
+          if ./dns-stack cdn-rules verify --file "dist/${RULESET}" \
+               --expect 104.16.0.1=fastly > /dev/null 2>&1; then
+            echo "::error::校验器把一条明知错误的锚点判成了通过，它自己已经失效，本轮所有绿灯都不可信" >&2
+            exit 1
+          fi
+          if ./dns-stack cdn-rules verify --file "dist/${RULESET}" \
+               --min-prefixes 99999999 > /dev/null 2>&1; then
+            echo "::error::校验器没有拦住低于下限的前缀数" >&2
+            exit 1
+          fi
+          echo "校验器自检通过：错锚点会红，前缀数下限会红"
+
+      - name: refuse a sudden shrink
+        run: |
+          set -Eeuo pipefail
+          count() {
+            sed -n 's/^# prefixes: *\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+          }
+          new="$(count "dist/${RULESET}")"
+          if [ -z "$new" ]; then
+            echo "::error::新规则集没有 '# prefixes:' 头，无法做骤降比较" >&2
+            exit 1
+          fi
+          if [ -f "${RULESET}" ]; then
+            old="$(count "${RULESET}")"
+            old="${old:-0}"
+          else
+            old=0
+            echo "仓库里还没有 ${RULESET}，本轮是首次发布"
+          fi
+          echo "prefix count: ${old} -> ${new}"
+          if [ "$old" -gt 100 ]; then
+            floor=$((old * (100 - MAX_SHRINK_PERCENT) / 100))
+            if [ "$new" -lt "$floor" ]; then
+              echo "::error::前缀数从 ${old} 骤降到 ${new}（下限 ${floor}）。多半是某个上游源整体挂了，用它覆盖会让判据大面积弃权" >&2
+              exit 1
+            fi
+          fi
+
+      - name: publish
+        run: |
+          set -Eeuo pipefail
+          cp "dist/${RULESET}" "${RULESET}"
+          if git diff --quiet -- "${RULESET}"; then
+            echo "内容无变化，不提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${RULESET}"
+          git commit -m "Add ${RULESET}"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "已发布 ${RULESET}"
+              exit 0
+            fi
+            echo "推送冲突，第 ${attempt} 次重试前先 rebase（规则发布可能同时在写这个分支）"
+            git pull --rebase --autostash
+          done
+          echo "::error::三次重试后仍无法推送 ${RULESET}" >&2
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdn-direct
+          path: dist/*
+          retention-days: 14
