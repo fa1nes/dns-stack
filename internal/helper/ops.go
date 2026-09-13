@@ -72,10 +72,6 @@ func stringArg(args map[string]any, key string) string {
 	}
 }
 
-func (h *Helper) scriptPath(parts ...string) string {
-	return filepath.ToSlash(filepath.Join(append([]string{h.stackRoot}, parts...)...))
-}
-
 func (h *Helper) role() string {
 	data, err := os.ReadFile(h.configPath)
 	if err != nil {
@@ -154,23 +150,23 @@ func (h *Helper) opHealthcheck(map[string]any) result {
 }
 
 func (h *Helper) opSyncRules(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "sync-rules.sh")}, 120*time.Second, true)
+	return h.run([]string{h.goBin, "sync-rules"}, 120*time.Second, true)
 }
 
 func (h *Helper) opRollbackRules(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "sync-rules.sh"), "--rollback"}, 120*time.Second, true)
+	return h.run([]string{h.goBin, "sync-rules", "--rollback"}, 120*time.Second, true)
 }
 
 func (h *Helper) opCollectPollutedIP(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "collect-polluted-ip.sh")}, 300*time.Second, false)
+	return h.run([]string{h.goBin, "collect-polluted"}, 300*time.Second, false)
 }
 
 func (h *Helper) opDoHInfo(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "doh-path.sh"), "--print"}, 15*time.Second, false)
+	return h.run([]string{h.goBin, "doh-path"}, 15*time.Second, false)
 }
 
 func (h *Helper) opRotateDoHPath(map[string]any) result {
-	return h.run([]string{h.scriptPath("scripts", "doh-path.sh"), "--rotate"}, 60*time.Second, false)
+	return h.run([]string{h.goBin, "doh-path", "--rotate"}, 60*time.Second, false)
 }
 
 func (h *Helper) restorePanelAuthOwnership() {
@@ -325,7 +321,7 @@ func (h *Helper) opUpdateReferenceData(map[string]any) result {
 }
 
 func (h *Helper) opBackup(args map[string]any) result {
-	command := []string{h.scriptPath("scripts", "backup.sh")}
+	command := []string{h.goBin, "backup"}
 	if truthy(args["include_secrets"]) {
 		command = append(command, "--include-secrets")
 	}
@@ -340,7 +336,7 @@ func (h *Helper) opExport(args map[string]any) result {
 	if mode != "config" && mode != "state" && mode != "full" {
 		return errorResult("非法的导出模式")
 	}
-	return h.run([]string{h.scriptPath("migration", "export.sh"), "--mode", mode}, 300*time.Second, true)
+	return h.run([]string{h.goBin, "export", "--mode", mode}, 300*time.Second, true)
 }
 
 func (h *Helper) opImport(args map[string]any) result {
@@ -352,7 +348,7 @@ func (h *Helper) opImport(args map[string]any) result {
 	if err != nil || !info.Mode().IsRegular() || !strings.HasPrefix(filepath.ToSlash(resolved), "/srv/dns-stack/export/") {
 		return errorResult("导入文件必须位于 /srv/dns-stack/export/ 下")
 	}
-	return h.run([]string{h.scriptPath("migration", "import.sh"), resolved}, 600*time.Second, true)
+	return h.run([]string{h.goBin, "import", resolved}, 600*time.Second, true)
 }
 
 func (h *Helper) migrationInbox() string {

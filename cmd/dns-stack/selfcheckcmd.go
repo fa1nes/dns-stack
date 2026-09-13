@@ -17,6 +17,7 @@ func cmdSelfCheck(args []string) error {
 	conf := fs.String("config", envOr("CONFIG_FILE", "/etc/dns-stack/config.env"), "配置文件")
 	role := fs.String("role", "", "角色，留空则从配置读取")
 	quick := fs.Bool("quick", false, "跳过需要真实解析的判据")
+	full := fs.Bool("full", false, "追加投产校验：备份新鲜度、DoH/DoT 入口、权限、conntrack 水位、面板鉴权")
 	asJSON := fs.Bool("json", false, "输出 JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -35,6 +36,7 @@ func cmdSelfCheck(args []string) error {
 		ConfigFile: *conf,
 		Role:       *role,
 		Quick:      *quick,
+		Full:       *full,
 		Out:        os.Stdout,
 	})
 	if err != nil {

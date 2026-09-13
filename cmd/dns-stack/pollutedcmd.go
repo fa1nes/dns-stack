@@ -1,13 +1,42 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/config"
 	"github.com/dns-stack/dns-stack/internal/polluted"
 )
+
+func cmdCollectPolluted(args []string) error {
+	fs := flag.NewFlagSet("collect-polluted", flag.ContinueOnError)
+	stateDir := fs.String("state", envOrDefault("DNS_STACK_STATE", "/var/lib/dns-stack"), "状态目录")
+	configPath := fs.String("config", envOrDefault("CONFIG_FILE", config.DefaultPath), "配置文件")
+	rounds := fs.Int("rounds", polluted.DefaultRounds, "探测轮数")
+	maxAge := fs.Int("max-age-days", 30, "证据过期天数")
+	minObs := fs.Int("min-observations", 2, "计入所需的最少独立观测次数")
+	timeout := fs.Duration("timeout", 20*time.Minute, "整体超时")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	keys := config.ReadKeys(*configPath, "TRUSTED_SERVER", "TRUSTED_PORT")
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	_, err := polluted.Collect(ctx, polluted.CollectOptions{
+		StateDir:        *stateDir,
+		TrustedServer:   keys["TRUSTED_SERVER"],
+		TrustedPort:     atoiOr(keys["TRUSTED_PORT"], polluted.DefaultTrustedPort),
+		Rounds:          *rounds,
+		MaxAgeDays:      *maxAge,
+		MinObservations: *minObs,
+		Out:             os.Stdout,
+	})
+	return err
+}
 
 func cmdPollutedEvidence(args []string) error {
 	fs := flag.NewFlagSet("polluted-evidence", flag.ContinueOnError)

@@ -13,7 +13,6 @@ type Impl string
 
 const (
 	ImplGo       Impl = "go"
-	ImplShell    Impl = "shell"
 	ImplExternal Impl = "external"
 )
 
@@ -79,7 +78,7 @@ var modules = []Module{
 	{
 		Unit: "dns-stack-recursive-routing", Name: "出口分流", Group: GroupResolve,
 		Purpose: "按目标权威服务器的 IP 归属，决定这一跳走大陆直连还是香港隧道",
-		Kind:    KindDaemon, Impl: ImplShell, Roles: []string{RoleCNResolver}, Critical: true,
+		Kind:    KindDaemon, Impl: ImplGo, Roles: []string{RoleCNResolver}, Critical: true,
 	},
 	{
 		Unit: "wg-quick@wg0", Name: "香港隧道", Group: GroupResolve,
@@ -101,13 +100,13 @@ var modules = []Module{
 	{
 		Unit: "dns-stack-collect-polluted", Name: "污染 IP 采集", Group: GroupRouting,
 		Purpose: "采集 GFW 投毒返回的假地址，作为判定域名被污染的证据",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver},
+		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
 		Artifact: "polluted-ip.txt", Every: 6 * time.Hour,
 	},
 	{
 		Unit: "dns-stack-sync-rules", Name: "规则同步", Group: GroupRouting,
-		Purpose: "从 GitHub 拉取最新的四文件规则包并热加载进 mosproxy",
-		Kind:    KindJob, Impl: ImplShell, Roles: []string{RoleCNResolver},
+		Purpose: "从 GitHub 拉取规则包与 CDN 直连规则集，校验后热加载进 mosproxy",
+		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
 		Artifact: "cn.txt", Every: 5 * time.Minute,
 	},
 

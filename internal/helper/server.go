@@ -50,7 +50,6 @@ type Config struct {
 type Helper struct {
 	sockPath     string
 	configPath   string
-	stackRoot    string
 	authPath     string
 	cli          string
 	goBin        string
@@ -76,7 +75,6 @@ func New(cfg Config) *Helper {
 	h := &Helper{
 		sockPath:     fallback(cfg.SocketPath, DefaultSocketPath),
 		configPath:   fallback(cfg.ConfigPath, DefaultConfigPath),
-		stackRoot:    fallback(cfg.StackRoot, DefaultStackRoot),
 		authPath:     fallback(cfg.AuthPath, DefaultAuthPath),
 		cli:          fallback(cfg.CLIPath, DefaultCLIPath),
 		goBin:        fallback(cfg.GoBin, DefaultGoBin),

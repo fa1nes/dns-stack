@@ -1,6 +1,6 @@
 [Unit]
-Description=dns-stack 同步四文件规则包
+Description=dns-stack 同步规则包与 CDN 直连规则集
 
 [Service]
 Type=oneshot
-ExecStart=/opt/dns-stack/dns-stack/scripts/sync-rules.sh
+ExecStart=/opt/dns-stack/bin/dns-stack-go sync-rules

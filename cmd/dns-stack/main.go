@@ -70,6 +70,8 @@ func main() {
 		err = cmdMaintenance(args)
 	case "routing-watchdog":
 		err = cmdRoutingWatchdog(args)
+	case "routing-setup":
+		err = cmdRoutingSetup(args)
 	case "shared-anycast":
 		err = cmdSharedAnycast(args)
 	case "ecs-zone":
@@ -80,8 +82,24 @@ func main() {
 		err = cmdChnroute(args)
 	case "polluted-evidence":
 		err = cmdPollutedEvidence(args)
+	case "collect-polluted":
+		err = cmdCollectPolluted(args)
 	case "rules":
 		err = cmdRules(args)
+	case "cdn-rules":
+		err = cmdCDNRules(args)
+	case "sync-rules":
+		err = cmdSyncRules(args)
+	case "backup":
+		err = cmdBackup(args)
+	case "export":
+		err = cmdExport(args)
+	case "import":
+		err = cmdImport(args)
+	case "verify":
+		err = cmdVerifyPackage(args)
+	case "db-migrate":
+		err = cmdDBMigrate(args)
 	case "migration-export":
 		err = cmdMigrationExport(args)
 	case "migration-restore":
@@ -96,6 +114,8 @@ func main() {
 		err = cmdECSForward(args)
 	case "doh-probe":
 		err = cmdDoHProbe(args)
+	case "doh-path":
+		err = cmdDoHPath(args)
 	case "helper-probe":
 		err = cmdHelperProbe(args)
 	case "helper":
@@ -111,9 +131,13 @@ func main() {
 	case "help", "-h", "--help":
 		usage()
 	default:
-		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
-		usage()
-		os.Exit(2)
+		handled, ctlErr := ctlDispatch(cmd, args)
+		if !handled {
+			fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
+			usage()
+			os.Exit(2)
+		}
+		err = ctlErr
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[错误] %v\n", err)
@@ -141,6 +165,10 @@ func usage() {
   chnroute        由 APNIC 委派记录生成 direct4(qqwry 补充 + 反向排除)
   polluted-evidence 聚合污染 IP 观测证据(TTL/门槛)并汇总 CIDR
   rules           规则包清洗与校验(域名形态/CIDR 汇总/不重叠/父子覆盖)
+  cdn-rules       CDN 直连规则集：build 由官方前缀源与 ASN 合成(跑在 Action)、verify 锚点断言、
+                  lookup 查单个域名+IP 的判据(大陆节点/境外节点/地址不属于该 CDN)
+  sync-rules      从规则源同步四文件规则包与 CDN 规则集，校验后原子替换并重载
+                  (骤降/同版本冲突保护默认开启，--force 跳过；--rollback 回退到上一份)
   migration-export  导出迁移包(与面板「导出迁移数据」共用同一份清单，一条密钥都不含)
   migration-restore 从面板导出的迁移包恢复数据(按清单白名单写入，可 --dry-run)
   direct4-audit   多个归属库交叉验证 direct4，产出争议(不发 ECS)与晋级(可作大陆证据)清单
@@ -157,6 +185,7 @@ func usage() {
   panel-auth      设置面板密码 / 关闭二次认证（需 root，直接写 auth.json）
   version         显示版本
 `)
+	fmt.Fprint(os.Stderr, ctlUsage())
 }
 
 func cmdCollect(args []string) error {
