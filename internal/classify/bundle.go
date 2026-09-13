@@ -19,15 +19,15 @@ const (
 	ModeFullReset = "full-reset"
 	ModeIPReset   = "ip-reset"
 
-	FileCN       = "cn.txt"
-	FileGFW      = "gfw.txt"
-	FileCNCIDR   = "cn-ip-cidr.txt"
-	FilePolluted = "polluted-ip-cidr.txt"
+	FileCN       = rulesync.FileCN
+	FileGFW      = rulesync.FileGFW
+	FileCNCIDR   = rulesync.FileCNCIDR
+	FilePolluted = rulesync.FilePolluted
 
 	dropRatioAlert = 0.2
 )
 
-var publishFiles = []string{FileCN, FileGFW, FileCNCIDR, FilePolluted}
+var publishFiles = rulesync.BundleFiles
 
 var validModes = map[string]bool{
 	ModeStandard: true, ModeColdStart: true, ModeFullReset: true, ModeIPReset: true,
