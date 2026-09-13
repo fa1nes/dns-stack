@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/backup"
 )
 
 const (
@@ -223,15 +225,14 @@ func buildPatchLevel(text string) int {
 }
 
 func stepBackup(ctx context.Context, rt *Runtime) error {
-	script := "/opt/dns-stack/dns-stack/scripts/backup.sh"
-	if _, err := os.Stat(script); err != nil {
-		return fmt.Errorf("找不到备份脚本 %s", script)
-	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, script, "--automatic")
-	cmd.Stdout, cmd.Stderr = rt.Out, rt.Out
-	return cmd.Run()
+	cfg := backup.DefaultConfig()
+	cfg.StateDir = rt.Config.StateDir
+	cfg.ConfigFile = rt.Config.ConfigFile
+	cfg.Out = rt.Out
+	_, err := cfg.Backup(ctx, false, true)
+	return err
 }
 
 func MaintenanceSteps() []Step {
