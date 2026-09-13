@@ -74,8 +74,20 @@ func randomID() uint16 {
 }
 
 func (c *Client) Query(ctx context.Context, name string, qtype uint16) Answer {
+	return c.QueryWithSubnet(ctx, name, qtype, netip.Prefix{})
+}
+
+func (c *Client) QueryWithSubnet(ctx context.Context, name string, qtype uint16, subnet netip.Prefix) Answer {
 	id := randomID()
-	packet, err := dnswire.BuildQuery(id, name, qtype)
+	var (
+		packet []byte
+		err    error
+	)
+	if subnet.IsValid() {
+		packet, err = dnswire.BuildQueryWithSubnet(id, name, qtype, subnet)
+	} else {
+		packet, err = dnswire.BuildQuery(id, name, qtype)
+	}
 	if err != nil {
 		return Answer{Status: StatusServFail}
 	}
