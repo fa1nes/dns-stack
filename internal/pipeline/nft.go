@@ -14,6 +14,10 @@ import (
 
 const nftChunk = 1000
 
+func contextWithNFTTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, 30*time.Second)
+}
+
 func nftRun(ctx context.Context, script string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
