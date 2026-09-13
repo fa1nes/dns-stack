@@ -11,10 +11,10 @@
   });
   const geoDown = { available: false, label: null, error: '归属库未安装(示例)' };
 
-  const CN_NODE = geo('甲省 A 网', '甲省', 'A 网');
-  const NEAR_NODE = geo('乙省 A 网', '乙省', 'A 网');
-  const XNET_NODE = geo('甲省 B 网', '甲省', 'B 网');
-  const OVERSEAS = geo('境外机房', null, null, 'SG');
+  const CN_NODE = geo('中国 甲省 甲市 A 网', '甲省 甲市', 'A 网');
+  const NEAR_NODE = geo('中国 乙省 乙市 A 网', '乙省 乙市', 'A 网');
+  const XNET_NODE = geo('中国 甲省 甲市 B 网移动', '甲省 甲市', 'B 网移动');
+  const OVERSEAS = geo('新加坡 示例数据中心 有限公司', null, null, 'SG');
 
   const UPSTREAMS = [
     { tag: 'local-unbound', online: true, query_total: 128340, err_total: 12,
@@ -59,7 +59,9 @@
   const QTYPES = ['A', 'AAAA', 'HTTPS', 'CNAME', 'TXT'];
   const RCODES = [[0, 'NOERROR'], [0, 'NOERROR'], [0, 'NOERROR'], [3, 'NXDOMAIN'], [2, 'SERVFAIL']];
   const HOSTS = ['www.example.com', 'cdn.example.net', 'api.example.org',
-                 'img.example.com', 'static.example.net', 'a.example.org'];
+                 'img.example.com', 'static.example.net', 'a.example.org',
+                 'shhkjrqtsn-fbi-hangzhou-01.cdn.example.com.example.net.example.org',
+                 'very-long-subdomain-name-for-layout-testing.static.example.com'];
 
   function mkEvent(i) {
     const [rcode, rcode_name] = RCODES[i % RCODES.length];
@@ -226,6 +228,52 @@
                                 CNAME: { status: 'NOERROR', records: [] } } },
       };
     },
+
+    '/api/ip-lookup': (params) => {
+      const ip = (params && params.get('ip')) || '203.0.113.45';
+      const src = (name, label, rec, extra) => Object.assign(
+        { name, label, available: true, record: rec }, extra || {});
+      return {
+        ip, version: 4,
+        reverse_dns: ['node-45.pool.example.net'],
+        sources: [
+          src('qqwry', '纯真 IPDB', { country: '中国', region: '甲省 甲市',
+              city: '甲市', carrier: 'A 网', owner: '示例通信集团甲省分公司' }),
+          src('maxmind', 'GeoLite2', { country: 'CN', region: '甲省',
+              city: '甲市', asn: 64500, as_org: 'Example Network Communications Group' }),
+          src('dbip', 'DB-IP Country', { country: 'CN', asn: 64500,
+              as_org: 'EXAMPLE-NET Example Network Communications Group Co.,Ltd' }),
+          { name: 'ipsb', label: 'ip.sb 在线', available: false, record: null,
+            error: '在线查询未启用(示例)' },
+        ],
+        divergences: [{ field: 'as_org' }],
+        routing: { direct4: true, cn_authority: false, shared_anycast: false,
+                   polluted: false, global: true },
+        geoip_status: { available: true, degraded: false },
+        freshness: {
+          cnip: { available: true, build_epoch: now() - 86400 * 2, age_days: 2 },
+          asn: { available: true, build_epoch: now() - 86400 * 5, age_days: 5 },
+          city: { available: false, error: '未启用 GeoLite2 City' },
+          dbip_asn: { available: true, build_epoch: now() - 86400 * 12, age_days: 12 },
+          dbip_city: { available: true, build_epoch: now() - 86400 * 12, age_days: 12 },
+        },
+      };
+    },
+
+    '/api/dns-test': () => ({
+      domain: 'shhkjrqtsn-fbi-hangzhou-01.cdn.example.com.example.net',
+      qtype: 'A',
+      results: {
+        'local-unbound': { status: 'NOERROR', elapsed_ms: 18.4, records: [
+          { type: 'CNAME', ttl: 60, value: 'shhkjrqtsn-fbi-hangzhou-01.cdn.example.com.example.net.example.org' },
+          { type: 'A', ttl: 60, value: '203.0.113.31', geo: CN_NODE },
+          { type: 'A', ttl: 60, value: '203.0.113.32', geo: NEAR_NODE } ] },
+        'foreign-hk': { status: 'NOERROR', elapsed_ms: 186.2, records: [
+          { type: 'A', ttl: 60, value: '198.51.100.77', geo: OVERSEAS } ] },
+      },
+      same: false,
+      note: '两侧结果不同，通常是 GeoDNS 按地区调度所致。',
+    }),
 
     '/api/my-location': () => ({
       client_ip: '203.0.113.77', geo: CN_NODE, ecs: '203.0.113.0/24',

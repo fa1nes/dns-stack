@@ -199,6 +199,23 @@ has "窄屏统计卡按内容自动降列" "$WEB/assets/panel.css" 'grid\.c4 \{ 
 has "筛选行的按钮与输入框同高同字号" "$WEB/assets/panel.css" '\.filters button, \.filters \.btn, \.filters label'
 has "出口线在窄卡片里换行而不是被压成竖排" "$WEB/assets/panel.css" 'gap: 4px 8px; flex-wrap: wrap'
 has "假后端带真实长度的出口归属(短样例会藏住挤压)" "$WEB/mock-api.js" 'direct_geo.*label'
+mock_uncovered() {
+    local skip=" /api/action/delete /api/auth/oauth /api/auth/password-toggle "
+    skip="$skip/api/auth/totp/disable /api/auth/totp/enable /api/logout /api/password "
+    local out=""
+    for route in $(grep -oE "api\('/api/[a-z0-9/-]+" "$WEB/assets/panel.js" \
+                   | sed "s/api('//" | sort -u); do
+        case "$skip" in *" $route "*) continue ;; esac
+        grep -q "'$route'" "$WEB/mock-api.js" || out="$out $route"
+    done
+    printf '%s' "$out"
+}
+UNCOVERED="$(mock_uncovered)"
+[[ -z "${UNCOVERED// /}" ]] \
+    && ok "假后端覆盖了全部渲染型接口(漏一个就有整页在开发环境里测不到)" \
+    || bad "假后端缺这些接口:${UNCOVERED}" "对应页面在预览里永远是空的"
+has "假后端的域名样例覆盖超长 CDN 串" "$WEB/mock-api.js" 'very-long-subdomain-name-for-layout-testing'
+has "多源对照表在窄屏钉住行标题" "$WEB/assets/panel.css" '\.ip-matrix th\.rowhead \{'
 has "统计卡副文案用比例字体" "$WEB/assets/panel.css" '\.stat \.sub'
 hasnt "时间轴标签不再被 CSS 统一居中(末位会被裁掉)" "$WEB/assets/panel.css" 'g-time \{ text-anchor'
 has "时间轴按位置分别锚定" "$WEB/assets/panel.js" 'anchorAt'

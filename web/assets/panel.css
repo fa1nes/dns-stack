@@ -1184,3 +1184,19 @@ details.card[open] > summary::before { content: '▾ '; }
 .res-head { display: flex; justify-content: space-between; font-size: var(--fs-sm); }
 .probe-head { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: 5px; }
 .audit-msg { color: var(--text-muted); font-size: var(--fs-xs); }
+
+@media (max-width: 860px) {
+  .ip-matrix { font-size: var(--fs-sm); }
+  .ip-matrix th, .ip-matrix td { padding: 6px 8px; }
+  .ip-matrix th.rowhead {
+    position: sticky; left: 0; z-index: 1;
+    width: auto; min-width: 4.6rem;
+    background: var(--bg-elev);
+    box-shadow: 1px 0 0 var(--border-soft);
+  }
+  .ip-matrix tbody tr.row-diverged th.rowhead {
+    background: color-mix(in srgb, var(--warn) 9%, var(--bg-elev));
+  }
+  .ip-head { gap: .4rem; }
+  .ip-addr { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+}
