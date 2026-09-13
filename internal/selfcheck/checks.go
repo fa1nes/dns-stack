@@ -180,11 +180,17 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 		c.warn("ECS 白名单新鲜度", "已 %s 未更新", humanAge(age))
 	}
 
-	zones := loadMatchedZones(filepath.Join(opt.StateDir, "chnroute", "cn-zones-matched.txt"))
+	steeredPath := filepath.Join(opt.StateDir, "chnroute", "cdn-steered-zones.txt")
 	var steered []string
-	for zone := range zones {
-		if cdn.IsGeoSteered(zone) {
-			steered = append(steered, zone)
+	for zone := range loadMatchedZones(steeredPath) {
+		steered = append(steered, zone)
+	}
+	if len(steered) == 0 {
+		for zone := range loadMatchedZones(
+			filepath.Join(opt.StateDir, "chnroute", "cn-zones-matched.txt")) {
+			if cdn.IsGeoSteered(zone) {
+				steered = append(steered, zone)
+			}
 		}
 	}
 	sort.Strings(steered)

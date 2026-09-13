@@ -300,6 +300,7 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		PrevECSPath:       cfg.ECSConfPath,
 		ECSStatePath:      cfg.Chnroute("ecs-accum-state.tsv"),
 		SharedExcludedOut: cfg.Chnroute("shared-excluded.txt"),
+		SteeredOutPath:    cfg.Chnroute("cdn-steered-zones.txt"),
 		Aggregate:         cfg.Aggregate,
 		AccumTTL:          cfg.Duration("ECS_ACCUM_TTL_SEC", cnauth.DefaultAccumTTL),
 		SharedMaxAge:      cfg.Duration("SHARED_ANYCAST_MAX_AGE_SEC", cnauth.DefaultSharedMaxAge),

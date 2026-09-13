@@ -40,6 +40,7 @@ type Options struct {
 	PrevECSPath       string
 	ECSStatePath      string
 	SharedExcludedOut string
+	SteeredOutPath    string
 	Aggregate         int
 	AccumTTL          time.Duration
 	SharedMaxAge      time.Duration
@@ -427,6 +428,21 @@ func Run(opt Options) (Result, error) {
 
 	res.SteeredZones = len(built.SteeredZones)
 	res.SteeredECSAddrs = built.SteeredECSAddrs
+	if opt.SteeredOutPath != "" {
+		var body strings.Builder
+		fmt.Fprintf(&body, "# generated-at %d\n", now.Unix())
+		fmt.Fprintf(&body, "# 这些区域的权威全在境外，但属于已知 geo-steering CDN：\n")
+		fmt.Fprintf(&body, "# 只进 ECS 白名单（按 /%d 聚合），一律不进直连集合\n", ruleset.SteeredECSBits)
+		fmt.Fprintf(&body, "# zones %d\n# addresses %d\n",
+			len(built.SteeredZones), built.SteeredECSAddrs)
+		for _, zone := range built.SteeredZones {
+			body.WriteString(zone)
+			body.WriteString("\n")
+		}
+		if err := writeAtomic(opt.SteeredOutPath, []byte(body.String()), 0o644); err != nil {
+			p.warnf("CDN 地理调度区域清单写入失败：%v", err)
+		}
+	}
 	if len(built.SteeredZones) > 0 {
 		p.infof("CDN 地理调度区域 %d 个、权威 %d 个地址纳入 ECS 白名单（按 /%d 聚合，一律不进直连集合）",
 			len(built.SteeredZones), built.SteeredECSAddrs, ruleset.SteeredECSBits)
