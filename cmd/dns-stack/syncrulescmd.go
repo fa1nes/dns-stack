@@ -121,21 +121,31 @@ func cmdSyncRules(args []string) error {
 }
 
 func cdnRuleSources(keys map[string]string) []string {
-	if base := strings.TrimSpace(keys["CDN_RULES_BASE"]); base != "" {
-		return []string{strings.TrimRight(base, "/")}
-	}
-	repo := strings.TrimSpace(keys["DNS_STACK_BINARY_REPO"])
-	if repo == "" {
-		return nil
-	}
 	branch := strings.TrimSpace(keys["GITHUB_BRANCH"])
 	if branch == "" {
 		branch = "main"
 	}
-	return []string{
-		"https://raw.githubusercontent.com/" + repo + "/" + branch,
-		"https://cdn.jsdelivr.net/gh/" + repo + "@" + branch,
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(value string) {
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if value == "" {
+			return
+		}
+		if _, dup := seen[value]; dup {
+			return
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
+	for _, item := range strings.Split(keys["CDN_RULES_BASE"], ",") {
+		add(item)
+	}
+	if repo := strings.TrimSpace(keys["DNS_STACK_BINARY_REPO"]); repo != "" {
+		add("https://cdn.jsdelivr.net/gh/" + repo + "@" + branch)
+		add("https://raw.githubusercontent.com/" + repo + "/" + branch)
+	}
+	return out
 }
 
 func reloadMosproxy(ctx context.Context, client *http.Client, api string) error {
