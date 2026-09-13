@@ -72,10 +72,14 @@ var domainExtraColumns = [][2]string{
 var eventExtraColumns = [][2]string{
 	{"elapsed_ms", "REAL"},
 	{"exit_path", "TEXT"},
+	{"client_subnet", "TEXT"},
+	{"ecs_zone", "TEXT"},
+	{"kind", "TEXT"},
 }
 
 var eventExtraIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_events_exit ON query_events(exit_path, ts)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_kind ON query_events(kind, ts)`,
 	`CREATE INDEX IF NOT EXISTS idx_events_elapsed ON query_events(ts, elapsed_ms) WHERE elapsed_ms IS NOT NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_events_domain_elapsed ON query_events(domain, elapsed_ms) WHERE elapsed_ms IS NOT NULL`,
 }
@@ -90,6 +94,10 @@ type Event struct {
 	ExitPath  string
 	ServerTag string
 	Prefetch  int64
+
+	ClientSubnet string
+	ECSZone      string
+	Kind         string
 
 	ElapsedMS *float64
 }
@@ -237,22 +245,27 @@ func RecordEvents(db *sql.DB, events []Event) error {
 	defer func() { _ = tx.Rollback() }()
 
 	insertEvent, err := tx.Prepare(
-		"INSERT INTO query_events(ts, domain, qtype, rcode, resp_by, route, server_tag, prefetch, elapsed_ms, exit_path) " +
-			"VALUES (?,?,?,?,?,?,?,?,?,?)")
+		"INSERT INTO query_events(ts, domain, qtype, rcode, resp_by, route, server_tag, prefetch, " +
+			"elapsed_ms, exit_path, client_subnet, ecs_zone, kind) " +
+			"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		return err
+	}
+	blank := func(value string) any {
+		if value == "" {
+			return nil
+		}
+		return value
 	}
 	for _, event := range events {
 		var elapsed any
 		if event.ElapsedMS != nil {
 			elapsed = *event.ElapsedMS
 		}
-		var exit any
-		if event.ExitPath != "" {
-			exit = event.ExitPath
-		}
 		if _, err := insertEvent.Exec(event.TS, event.Domain, event.QType, event.RCode,
-			event.RespBy, event.Route, event.ServerTag, event.Prefetch, elapsed, exit); err != nil {
+			event.RespBy, event.Route, event.ServerTag, event.Prefetch, elapsed,
+			blank(event.ExitPath), blank(event.ClientSubnet), blank(event.ECSZone),
+			blank(event.Kind)); err != nil {
 			insertEvent.Close()
 			return err
 		}

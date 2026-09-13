@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -34,6 +35,75 @@ func ClassifyRoute(respBy string) string {
 		return "foreign"
 	}
 	return "unknown"
+}
+
+const (
+	KindBlocked   = "blocked"
+	KindRefused   = "refused"
+	KindCache     = "cache"
+	KindForward   = "forward"
+	KindRecursive = "recursive"
+	KindUnknown   = "unknown"
+
+	rcodeNXDomain = 3
+	rcodeRefused  = 5
+
+	subnetKeepBitsV4 = 24
+	subnetKeepBitsV6 = 48
+)
+
+func KindLabel(kind string) string {
+	switch kind {
+	case KindBlocked:
+		return "域名黑名单"
+	case KindRefused:
+		return "访问控制拦截"
+	case KindCache:
+		return "缓存"
+	case KindForward:
+		return "转发"
+	case KindRecursive:
+		return "递归"
+	default:
+		return "未知"
+	}
+}
+
+func ClassifyKind(respBy string, rcode int64) string {
+	switch {
+	case respBy == "" && rcode == rcodeNXDomain:
+		return KindBlocked
+	case respBy == "" && rcode == rcodeRefused:
+		return KindRefused
+	case respBy == "":
+		return KindUnknown
+	case respBy == "cache":
+		return KindCache
+	case strings.HasPrefix(respBy, "foreign"):
+		return KindForward
+	case strings.HasPrefix(respBy, "local"):
+		return KindRecursive
+	}
+	return KindUnknown
+}
+
+func CoarseSubnet(value string) string {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+	if err != nil {
+		addr, addrErr := netip.ParseAddr(strings.TrimSpace(value))
+		if addrErr != nil {
+			return ""
+		}
+		prefix = netip.PrefixFrom(addr, addr.BitLen())
+	}
+	keep := subnetKeepBitsV6
+	if prefix.Addr().Is4() {
+		keep = subnetKeepBitsV4
+	}
+	if prefix.Bits() > keep {
+		prefix = netip.PrefixFrom(prefix.Addr(), keep)
+	}
+	return prefix.Masked().String()
 }
 
 func ClassifyExitPath(zones *ZoneSet, domain, route string) string {
@@ -185,17 +255,25 @@ func (c *Consumer) HandleLine(text string) {
 		elapsed = &value
 	}
 	route := ClassifyRoute(respBy)
+	rcode := numberOf(resp["rcode"])
 	serverTag, _ := meta["server"].(string)
 	prefetch := int64(0)
 	if flag, ok := query["prefetch"].(bool); ok && flag {
 		prefetch = 1
 	}
+	clientSubnet := ""
+	if raw, ok := query["ecs"].(string); ok {
+		clientSubnet = CoarseSubnet(raw)
+	}
+	ecsZone, _ := query["ecs_zone"].(string)
 	c.pending = append(c.pending, Event{
 		TS: ts, Domain: normalized,
-		QType: numberOf(query["type"]), RCode: numberOf(resp["rcode"]),
+		QType: numberOf(query["type"]), RCode: rcode,
 		RespBy: respBy, Route: route,
 		ExitPath:  ClassifyExitPath(c.zones, normalized, route),
 		ServerTag: serverTag, Prefetch: prefetch, ElapsedMS: elapsed,
+		ClientSubnet: clientSubnet, ECSZone: ecsZone,
+		Kind: ClassifyKind(respBy, rcode),
 	})
 }
 
