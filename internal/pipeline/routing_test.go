@@ -112,6 +112,27 @@ func TestRoutingConfigDefaultsMatchTheShell(t *testing.T) {
 	}
 }
 
+func TestPreviewRunsBeforeAnySideEffect(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("routing.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	previewAt := strings.Index(text, "if rt.Preview {")
+	if previewAt < 0 {
+		t.Fatal("Apply 里找不到 preview 短路")
+	}
+	applyAt := strings.Index(text, "if err := rc.applyPolicyRoutes(ctx, rt); err != nil {")
+	peerAt := strings.Index(text, "if err := rc.openHKPeer(ctx, rt); err != nil {")
+	if applyAt < 0 || peerAt < 0 {
+		t.Fatal("Apply 里找不到会改内核/隧道的调用")
+	}
+	if previewAt > applyAt || previewAt > peerAt {
+		t.Fatal("preview 短路必须排在 applyPolicyRoutes 与 openHKPeer 之前——" +
+			"否则 --preview 声称不动内核，却已经改了 ip rule 和 wg allowed-ips")
+	}
+}
+
 func TestCNAuthorityEntriesSkipsCommentsAndBlanks(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "chnroute"), 0o755); err != nil {

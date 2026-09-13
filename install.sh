@@ -374,18 +374,24 @@ install_go_runtime() {
         candidate="$SCRIPT_DIR/bin/dns-stack-linux-${arch}"
     else
         local repo base
-        repo="${DNS_STACK_BINARY_REPO:-$(cfg_or_default GITHUB_REPOSITORY "")}"
+        repo="${DNS_STACK_BINARY_REPO:-$(cfg_or_default DNS_STACK_BINARY_REPO "")}"
         base="${DNS_STACK_BINARY_BASE:-${repo:+https://github.com/${repo}/releases/download/binaries-latest}}"
-        [[ -n "$base" ]] || die "bin/ 里没有预编产物，且未配置 GITHUB_REPOSITORY，无从下载 Go 二进制
+        [[ -n "$base" ]] || die "bin/ 里没有预编产物，且未配置 DNS_STACK_BINARY_REPO，无从下载 Go 二进制
+
+  注意 GITHUB_REPOSITORY 指的是**规则仓库**(cn.txt/gfw.txt/cdn-direct.txt 发布到那里)，
+  代码与二进制在另一个仓库，必须单独配 DNS_STACK_BINARY_REPO，否则会去规则仓库找二进制而 404。
 
   这台机器上不编译是有意的：生产机的规格与依赖都不受控，2026-09-07 的 OOM 事故
   就是从"在生产机上跑没做过规模测试的代码"开始的。构建一律在 CI 完成。
   解决办法二选一：
-    1) 在 /etc/dns-stack/config.env 里配好 GITHUB_REPOSITORY，让本脚本自动下载
+    1) 在 /etc/dns-stack/config.env 里配好 DNS_STACK_BINARY_REPO=<owner>/<代码仓库>
     2) 从 GitHub Releases 手工下载 dns-stack-linux-${arch}，放到 ${SCRIPT_DIR}/bin/"
         download_dir="$(mktemp -d)"
-        log_info "  从 CI 产物下载一体化 Go 二进制($arch)..."
-        if ! curl -fsSL --retry 3 --max-time 300 --speed-limit 4096 --speed-time 30 \
+        log_info "  从 CI 产物下载一体化 Go 二进制($arch)，源: ${base}"
+        if ! curl -fsSL --retry 3 --max-time 300 --speed-limit 2048 --speed-time 45 \
+                -o "$download_dir/dns-stack" "${base}/dns-stack-linux-${arch}" \
+           && ! curl -fsSL --retry 2 --max-time 300 --speed-limit 2048 --speed-time 45 \
+                --interface "$(cfg_or_default TUNNEL_ADDR 10.100.0.2)" \
                 -o "$download_dir/dns-stack" "${base}/dns-stack-linux-${arch}"; then
             rm -rf "$download_dir"
             die "下载 ${base}/dns-stack-linux-${arch} 失败；确认该 Release 存在且网络可达"

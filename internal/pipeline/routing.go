@@ -84,10 +84,14 @@ func (rc RoutingConfig) Apply(ctx context.Context, rt *Runtime) error {
 	}
 	rt.Infof("Unbound 运行用户 %s (uid=%s)", rc.UnboundUser, account.Uid)
 
-	if err := rc.applyPolicyRoutes(ctx, rt); err != nil {
+	if err := rc.guardWireGuardConf(); err != nil {
 		return err
 	}
-	if err := rc.guardWireGuardConf(); err != nil {
+	if rt.Preview {
+		return rc.preview(ctx, rt, account.Uid)
+	}
+
+	if err := rc.applyPolicyRoutes(ctx, rt); err != nil {
 		return err
 	}
 	if err := rc.openHKPeer(ctx, rt); err != nil {
@@ -118,10 +122,6 @@ func (rc RoutingConfig) Apply(ctx context.Context, rt *Runtime) error {
 	}
 
 	script := rc.renderChainScript(account.Uid, endpoints, authority)
-	if rt.Preview {
-		fmt.Fprint(rt.Out, script)
-		return nil
-	}
 	if err := nftRun(ctx, script); err != nil {
 		return err
 	}
@@ -134,6 +134,65 @@ func (rc RoutingConfig) Apply(ctx context.Context, rt *Runtime) error {
 	rt.Infof("  大陆目标 → 直连出网")
 	rt.Infof("  境外目标 → 隧道 %s 出网（经香港 NAT）", rc.Config.TunnelIf)
 	rt.Infof("  作用范围 → 仅 %s 进程，其它流量不变", rc.UnboundUser)
+	return nil
+}
+
+func (rc RoutingConfig) preview(ctx context.Context, rt *Runtime, uid string) error {
+	out := rt.Out
+	fmt.Fprintln(out, "# 预演模式：以下内容一条都不会执行")
+	fmt.Fprintln(out, "# --- 策略路由 ---")
+	fmt.Fprintf(out, "ip route replace %s dev %s scope link table %s\n",
+		tunnelSubnet, rc.Config.TunnelIf, rc.RouteTable)
+	fmt.Fprintf(out, "ip route replace default dev %s table %s\n", rc.Config.TunnelIf, rc.RouteTable)
+	for _, item := range [][2]string{
+		{"from " + rc.Config.TunnelAddr + " lookup " + rc.RouteTable,
+			fmt.Sprintf("ip rule add from %s lookup %s priority %s", rc.Config.TunnelAddr, rc.RouteTable, rulePriorityFrom)},
+		{"fwmark " + rc.FWMark + " lookup " + rc.RouteTable,
+			fmt.Sprintf("ip rule add fwmark %s lookup %s priority %s", rc.FWMark, rc.RouteTable, rulePriorityFWMark)},
+	} {
+		state := "已存在，跳过"
+		if !rc.ruleExists(ctx, item[0]) {
+			state = "将新增"
+		}
+		fmt.Fprintf(out, "%-70s # %s\n", item[1], state)
+	}
+	prohibit := "fwmark " + rc.FWMark + " prohibit"
+	if rc.FailMode == "closed" {
+		state := "已存在，跳过"
+		if !rc.ruleExists(ctx, prohibit) {
+			state = "将新增"
+		}
+		fmt.Fprintf(out, "%-70s # %s\n",
+			fmt.Sprintf("ip rule add fwmark %s prohibit priority %s", rc.FWMark, rulePriorityProhib), state)
+	} else {
+		fmt.Fprintf(out, "ip rule del fwmark %s prohibit    # fail-mode=open，会删掉兜底规则\n", rc.FWMark)
+	}
+
+	fmt.Fprintln(out, "# --- WireGuard ---")
+	peers := rc.peerAllowedIPs(ctx)
+	found := false
+	for key, value := range peers {
+		if value != hkPeerAllowedIP && value != openAllowedIPs {
+			continue
+		}
+		found = true
+		if value == openAllowedIPs {
+			fmt.Fprintf(out, "# 香港 peer 的 allowed-ips 已是 %s，不改\n", openAllowedIPs)
+			break
+		}
+		fmt.Fprintf(out, "wg set %s peer %s allowed-ips %s\n", rc.Config.TunnelIf, key, openAllowedIPs)
+		break
+	}
+	if !found {
+		fmt.Fprintln(out, "# 未找到香港 peer，会跳过")
+	}
+
+	entries := rt.NFTSetCount(ctx, rc.Config.DirectSet)
+	fmt.Fprintf(out, "# --- nft（直连集合现有 %d 条，下限 %d）---\n", entries, rc.MinEntries)
+	if entries < rc.MinEntries {
+		fmt.Fprintln(out, "# ⚠️ 集合过小，真实执行时会在这里中止，不会安装分流链")
+	}
+	fmt.Fprint(out, rc.renderChainScript(uid, rc.tunnelEndpoints(ctx), rc.cnAuthorityEntries()))
 	return nil
 }
 
