@@ -123,24 +123,34 @@ jobs:
         run: |
           set -Eeuo pipefail
           cp "dist/${RULESET}" "${RULESET}"
-          if git diff --quiet -- "${RULESET}"; then
-            echo "内容无变化，不提交"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${RULESET}"
-          git commit -m "Add ${RULESET}"
-          for attempt in 1 2 3; do
-            if git push; then
-              echo "已发布 ${RULESET}"
-              exit 0
+          if git diff --cached --quiet -- "${RULESET}"; then
+            echo "内容与仓库里的一致，不提交"
+          else
+            git commit -m "Add ${RULESET}"
+            pushed=0
+            for attempt in 1 2 3; do
+              if git push; then
+                pushed=1
+                break
+              fi
+              echo "推送冲突，第 ${attempt} 次重试前先 rebase（规则发布可能同时在写这个分支）"
+              git pull --rebase --autostash
+            done
+            if [ "$pushed" -ne 1 ]; then
+              echo "::error::三次重试后仍无法推送 ${RULESET}" >&2
+              exit 1
             fi
-            echo "推送冲突，第 ${attempt} 次重试前先 rebase（规则发布可能同时在写这个分支）"
-            git pull --rebase --autostash
-          done
-          echo "::error::三次重试后仍无法推送 ${RULESET}" >&2
-          exit 1
+            echo "已发布 ${RULESET}"
+          fi
+          if ! git cat-file -e "origin/${GITHUB_REF_NAME}:${RULESET}" 2>/dev/null; then
+            echo "::error::这一步报告成功，但 ${RULESET} 并不在远端分支上。" >&2
+            echo "git diff 对未跟踪文件永远返回无差异——首次发布时它无话可说，不代表内容一样" >&2
+            exit 1
+          fi
+          echo "已确认 ${RULESET} 存在于 origin/${GITHUB_REF_NAME}"
 
       - uses: actions/upload-artifact@v4
         if: always()
