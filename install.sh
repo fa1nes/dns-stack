@@ -20,9 +20,68 @@ LOG_DIR="/var/log/dns-stack"
 BACKUP_DIR="/var/backups/dns-stack"
 EXPORT_DIR="/srv/dns-stack/export"
 
-MOSPROXY_COMMON="$SCRIPT_DIR/scripts/mosproxy-artifact-common.sh"
-[[ -r "$MOSPROXY_COMMON" ]] || die "缺少 mosproxy 产物校验脚本: $MOSPROXY_COMMON"
-source "$MOSPROXY_COMMON"
+mosproxy_lock_value() {
+    local root="$1" key="$2"
+    sed -n '/"mosproxy"[[:space:]]*:/,$p' "$root/versions.lock" \
+        | grep -m1 "\"${key}\"[[:space:]]*:" \
+        | sed -E 's/.*:[[:space:]]*//; s/,[[:space:]]*$//; s/^"//; s/"$//'
+}
+
+mosproxy_artifact_version() {
+    local binary="$1" version
+    [[ -s "${binary}.build-id" ]] || return 1
+    version="$(tr -d '\r\n' < "${binary}.build-id")"
+    [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    printf '%s\n' "$version"
+}
+
+mosproxy_installed_version() {
+    local binary="$1" output version
+    [[ -x "$binary" ]] || return 1
+    output="$("$binary" --version 2>&1)" || return 1
+    version="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' <<<"$output" | head -1)"
+    [[ -n "$version" ]] || return 1
+    printf '%s\n' "$version"
+}
+
+mosproxy_expected_repo() {
+    local root="$1" repo
+    repo="$(mosproxy_lock_value "$root" repo)"
+    [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+    printf '%s\n' "$repo"
+}
+
+mosproxy_binary_matches() {
+    local binary="$1" expected="$2" output
+    [[ -x "$binary" && -n "$expected" ]] || return 1
+    output="$("$binary" --version 2>&1)" || return 1
+    [[ "$output" == *"$expected"* ]]
+}
+
+mosproxy_checksum_matches() {
+    local binary="$1" checksum_file="$2" expected actual
+    [[ -s "$binary" && -s "$checksum_file" ]] || return 1
+    expected="$(awk 'NR == 1 {print $1}' "$checksum_file")"
+    actual="$(sha256sum "$binary" | awk '{print $1}')"
+    [[ "$expected" =~ ^[0-9a-fA-F]{64}$ && "${expected,,}" == "$actual" ]]
+}
+
+mosproxy_artifact_matches() {
+    local binary="$1" expected="$2" build_id_file="${1}.build-id"
+    [[ -s "$build_id_file" ]] || return 1
+    [[ "$(tr -d '\r\n' < "$build_id_file")" == "$expected" ]] || return 1
+    mosproxy_checksum_matches "$binary" "${binary}.sha256" || return 1
+    mosproxy_binary_matches "$binary" "$expected"
+}
+
+mosproxy_write_metadata() {
+    local binary="$1" expected="$2" name
+    name="$(basename "$binary")"
+    printf '%s\n' "$expected" > "${binary}.build-id"
+    printf '%s  %s\n' "$(sha256sum "$binary" | awk '{print $1}')" "$name" \
+        > "${binary}.sha256"
+    chmod 0644 "${binary}.build-id" "${binary}.sha256"
+}
 
 step1_check_env() {
     log_info "[1/17] 检查当前环境..."
@@ -326,7 +385,7 @@ install_go_runtime() {
     2) 从 GitHub Releases 手工下载 dns-stack-linux-${arch}，放到 ${SCRIPT_DIR}/bin/"
         download_dir="$(mktemp -d)"
         log_info "  从 CI 产物下载一体化 Go 二进制($arch)..."
-        if ! curl -fsSL --retry 3 --max-time 300 \
+        if ! curl -fsSL --retry 3 --max-time 300 --speed-limit 4096 --speed-time 30 \
                 -o "$download_dir/dns-stack" "${base}/dns-stack-linux-${arch}"; then
             rm -rf "$download_dir"
             die "下载 ${base}/dns-stack-linux-${arch} 失败；确认该 Release 存在且网络可达"
@@ -407,7 +466,7 @@ download_mosproxy() {
     local u released installed
     for u in "${srcs[@]}"; do
         rm -f "$tmp" "$sum" "$build_id"
-        curl -fsSL --max-time 300 "$u" -o "$tmp" 2>/dev/null || continue
+        curl -fsSL --max-time 300 --speed-limit 4096 --speed-time 30 "$u" -o "$tmp" 2>/dev/null || continue
         [[ -s "$tmp" ]] || continue
         if ! curl -fsSL --max-time 60 "${u}.sha256" -o "$sum" 2>/dev/null; then
             log_warn "  取不到校验和，换下一个源"
@@ -640,32 +699,31 @@ step12_deploy_panel() {
     fi
 }
 
-step13_deploy_shell() {
-    log_info "[13/17] 部署中文 Shell 管理工具与完整源码树..."
+step13_deploy_cli() {
+    log_info "[13/17] 部署管理命令与配套资源..."
     local source_root target_root
     mkdir -p "$OPT_DIR/dns-stack"
     source_root="$(readlink -f "$SCRIPT_DIR")"
     target_root="$(readlink -f "$OPT_DIR/dns-stack")"
 
     if [[ "$source_root" != "$target_root" ]]; then
-        for item in install.sh uninstall.sh config.example.env versions.lock bin \
-                    panel helper collector classifier lib systemd unbound mosproxy rules docs patches \
-                    scripts migration; do
+        for item in install.sh config.example.env versions.lock \
+                    systemd unbound mosproxy rules docs; do
             [[ -e "$SCRIPT_DIR/$item" ]] || continue
             rm -rf "$OPT_DIR/dns-stack/${item:?}"
             cp -a "$SCRIPT_DIR/$item" "$OPT_DIR/dns-stack/"
+        done
+        for stale in scripts migration bin panel helper collector classifier lib patches; do
+            rm -rf "$OPT_DIR/dns-stack/${stale:?}"
         done
     else
         log_info "  源码已位于目标目录，跳过自复制"
     fi
 
-    cp -a "$SCRIPT_DIR/bin/dns-stack" /usr/local/bin/dns-stack
-
-    chmod +x "$OPT_DIR/dns-stack/scripts/"*.sh "$OPT_DIR/dns-stack/migration/"*.sh \
-             /usr/local/bin/dns-stack
+    ln -sfn "$OPT_DIR/bin/dns-stack-go" /usr/local/bin/dns-stack
     chmod +x "$OPT_DIR/dns-stack/install.sh" 2>/dev/null || true
-    log_ok "dns-stack 命令已就绪: /usr/local/bin/dns-stack"
-    log_ok "完整源码树已就位: ${OPT_DIR}/dns-stack (dns-stack migrate 依赖它)"
+    log_ok "dns-stack 命令已就绪: /usr/local/bin/dns-stack -> ${OPT_DIR}/bin/dns-stack-go"
+    log_ok "配套资源已就位: ${OPT_DIR}/dns-stack"
 }
 
 step14_confirm_publish() {
@@ -873,7 +931,7 @@ main() {
 
     step11_deploy_helper
     step12_deploy_panel
-    step13_deploy_shell
+    step13_deploy_cli
 
     if [[ "$ROLE" == "global-builder" ]]; then
         step14_confirm_publish
@@ -902,4 +960,143 @@ main() {
     dns-stack health || true
 }
 
-main "$@"
+UNINSTALL_UNITS=(
+    dns-stack-helper dns-stack-panel dns-stack-classify dns-stack-verify
+    dns-stack-maintenance dns-stack-sync-rules dns-stack-collect-polluted
+    dns-stack-reference-data dns-stack-publish dns-stack-routing-data
+    dns-stack-recursive-routing dns-stack-routing-watchdog
+    dns-stack-backup dns-stack-renew-cert dns-stack-chnroute dns-stack-cn-authority
+    dns-stack-geoip dns-stack-ecs-zone dns-stack-shared-anycast dns-stack-geo-cross
+    dns-stack-dynamic
+)
+
+do_uninstall() {
+    local purge=0 dry=0 a
+    for a in "$@"; do
+        case "$a" in
+            --purge)   purge=1 ;;
+            --dry-run) dry=1 ;;
+            *) die "未知参数: $a (用法: install.sh --uninstall [--purge] [--dry-run])" ;;
+        esac
+    done
+    run() {
+        if [[ "$dry" -eq 1 ]]; then echo "  [dry-run] $*"; else "$@"; fi
+    }
+    [[ "$dry" -eq 1 ]] && log_warn "dry-run 模式：只展示将要执行的操作，不会改动任何内容"
+
+    log_info "正在停止 dns-stack 相关服务..."
+    local unit
+    for unit in "${UNINSTALL_UNITS[@]}"; do
+        run systemctl stop "${unit}.timer" 2>/dev/null || true
+        run systemctl disable "${unit}.timer" 2>/dev/null || true
+        run systemctl stop "${unit}.service" 2>/dev/null || true
+        run systemctl disable "${unit}.service" 2>/dev/null || true
+    done
+    if [[ -f /etc/systemd/system/mosproxy.service ]]; then
+        log_info "停止 mosproxy(其二进制位于即将删除的 ${OPT_DIR})"
+        run systemctl stop mosproxy.service 2>/dev/null || true
+        run systemctl disable mosproxy.service 2>/dev/null || true
+    fi
+
+    local dropin
+    for dropin in nftables.service.d/dns-stack.conf \
+                  dns-stack-panel.service.d/10-go-panel.conf \
+                  mosproxy.service.d/10-go-collector.conf \
+                  dns-stack-helper.service.d/10-go-helper.conf; do
+        run rm -f "/etc/systemd/system/${dropin}"
+        run rmdir "/etc/systemd/system/$(dirname "$dropin")" 2>/dev/null || true
+    done
+    run rm -f /etc/sysctl.d/90-dns-stack.conf
+    run sysctl --system >/dev/null 2>&1 || true
+    run rm -f /etc/logrotate.d/dns-stack
+    run rm -f /usr/local/bin/dns-stack
+    run rm -rf "$OPT_DIR"
+    run systemctl daemon-reload 2>/dev/null || true
+
+    if [[ "$purge" -ne 1 ]]; then
+        log_ok "已卸载程序文件，持久数据保留在 ${CONFIG_FILE%/*} ${STATE_DIR} ${BACKUP_DIR} ${EXPORT_DIR}"
+        log_info "如需彻底删除，请执行: sudo ./install.sh --uninstall --purge"
+        return 0
+    fi
+
+    echo
+    log_warn "即将永久删除以下全部数据："
+    echo "  ${CONFIG_FILE%/*} (含 secrets)"
+    echo "  ${STATE_DIR}"
+    echo "  ${BACKUP_DIR}"
+    echo "  ${EXPORT_DIR}"
+    echo
+    log_warn "⚠️ ${SECRETS_DIR}/backup-age-identity.txt 是备份解密密钥。"
+    log_warn "   删除后，你复制到任何地方的 .tar.zst.age 备份都将**永久无法解密**。"
+    if [[ -f "$SECRETS_DIR/backup-age-identity.txt" ]]; then
+        log_warn "   若日后还想恢复数据，请先把这个文件另存到安全的地方再继续。"
+    fi
+    echo
+    if [[ "$dry" -eq 1 ]]; then
+        echo "  [dry-run] 此处会要求输入 YES 确认"
+    else
+        read -r -p "此操作不可撤销，请输入 YES 确认: " confirm
+        if [[ "$confirm" != "YES" ]]; then
+            log_warn "已取消，未删除任何持久数据"
+            return 0
+        fi
+    fi
+
+    local unbound_was_enabled=0
+    systemctl is-enabled --quiet unbound.service 2>/dev/null && unbound_was_enabled=1
+    run systemctl stop unbound.service 2>/dev/null || true
+    run rm -f /etc/unbound/unbound.conf.d/dns-stack.conf
+    run rm -f /etc/unbound/unbound.conf.d/dns-stack-ecs.conf
+    run rm -f /etc/apparmor.d/local/usr.sbin.unbound
+    run rm -f /etc/unbound/dns-stack_*.key /etc/unbound/dns-stack_*.pem
+    run rm -rf "${CONFIG_FILE%/*}" "$STATE_DIR" "$BACKUP_DIR" "$EXPORT_DIR" "$LOG_DIR"
+    run rm -f /etc/systemd/system/dns-stack-*.service /etc/systemd/system/dns-stack-*.timer
+    run rm -f /etc/systemd/system/mosproxy.service
+    run systemctl daemon-reload
+    run systemctl reset-failed 2>/dev/null || true
+    command -v nft >/dev/null 2>&1 && { run nft delete table inet dns_route 2>/dev/null || true; }
+    while ip rule show 2>/dev/null | grep -q 'lookup 100'; do
+        run ip rule del lookup 100 2>/dev/null || break
+    done
+    while ip rule show 2>/dev/null | grep -q '0x1d5 prohibit'; do
+        run ip rule del fwmark 0x1d5 prohibit 2>/dev/null || break
+    done
+    run ip route flush table 100 2>/dev/null || true
+    if [[ "$unbound_was_enabled" -eq 1 ]]; then
+        log_info "Unbound 原本是启用状态，已移除本项目配置后重新启动它"
+        run systemctl start unbound.service 2>/dev/null || \
+            log_warn "  Unbound 启动失败，请检查它自身的配置: journalctl -u unbound"
+    fi
+    log_ok "已彻底删除全部 dns-stack 数据"
+    log_warn "以下内容按设计保留，如不再需要请自行处理："
+    echo "  - 系统用户 dns-stack-panel / dns-stack-dynamic (useradd 创建，删除请用 userdel)"
+    echo "  - WireGuard 配置 /etc/wireguard/wg0.conf 与云安全组/边界防火墙规则"
+    echo "    ⚠️ wg0.conf 里的 Table = off 与 AllowedIPs = 0.0.0.0/0 是本项目改的，"
+    echo "       两者必须成对处理：只把 AllowedIPs 改回 /32 是安全的；但若保留"
+    echo "       0.0.0.0/0 却删掉 Table = off，wg-quick 下次启动会把整机流量导进隧道"
+    echo "  - apt 安装的 unbound / age / zstd 等依赖包"
+}
+
+case "${1:-}" in
+    --uninstall)
+        shift
+        do_uninstall "$@"
+        ;;
+    --help|-h)
+        cat <<'EOF'
+用法:
+  sudo ./install.sh                              安装或幂等更新
+  sudo ./install.sh --uninstall                  卸载程序文件，保留持久数据
+  sudo ./install.sh --uninstall --purge          彻底卸载(删除全部数据，需输入 YES)
+  sudo ./install.sh --uninstall --dry-run        只展示将要执行的操作
+
+安装完成后，日常运维一律用 sudo dns-stack（它就是那个一体化 Go 二进制）。
+EOF
+        ;;
+    "")
+        main
+        ;;
+    *)
+        die "未知参数: $1（用 ./install.sh --help 查看用法）"
+        ;;
+esac

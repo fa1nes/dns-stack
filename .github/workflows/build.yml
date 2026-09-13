@@ -31,6 +31,26 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -count=1
 
+      - name: shell budget
+        run: |
+          set -Eeuo pipefail
+          allowed="install-hk.sh install.sh"
+          found="$(git ls-files | grep -E '\.sh$' | sort | tr '\n' ' ')"
+          found="${found% }"
+          echo "允许: ${allowed}"
+          echo "实有: ${found}"
+          if [ "$found" != "$allowed" ]; then
+            echo "::error::shell 清单漂移。本项目只保留两个安装脚本（CN 的 install.sh 与 HK 的 install-hk.sh）；" >&2
+            echo "其余运维逻辑一律住在 Go 二进制里，否则判据与守卫会再次散落到多处而漂移" >&2
+            exit 1
+          fi
+          if grep -rn 'go build\|go install' install.sh install-hk.sh; then
+            echo "::error::安装脚本里出现了 go build/go install。生产机一律不编译——" >&2
+            echo "2026-09-07 的 OOM 事故正是从在生产机上跑没做过规模测试的代码开始的" >&2
+            exit 1
+          fi
+          echo "shell 预算检查通过：2 个安装脚本，且都不在本机编译"
+
   scale-gate:
     needs: verify
     runs-on: ubuntu-latest

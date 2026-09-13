@@ -14,7 +14,6 @@
 *.css       text eol=lf
 *.js        text eol=lf
 *.json      text eol=lf
-bin/dns-stack   text eol=lf
 
 *.patch     text eol=lf whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 
