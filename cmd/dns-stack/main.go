@@ -90,6 +90,12 @@ func main() {
 		err = cmdCDNRules(args)
 	case "sync-rules":
 		err = cmdSyncRules(args)
+	case "blocklist":
+		err = cmdBlocklist(args)
+	case "acl":
+		err = cmdACL(args)
+	case "query-log":
+		err = cmdQueryLog(args)
 	case "backup":
 		err = cmdBackup(args)
 	case "export":
@@ -169,6 +175,9 @@ func usage() {
                   lookup 查单个域名+IP 的判据(大陆节点/境外节点/地址不属于该 CDN)
   sync-rules      从规则源同步四文件规则包与 CDN 规则集，校验后原子替换并重载
                   (骤降/同版本冲突保护默认开启，--force 跳过；--rollback 回退到上一份)
+  blocklist       域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机
+  acl             访问控制：只放行授权网段访问 DoH/DoT 入口(nftables 实现，回环与隧道始终放行)
+  query-log       递归日志：按时间/递归类型/域名/来源子网筛选，可 --csv 导出、--breakdown 看构成
   migration-export  导出迁移包(与面板「导出迁移数据」共用同一份清单，一条密钥都不含)
   migration-restore 从面板导出的迁移包恢复数据(按清单白名单写入，可 --dry-run)
   direct4-audit   多个归属库交叉验证 direct4，产出争议(不发 ECS)与晋级(可作大陆证据)清单

@@ -587,10 +587,17 @@ step8_deploy_mosproxy() {
     fi
 
     for f in cn.txt gfw.txt manual-cn.txt manual-gfw.txt manual-exclude.txt \
-             cn-ip-cidr.txt polluted-ip-cidr.txt polluted-ip.txt; do
+             cn-ip-cidr.txt polluted-ip-cidr.txt polluted-ip.txt \
+             blocklist.txt acl.txt; do
         [[ -f "$STATE_DIR/$f" ]] || : > "$STATE_DIR/$f"
     done
     chmod 0644 "$STATE_DIR"/*.txt 2>/dev/null || true
+    if ! [[ -s "$STATE_DIR/blocklist.txt" ]] && \
+       ! grep -q 'blocklist-domains' /etc/dns-stack/mosproxy/config.yaml 2>/dev/null; then
+        log_warn "  mosproxy 配置里没有 blocklist-domains，域名黑名单不会生效"
+    fi
+    [[ -f "$STATE_DIR/blocklist.txt" ]] || \
+        die "blocklist.txt 创建失败——mosproxy 的 domain_set 读不到文件会直接起不来"
 
     cp -a "$SCRIPT_DIR/systemd/mosproxy.service" /etc/systemd/system/mosproxy.service
     systemctl daemon-reload

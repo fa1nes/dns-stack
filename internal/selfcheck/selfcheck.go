@@ -198,6 +198,7 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 	checkBinaryProvenance(opt, &report)
 	checkRoutingData(opt, &report, now)
 	checkECSWhitelist(opt, &report, now)
+	checkAccessFiles(opt, &report)
 	cdnSet := checkCDNRuleset(opt, &report, now)
 	if !opt.Quick {
 		checkNFTSets(ctx, opt, &report)

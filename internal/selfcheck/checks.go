@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
+	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/rulesync"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
@@ -207,6 +209,45 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 		sample = sample[:6]
 	}
 	c.ok("CDN 地理调度区域已识别", "%d 个，如 %s", len(steered), strings.Join(sample, ", "))
+}
+
+func checkAccessFiles(opt Options, report *Report) {
+	if opt.Role != stack.RoleCNResolver {
+		return
+	}
+	c := &checker{report: report, group: "访问控制与黑名单"}
+	store := access.Store{StateDir: opt.StateDir}
+	if missing := store.MissingFiles(); len(missing) > 0 {
+		c.fail("黑名单文件存在",
+			"%s 不存在——mosproxy 的 domain_set 在启动时读不到文件会直接起不来。"+
+				"现在服务还活着只是因为规则已在内存里，下次重启就会炸。修复: dns-stack blocklist list",
+			strings.Join(missing, ", "))
+		return
+	}
+	blocked, err := store.Blocklist()
+	if err != nil {
+		c.fail("黑名单文件可读", "%v", err)
+		return
+	}
+	c.ok("黑名单文件存在", "%d 个域名被拦截", len(blocked))
+
+	entries, err := store.ACL()
+	if err != nil {
+		c.fail("访问控制清单可解析", "%v", err)
+		return
+	}
+	installed := pipeline.ACLInstalled(context.Background(), pipeline.LoadConfig(opt.StateDir, opt.ConfigFile).NFTTable)
+	switch {
+	case len(entries) == 0 && !installed:
+		c.skip("访问控制", "未启用，入口对全网开放")
+	case len(entries) == 0 && installed:
+		c.fail("访问控制", "acl.txt 为空但内核里仍有访问控制链——执行 dns-stack acl disable 清理")
+	case !installed:
+		c.fail("访问控制", "acl.txt 有 %d 条授权网段，但内核里没有对应的链——改动从未下发，入口其实对全网开放",
+			len(entries))
+	default:
+		c.ok("访问控制", "%d 个授权网段已下发到内核", len(entries))
+	}
 }
 
 func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
