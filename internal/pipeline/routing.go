@@ -311,8 +311,12 @@ func (rc RoutingConfig) ensureSetLoaded(ctx context.Context, rt *Runtime) {
 
 func (rc RoutingConfig) verifySetSemantics(ctx context.Context, rt *Runtime) error {
 	var bad []string
-	if !rc.inSet(ctx, rc.Config.TunnelAddr) {
-		bad = append(bad, fmt.Sprintf("集合未包含私有网段（%s），集合内容异常", rc.Config.TunnelAddr))
+	if rc.inSet(ctx, rc.Config.TunnelAddr) {
+		bad = append(bad, fmt.Sprintf(
+			"隧道地址 %s 竟在直连集合内——direct4 只应含大陆公网网段，混进私有段说明来源被污染",
+			rc.Config.TunnelAddr))
+	} else {
+		rt.Infof("隧道地址 %s 不在直连集合内（符合预期：私有段不属于大陆公网）", rc.Config.TunnelAddr)
 	}
 	if sample := strings.TrimSpace(rc.Config.Value("PUBLIC_IPV4")); sample == "" {
 		rt.Warnf("config.env 未配置 PUBLIC_IPV4，跳过大陆样本校验")

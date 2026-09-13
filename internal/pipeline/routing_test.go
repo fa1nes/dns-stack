@@ -112,6 +112,30 @@ func TestRoutingConfigDefaultsMatchTheShell(t *testing.T) {
 	}
 }
 
+func TestSetSemanticsAssertsPrivateRangesAreAbsent(t *testing.T) {
+	body, err := os.ReadFile("routing.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	start := strings.Index(text, "func (rc RoutingConfig) verifySetSemantics")
+	if start < 0 {
+		t.Fatal("找不到 verifySetSemantics")
+	}
+	end := strings.Index(text[start:], "\nfunc ")
+	body2 := text[start : start+end]
+	if strings.Contains(body2, "if !rc.inSet(ctx, rc.Config.TunnelAddr)") {
+		t.Fatal("隧道地址是私有段，direct4 只含大陆公网网段——" +
+			"断言它必须在集合内会让 routing-setup 永远起不来（含 watchdog 的自动修复）")
+	}
+	if !strings.Contains(body2, "if rc.inSet(ctx, rc.Config.TunnelAddr)") {
+		t.Error("应当反过来断言隧道地址不在集合内，以此检出被污染的来源")
+	}
+	if !strings.Contains(body2, "endpoints[0]") {
+		t.Error("隧道对端必须仍然断言为不在集合内——它是境外地址，进了集合就会直连吃污染")
+	}
+}
+
 func TestPreviewRunsBeforeAnySideEffect(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("routing.go"))
 	if err != nil {
