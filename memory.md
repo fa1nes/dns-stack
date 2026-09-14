@@ -355,6 +355,24 @@ AS137702 是中国电信江苏 IDC，填进去等于把两家运营商的整片�
 `cdn-rules.yml` 新增 `MIN_MAINLAND_PROVIDERS=5` 门禁：全都没有大陆段时判据只会一路弃权，
 **而弃权在报表上看起来和通过一模一样**。
 
+⚠️⚠️ **国产 CDN 把节点放在运营商机房、用运营商的 IP**（2026-09-14 生产实测）：
+
+```
+img.alicdn.com   → 220.181.10.93     assets.alicdn.com → 211.100.8.69
+res.hc-cdn.com   → 220.181.181.55    ss0.bdstatic.com  → 10 个省份的 IP
+```
+
+这些段**不由该 CDN 的 ASN 宣告**，所以按 ASN 拉前缀永远拿不到它们。
+补 ASN 之后 `PrefixCount() > 0`，于是原来那条「provider 没有前缀就弃权」的保护失效，
+`img.alicdn.com` 这种**完全正常的大陆节点**被判成了 `mismatch`（污染嫌疑）。
+
+**根治办法是换判据维度**：要回答的是「用户拿到的是不是大陆节点」，不是
+「这个 IP 属不属于该 CDN 的 ASN」。`direct4`（4256 段）本来就能回答前者，
+现在它是 `cdnhit` 的**主判据**，规则集只负责归属标注与「这家 CDN 是否服务大陆」。
+没有 direct4 时 `mismatch` 弃权——排除不掉「其实在大陆」就不该报可疑。
+接上后默认清单从 0/0 变成 **5/5 命中**，国产 CDN 静态域名 5/7，
+余下 2 个（`d1.awsstatic.com`、`www.office.com`）是真实的 ECS 未送达。
+
 **新增 `internal/cdnhit`**：CLI `dns-stack cdn-hit`、面板 `/api/cdn-hit`（90 秒缓存）、
 selfcheck 的「CDN 就近命中」组三方共用一份实现。核心判定是 `stranded`——
 **该 CDN 在大陆有节点、答案却落在境外**。这个方向单独成一类是有意的：
@@ -596,6 +614,12 @@ CLI `dns-stack migration-restore`、前端「试算导入 / 导入并覆盖」�
 - 凭记忆或搜索结果填 ASN。必须逐个查 RIPEstat 的 holder 核实；
   查不出归属就**弃权**，不要凑数（AS4808/AS137702 是运营商，不是网宿）。
 - 拿「答案落在境外」本身当缺陷报警——只有**该 CDN 有大陆节点却没给**才是缺陷。
+- 凭「有 ≥1 条大陆段」就断言某 CDN 该给大陆节点（Cloudflare 只有 1 条，
+  实际大陆服务在另一张网上；门槛是 `cdnrules.MinMainlandPrefixes`）。
+- **拿「这个 IP 属不属于该 CDN 的 ASN」回答「用户拿到的是不是大陆节点」**。
+  国产 CDN 用运营商 IP，按 ASN 永远查不到；主判据必须是 `direct4`。
+- 超时参数传 0 却不在被调方兜底（`timeout=0` → deadline 就是此刻 → 每次探测瞬间失败，
+  而现象是「解析不出来」，看不出是调用方传错了）。
 - 强制最小 TTL 开到能压住 CDN 短 TTL 的量级（上限 300 秒，且默认不强制）。
 - 前端把 `word-break: break-all` 用在中英混排文本上（英文单词会被从中间劈开）。
 - 交互式输入框缺 `enterkeyhint`，或域名/IP 输入框缺 `autocapitalize="none"`。
