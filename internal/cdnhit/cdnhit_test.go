@@ -108,8 +108,9 @@ func TestScopeDecidesWhyAnOffshoreAnswerHappened(t *testing.T) {
 		want   Verdict
 		why    string
 	}{
-		{0, false, VerdictStranded,
-			"权威没回显 ECS，说明它压根没收到子网，只能按隧道出口调度——这才是我们能修的缺陷"},
+		{0, false, VerdictNoEcho,
+			"没有回显时判不出：scope=0 的答案会被 unbound 按 ECS 标准缓存成全局条目，" +
+				"后续任何子网的查询都命中它且不回显，所以无回显 ≠ 没送达"},
 		{0, true, VerdictNoSteering,
 			"scope=0 是权威收到了却声明不按位置调度（全球 anycast），不是缺陷"},
 		{24, true, VerdictNoNode,
@@ -124,26 +125,27 @@ func TestScopeDecidesWhyAnOffshoreAnswerHappened(t *testing.T) {
 	}
 }
 
-func TestOnlyTheUndeliveredCaseIsADefect(t *testing.T) {
-	for verdict, bad := range map[Verdict]bool{
-		VerdictStranded:   true,
-		VerdictNoSteering: false,
-		VerdictNoNode:     false,
-		VerdictMainland:   false,
+func TestOnlyTheThreeAnsweredCasesCountAsDecided(t *testing.T) {
+	for verdict, decided := range map[Verdict]bool{
+		VerdictMainland:   true,
+		VerdictNoSteering: true,
+		VerdictNoNode:     true,
+		VerdictNoEcho:     false,
 		VerdictUnresolved: false,
 	} {
-		if verdict.Bad() != bad {
-			t.Errorf("%s.Bad() = %v，期望 %v", verdict, verdict.Bad(), bad)
+		if verdict.Decided() != decided {
+			t.Errorf("%s.Decided() = %v，期望 %v —— 判不出的样本进了分母，"+
+				"就近率就会被结构性地拉低", verdict, verdict.Decided(), decided)
 		}
 	}
 }
 
 func TestTheVerdictNeverBlamesTheCDNForHavingNoMainlandPrefixes(t *testing.T) {
 	direct4 := mainlandSet(t, "220.181.10.0/24")
-	got := run(t, direct4, replies(map[string][]string{"www.example.org": {"8.8.8.8"}}, 0, false),
+	got := run(t, direct4, replies(map[string][]string{"www.example.org": {"8.8.8.8"}}, 24, true),
 		Probe{"www.example.org", "规则集里没有这家"}).Probes[0]
-	if got.Verdict != VerdictStranded {
-		t.Fatalf("规则集拉不到某家 CDN 的大陆段是规则集的局限，不是放过 ECS 缺陷的理由。"+
+	if got.Verdict != VerdictNoNode {
+		t.Fatalf("规则集拉不到某家 CDN 的大陆段是规则集的局限，不该改变判定。"+
 			"Akamai 的中国节点由网宿代运营，AS20940 一条都拉不到，"+
 			"而 www.huawei.com 走的正是 Akamai: %s", got.Verdict)
 	}
@@ -165,26 +167,32 @@ func TestMismatchNeedsTheDomainToBelongToACDNInTheFirstPlace(t *testing.T) {
 	}
 }
 
-func TestOnlyMainlandAndStrandedCountTowardsTheRate(t *testing.T) {
+func TestUndecidedSamplesStayOutOfTheDenominator(t *testing.T) {
 	direct4 := mainlandSet(t, "220.181.10.0/24")
 	report := run(t, direct4, func(_ context.Context, name string, _ netip.Prefix) (Answer, error) {
+		offshore := []netip.Addr{netip.MustParseAddr("203.0.113.9")}
 		switch name {
 		case "hit.big.example":
 			return Answer{Addrs: []netip.Addr{netip.MustParseAddr("116.116.116.9")}, Scope: 24, Echoed: true}, nil
-		case "miss.big.example":
-			return Answer{Addrs: []netip.Addr{netip.MustParseAddr("203.0.113.9")}}, nil
+		case "noecho.big.example":
+			return Answer{Addrs: offshore}, nil
+		case "nosteer.big.example":
+			return Answer{Addrs: offshore, Echoed: true}, nil
 		default:
-			return Answer{Addrs: []netip.Addr{netip.MustParseAddr("203.0.113.9")}, Scope: 24, Echoed: true}, nil
+			return Answer{Addrs: offshore, Scope: 24, Echoed: true}, nil
 		}
 	},
 		Probe{"hit.big.example", "命中"},
-		Probe{"miss.big.example", "ECS 没送达"},
+		Probe{"noecho.big.example", "无回显，判不出"},
+		Probe{"nosteer.big.example", "不按位置调度"},
 		Probe{"nonode.big.example", "大陆本来就没节点"},
 	)
-	if report.Mainland != 1 || report.Stranded != 1 || report.Comparable != 2 {
-		t.Fatalf("大陆本来就没节点的样本不能进分母，否则就近率会被结构性地拉低: "+
-			"mainland=%d stranded=%d comparable=%d",
-			report.Mainland, report.Stranded, report.Comparable)
+	if report.Mainland != 1 || report.NoSteering != 1 || report.NoNode != 1 || report.Undecided != 1 {
+		t.Fatalf("分类不对: mainland=%d nosteer=%d nonode=%d undecided=%d",
+			report.Mainland, report.NoSteering, report.NoNode, report.Undecided)
+	}
+	if report.Comparable != 3 {
+		t.Fatalf("判不出的样本不能进分母: comparable=%d", report.Comparable)
 	}
 }
 
@@ -194,8 +202,9 @@ func TestUnresolvedProbeCountsForNeitherSide(t *testing.T) {
 	if report.Probes[0].Verdict != VerdictUnresolved {
 		t.Fatalf("verdict=%s", report.Probes[0].Verdict)
 	}
-	if report.Mainland+report.Stranded+report.Comparable != 0 {
-		t.Fatal("解析失败是判据缺席，不是被检对象的失败，两侧都不能计数")
+	if report.Mainland != 0 || report.Comparable != 0 || report.Undecided != 1 {
+		t.Fatalf("解析失败是判据缺席，不是被检对象的失败: mainland=%d comparable=%d undecided=%d",
+			report.Mainland, report.Comparable, report.Undecided)
 	}
 }
 

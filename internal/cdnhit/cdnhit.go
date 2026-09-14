@@ -67,9 +67,9 @@ type Verdict string
 
 const (
 	VerdictMainland   Verdict = "mainland"
-	VerdictStranded   Verdict = "stranded"
 	VerdictNoSteering Verdict = "no_steering"
 	VerdictNoNode     Verdict = "no_node"
+	VerdictNoEcho     Verdict = "no_echo"
 	VerdictUnresolved Verdict = "unresolved"
 )
 
@@ -77,10 +77,10 @@ func (v Verdict) Label() string {
 	switch v {
 	case VerdictMainland:
 		return "命中大陆节点"
-	case VerdictStranded:
-		return "权威没收到你的子网，只能按隧道出口调度"
 	case VerdictNoSteering:
 		return "权威收到了子网但声明不按位置调度"
+	case VerdictNoEcho:
+		return "这次没有 ECS 回显，多半命中了缓存，本次判不出"
 	case VerdictNoNode:
 		return "权威按你的子网挑过了，仍给境外（这个服务在大陆没有节点）"
 	default:
@@ -92,10 +92,10 @@ func (v Verdict) Short() string {
 	switch v {
 	case VerdictMainland:
 		return "命中大陆节点"
-	case VerdictStranded:
-		return "ECS 未送达"
 	case VerdictNoSteering:
 		return "不按位置调度"
+	case VerdictNoEcho:
+		return "无回显，判不出"
 	case VerdictNoNode:
 		return "大陆无节点"
 	default:
@@ -103,7 +103,9 @@ func (v Verdict) Short() string {
 	}
 }
 
-func (v Verdict) Bad() bool { return v == VerdictStranded }
+func (v Verdict) Decided() bool {
+	return v == VerdictMainland || v == VerdictNoSteering || v == VerdictNoNode
+}
 
 type Outcome struct {
 	Domain       string   `json:"domain"`
@@ -131,7 +133,9 @@ type Report struct {
 	RulesetAt   int64     `json:"ruleset_at"`
 	Probes      []Outcome `json:"probes"`
 	Mainland    int       `json:"mainland"`
-	Stranded    int       `json:"stranded"`
+	NoNode      int       `json:"no_node"`
+	NoSteering  int       `json:"no_steering"`
+	Undecided   int       `json:"undecided"`
 	Comparable  int       `json:"comparable"`
 }
 
@@ -231,9 +235,14 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 		switch item.Verdict {
 		case VerdictMainland:
 			report.Mainland++
-			report.Comparable++
-		case VerdictStranded:
-			report.Stranded++
+		case VerdictNoNode:
+			report.NoNode++
+		case VerdictNoSteering:
+			report.NoSteering++
+		default:
+			report.Undecided++
+		}
+		if item.Verdict.Decided() {
 			report.Comparable++
 		}
 	}
@@ -289,7 +298,7 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 
 	switch {
 	case !answer.Echoed:
-		out.Verdict = VerdictStranded
+		out.Verdict = VerdictNoEcho
 	case answer.Scope == 0:
 		out.Verdict = VerdictNoSteering
 	default:

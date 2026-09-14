@@ -1680,9 +1680,9 @@ async function loadCacheInfo() {
 
 const CDN_VERDICT = {
   mainland: { cls: 'ok', mark: '✓' },
-  stranded: { cls: 'err', mark: '✗' },
   no_steering: { cls: 'unknown', mark: '–' },
   no_node: { cls: 'unknown', mark: '–' },
+  no_echo: { cls: 'unknown', mark: '?' },
   unresolved: { cls: 'unknown', mark: '?' },
 };
 
@@ -1709,8 +1709,9 @@ async function loadCdnHit(refresh) {
       </tr>`;
     });
     const summary = d.comparable
-      ? html`就近命中 <b>${d.mainland}/${d.comparable}</b>`
-      : html`<b>本轮判据没有回答任何问题</b>：没有一个域名的落点能与规则集比对`;
+      ? html`就近命中 <b>${d.mainland}/${d.comparable}</b>${
+          d.undecided ? html` <span class="hint">（${d.undecided} 个无 ECS 回显，本轮判不出）</span>` : ''}`
+      : html`<b>本轮判不出</b>：${d.undecided} 个域名都没有 ECS 回显`;
     setHtml(box, html`<div class="card">
       <h3>就近命中</h3>
       ${kvList([
@@ -1719,11 +1720,9 @@ async function loadCdnHit(refresh) {
         ['规则集版本', fmtTime(d.ruleset_at)],
         ['探测时间', fmtTime(d.generated_at)],
       ])}
-      ${d.stranded ? html`<div class="callout"><b>${d.stranded} 个域名的权威没有回显 ECS。</b>
-        它收不到你的子网，只能按隧道出口(香港)判断你在哪，于是把你调度到境外节点。
-        这不是分流问题——查询本来就该走隧道去问境外权威。
-        可能是这些权威不在 ECS 白名单里，也可能是它们本身不支持 ECS，
-        用 <span class="mono">dns-stack ecs-audit --quick</span> 复核。</div>` : ''}
+      ${d.mainland === 0 && d.comparable > 0 ? html`<div class="callout">
+        <b>一个大陆节点都没拿到。</b>连国内站点都没命中，ECS 链路多半整条失效。
+        用 <span class="mono">dns-stack ecs-audit --quick</span> 复核白名单。</div>` : ''}
       <div class="table-wrap mt-12"><table class="card-rows">
         <thead><tr><th>域名</th><th style="width:96px">CDN</th><th style="width:150px">解析结果</th>
           <th style="width:78px">ECS 回显</th><th style="width:132px">判定</th></tr></thead>
@@ -1731,8 +1730,9 @@ async function loadCdnHit(refresh) {
       </table></div>
       <div class="hint mt-8">
         <b>命中大陆节点</b>：答案落在 direct4 里，这次拿到的就是大陆节点。
-        <b>ECS 未送达</b>：权威没回显 ECS，它收不到你的子网，只能按隧道出口(香港)判断你在哪——
-        这是唯一算缺陷的一类。
+        <b>无回显，判不出</b>：这次没有 ECS 回显。<span class="mono">scope=0</span> 的答案会被
+        unbound 按 ECS 标准缓存成全局条目，后续任何子网的查询都命中它且不回显，
+        所以无回显并不等于没送达——要确认请用 <span class="mono">dns-stack ecs-audit</span>。
         <b>不按位置调度</b>：权威回了 scope=0，明确表示不按位置挑（全球 anycast 常见）。
         <b>大陆无节点</b>：权威按你的子网挑过了仍给境外，说明这个服务在大陆确实没有节点。
       </div>

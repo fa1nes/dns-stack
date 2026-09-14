@@ -24,7 +24,7 @@ func cmdCDNHit(args []string) error {
 	subnet := fs.String("subnet", cdnhit.BeijingTelecom, "客户端子网，必须是真实中国 /24")
 	domains := fs.String("domains", "", "自定义探测域名，逗号分隔(默认为内置的国内外大厂清单)")
 	asJSON := fs.Bool("json", false, "以 JSON 输出")
-	maxStranded := fs.Int("max-stranded", -1, "允许的「有大陆节点却落到境外」条数上限，超过则退出码非零")
+	minMainland := fs.Int("min-mainland", -1, "至少要有几个域名命中大陆节点，不足则退出码非零")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -73,9 +73,9 @@ func cmdCDNHit(args []string) error {
 	} else {
 		renderCDNHit(report)
 	}
-	if *maxStranded >= 0 && report.Stranded > *maxStranded {
-		return fmt.Errorf("%d 个域名的 CDN 在大陆有节点却返回了境外地址，超过上限 %d",
-			report.Stranded, *maxStranded)
+	if *minMainland >= 0 && report.Mainland < *minMainland {
+		return fmt.Errorf("只有 %d 个域名命中大陆节点，低于下限 %d（可比对 %d 个，未判定 %d 个）",
+			report.Mainland, *minMainland, report.Comparable, report.Undecided)
 	}
 	return nil
 }
@@ -86,9 +86,9 @@ func renderCDNHit(report cdnhit.Report) {
 		time.Unix(report.RulesetAt, 0).Format("2006-01-02 15:04"))
 	marks := map[cdnhit.Verdict]string{
 		cdnhit.VerdictMainland:   "✓",
-		cdnhit.VerdictStranded:   "✗",
 		cdnhit.VerdictNoSteering: "–",
 		cdnhit.VerdictNoNode:     "–",
+		cdnhit.VerdictNoEcho:     "?",
 		cdnhit.VerdictUnresolved: "?",
 	}
 	for _, probe := range report.Probes {
@@ -114,13 +114,18 @@ func renderCDNHit(report cdnhit.Report) {
 		}
 	}
 	if report.Comparable == 0 {
-		fmt.Printf("\n没有一个域名能回答「本该拿到大陆节点吗」，本轮判据弃权\n")
+		fmt.Printf("\n%d 个域名本轮都没有 ECS 回显，判不出\n", report.Undecided)
 		return
 	}
 	fmt.Printf("\n就近命中 %d/%d", report.Mainland, report.Comparable)
-	if report.Stranded > 0 {
-		fmt.Printf("；%d 个域名的权威没收到中国子网，只能按隧道出口调度——"+
-			"这些权威多半不在 ECS 白名单里：dns-stack ecs-audit --quick", report.Stranded)
+	if report.NoNode+report.NoSteering > 0 {
+		fmt.Printf("；另有 %d 个落在境外但已解释（权威挑过了或声明不按位置调度）",
+			report.NoNode+report.NoSteering)
 	}
 	fmt.Println()
+	if report.Undecided > 0 {
+		fmt.Printf("%d 个域名没有 ECS 回显：scope=0 的答案会被 unbound 按 ECS 标准缓存成全局条目，\n"+
+			"后续任何子网的查询都命中它且不回显。要确认 ECS 是否真的送达，用 dns-stack ecs-audit\n",
+			report.Undecided)
+	}
 }

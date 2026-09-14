@@ -340,7 +340,7 @@
     '/api/cdn-hit': () => ({
       resolver: '127.0.0.1:5335', subnet: '219.141.136.0/24',
       generated_at: Math.floor(Date.now() / 1000), ruleset_at: Math.floor(Date.now() / 1000) - 41000,
-      mainland: 4, stranded: 1, comparable: 5,
+      mainland: 4, no_node: 1, no_steering: 1, undecided: 1, comparable: 6,
       probes: [
         { domain: 'www.taobao.com', label: '淘宝', provider: '阿里云', provider_id: 'alibaba',
           has_mainland: true, mainland_prefixes: 86, ecs_echoed: true, ecs_scope: 24,
@@ -356,8 +356,8 @@
           addrs: ['211.100.8.175'], verdict: 'mainland', verdict_short: '命中大陆节点', verdict_text: '命中大陆节点' },
         { domain: 'www.huawei.com', label: '华为', provider: 'Akamai', provider_id: 'akamai',
           has_mainland: false, mainland_prefixes: 0, ecs_echoed: false, ecs_scope: 0,
-          addrs: ['184.87.97.63'], verdict: 'stranded',
-          verdict_short: 'ECS 未送达', verdict_text: '权威没收到你的子网，只能按隧道出口调度' },
+          addrs: ['184.87.97.63'], verdict: 'no_echo',
+          verdict_short: '无回显，判不出', verdict_text: '这次没有 ECS 回显，多半命中了缓存，本次判不出' },
         { domain: 'd1.awsstatic.com', label: 'AWS 静态资源', provider: 'AWS', provider_id: 'amazon',
           has_mainland: true, mainland_prefixes: 35, ecs_echoed: true, ecs_scope: 24,
           addrs: ['13.225.117.71'], verdict: 'no_node',

@@ -353,32 +353,33 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 		c.skip("大陆节点命中", "%v", err)
 		return
 	}
-	var stranded, mismatched, noNode []string
+	var mismatched, offshore []string
 	for _, probe := range hit.Probes {
 		if probe.Mismatch {
 			mismatched = append(mismatched, fmt.Sprintf("%s→%s",
 				probe.Domain, strings.Join(probe.Addrs, "/")))
 		}
-		switch probe.Verdict {
-		case cdnhit.VerdictStranded:
-			stranded = append(stranded, fmt.Sprintf("%s→%s(%s)",
-				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider))
-		case cdnhit.VerdictNoNode:
-			noNode = append(noNode, probe.Domain)
+		if probe.Verdict == cdnhit.VerdictNoNode || probe.Verdict == cdnhit.VerdictNoSteering {
+			offshore = append(offshore, probe.Domain)
 		}
 	}
+
 	if hit.Comparable == 0 {
-		c.skip("大陆节点命中", "没有一个域名能回答「本该拿到大陆节点吗」，本轮判据弃权")
+		c.skip("大陆节点命中", "%d 个域名本轮都没有 ECS 回显（多半命中缓存），判不出", hit.Undecided)
 	} else {
-		c.assert(hit.Stranded == 0, "大陆节点命中",
+		c.assert(hit.Mainland > 0, "大陆节点命中",
 			fmt.Sprintf("%d/%d 个域名拿到了大陆节点", hit.Mainland, hit.Comparable),
-			fmt.Sprintf("%s 的权威没收到中国子网，只能按隧道出口(香港)调度——"+
-				"这些权威多半不在 ECS 白名单里，复核 dns-stack ecs-audit --quick",
-				strings.Join(stranded, ", ")))
+			fmt.Sprintf("%d 个域名全都没拿到大陆节点——连国内站点都没命中，"+
+				"ECS 链路多半整条失效，复核 dns-stack ecs-audit --quick", hit.Comparable))
 	}
-	if len(noNode) > 0 {
-		c.ok("按位置调度已生效", "%s 的权威按子网挑过了仍给境外，说明这些服务在大陆没有节点",
-			strings.Join(noNode, ", "))
+	if len(offshore) > 0 {
+		c.ok("境外落点已解释", "%s 的权威要么按子网挑过了仍给境外、要么声明不按位置调度，"+
+			"都不是本机的问题", strings.Join(offshore, ", "))
+	}
+	if hit.Undecided > 0 {
+		c.skip("本轮未判定", "%d 个域名没有 ECS 回显——`scope=0` 的答案会被 unbound 按 ECS 标准"+
+			"缓存成全局条目，后续任何子网的查询都命中它且不回显。"+
+			"要确认 ECS 是否真的送达，用 dns-stack ecs-audit", hit.Undecided)
 	}
 	if len(mismatched) > 0 {
 		c.warn("答案属于已知 CDN 段",
