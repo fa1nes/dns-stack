@@ -5,10 +5,11 @@
 ## 1. 不可违反的目标
 
 1. 绝不能把境外域名误纳入国内直连或国内权威集合。
-2. ECS 只发给有明确国内业务证据的权威，或 `internal/cdn` 列出的已知 geo-steering CDN；
-   除这两类外不能把境外权威纳入白名单。2026-09-13 主人明确定调：CDN 就近优先于这条的严格版本，
+2. ECS 只发给三类权威：有明确国内业务证据的、`internal/cdn` 列出的已知 geo-steering CDN、
+   以及 `cdn-direct.txt` 证明**在大陆有节点段**的 CDN（2026-09-14 新增，详见 §3.3）；
+   除这三类外不能把境外权威纳入白名单。2026-09-13 主人明确定调：CDN 就近优先于这条的严格版本，
    因为拿不到 ECS 的 Akamai/Apple 只能按隧道出口调度，把国内用户导去香港。
-   **geo-steering CDN 的境外权威一律只进 ECS 白名单、永不进直连集合**（`internal/ruleset`），
+   **这三类的境外权威一律只进 ECS 白名单、永不进直连集合**（`internal/ruleset`），
    这条不依赖 shared-anycast 清单是否新鲜。
 3. 境外权威位置本身不是 GFW 证据；自动 `foreign-dns` 规则只能来自明确的 `cn_view_polluted` 观测。
 4. 非全局地址、无最终 A/AAAA、公共后缀、保留域、格式错误域名和 IP 字面量都不是地理或递归判定证据。
@@ -105,6 +106,22 @@ qcloud/cdnhwc/ourdvsss/wscdns 等）——此前只有境外 CDN，中国 CDN �
 2. 当前 `cn_authority` 中实际观测到的全局权威地址：只允许精确 `/32`，不复用路由 `/24` 聚合。
 3. 共享 anycast 的精确安全例外和短期累积：只能保留全局 IPv4 `/32`。
 
+**geo-steering 区域的判定有两个来源，规则集是可核验的那个**（2026-09-14 接上）：
+
+| 来源 | 实现 | 性质 |
+|---|---|---|
+| `internal/cdn` 静态后缀表 | `cdn.IsGeoSteered(zone)` | 人工维护，加新 CDN 永远滞后 |
+| `cdn-direct.txt` 的大陆段证据 | `ruleset.Config.MainlandCDN` | Action 每日重建，是网络事实 |
+
+规则集里**有大陆前缀段**的 provider，其根域全部进 `MainlandCDN`；命中的区域即便静态表
+没收录也按 geo-steering 处理（境外权威进 ECS 白名单、按 `/24` 聚合、**一律不进直连集合**）。
+这条只做加法：规则集读不到或没有任何大陆段时整体弃权，静态表照常生效（`cnauth.loadMainlandCDN`）。
+靠规则集纳入的区域单独记账（`Result.SteeredByRuleset`），便于区分证据来源。
+
+⚠️ 判据链两头都要接：CN 侧 `pipeline/steps.go` 传 `CDNRulesPath`，
+CLI 侧 `cn-authority --cdn-rules` 默认 `<state>/cdn-direct.txt`。
+少传一处，判据就退回只认静态表，而**不会有任何报错**。
+
 必须过滤、去重、去重叠、按区间覆盖检查；数据骤降、空快照、状态文件不可读都要保留旧结果并告警。累积保留（TTL 内、本轮 infra cache 未覆盖的权威 /32）是设计内的短期留存，`dns-stack ecs-orphans` 会把它们单列；**真孤儿**按境外归属统计，超过阈值就是实际泄露。状态文件不可读时审计 fail-closed，全部按真孤儿计。
 
 `scope > 0` 才表示权威按位置调度；没有 ECS 回显或 `scope=0` 必须单独显示。
@@ -121,7 +138,7 @@ qcloud/cdnhwc/ourdvsss/wscdns 等）——此前只有境外 CDN，中国 CDN �
 | PSL | 当前有效的 ICANN Public Suffix List | 注册域/公共后缀判定 |
 
 归属库由 `.github/workflows/geoip.yml` 每天镜像到本仓库的 `geoip-latest` 滚动 Release，生产端
-`scripts/update-geoip.sh` 从那里拉取。**只有带国家码的库才进得了交叉判据**：qqwry、GeoLite2-City、
+由 `dns-stack routing-data --only geoip` 拉取。**只有带国家码的库才进得了交叉判据**：qqwry、GeoLite2-City、
 dbip-city 三个；GeoLite2-ASN 与 dbip-asn 一个国家码都没有，拿它们交叉等于放一个
 永不投票的源。拉取端与 CI 都用同一个 `dns-stack geoip-verify` 做库类型核对与国家码抽查，
 并在末尾报出**可交叉源数量**——只数"下载成功几个"回答不了"交叉验证还跑不跑得起来"。
@@ -163,7 +180,7 @@ dbip-city 三个；GeoLite2-ASN 与 dbip-asn 一个国家码都没有，拿它�
 三层扣除由 `internal/cnauth` 的
 `TestECSWhitelistHasZeroIntersectionWithDisputedRanges` 钉死——它不看代码长什么样，直接拿最终
 ECS 白名单与争议清单求交。**做过阴性对照**：拆掉第 1 层或第 3 层，测试当场变红。
-生产侧同款判据在 `regression-check.sh`（`dns-stack ipset-check --overlap`）。
+生产侧同款判据是 `dns-stack ipset-check --overlap`（由 `dns-stack selfcheck` 串起）。
 
 ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆、但多源判为境外的段**不打标**。
 **注意能力边界**：dbip-city 没有省份与 ISP 字段，所以分片表的「省+运营商」归一
@@ -188,6 +205,7 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 | `ecs-orphans` | `internal/cnauth` | ECS 白名单孤儿审计（与生产者共用 `loadPrevECS`/`loadAccumState`） |
 | `ecs-audit` | `cmd/dns-stack` | ECS 全链路 A/B 审计：国内漏发 / 境外误发 |
 | `ecs-forward` | `cmd/dns-stack` | 直查 mosproxy DoT，验证客户端子网是否真的转发（自带 DoT 客户端） |
+| `cdn-hit` | `internal/cdnhit` | 以真实中国 /24 解析大厂域名，判定是否真拿到大陆 CDN 节点；面板 `/api/cdn-hit` 与 selfcheck 共用同一实现 |
 | `polluted-evidence` | `internal/polluted` | 污染 IP 观测的 TTL/门槛聚合与 CIDR 汇总 |
 | `rules <sub>` | `internal/rulesync` | 规则包清洗与校验：域名形态、CIDR 汇总、不重叠、父子覆盖 |
 | `shared-anycast` | `internal/anycast` | 共享 anycast 权威清单 |
@@ -215,11 +233,15 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 | `internal/pipeline` | 分流数据流水线：按依赖顺序串起 6 个步骤，各步自带周期与时间戳 |
 | `internal/selfcheck` | 运行时回归判据（只观察在跑的系统，不 grep 源码） |
 
-关键脚本（2026-09-13 起只剩 shell 真正擅长的部分）：`collect-polluted-ip.sh`、`sync-rules.sh`、
-`setup-recursive-routing.sh`、`backup.sh`、`doh-path.sh`、`preflight.sh`、`migration/*.sh`。
-`update-chnroute.sh` / `update-geoip.sh` / `update-cn-authority.sh` / `renew-cert.sh` /
-`routing-watchdog.sh` 已并入 `dns-stack routing-data|maintenance|routing-watchdog`；
-`regression-check.sh` 换成 `dns-stack selfcheck`。
+**shell 归零（2026-09-14 复核）**：整个仓库只剩 `install.sh` 与 `install-hk.sh` 两个安装脚本，
+外加 `mosproxy.service` 里那一行必须保留 `-o pipefail` 的管道。曾经的 `scripts/`、`migration/`
+两个目录连同其中每一个 `.sh` 都已并入 Go 子命令——
+`collect-polluted-ip.sh`→`collect-polluted`、`sync-rules.sh`→`sync-rules`、
+`setup-recursive-routing.sh`→`routing-setup`、`backup.sh`→`backup`、`doh-path.sh`→`doh-path`、
+`preflight.sh`→`selfcheck`、`migration/wg-peer.sh`→`dns-stack wg-peer`、
+`update-*.sh`→`routing-data|maintenance`、`regression-check.sh`→`selfcheck`。
+**卸载故意留在 shell**：Go 二进制坏掉时最需要它。
+⚠️ 在本文件里看到任何 `scripts/xxx.sh` 的引用都是历史章节的原文，不要照着去找文件。
 
 ⚠️ **把 shell 改写成 Go 时要逐条清点 curl 的保护参数**。`update-geoip.sh` 的
 `--speed-limit 8192 --speed-time 20` 在第一版 Go 端口里丢了，只剩总超时；CN 直连 GitHub Release
@@ -238,7 +260,8 @@ RDATA 里的域名可以用压缩指针指回报文头部，解析它必须带 `
 
 ```bash
 go build ./... && go vet ./... && go test ./... && gofmt -l cmd internal web
-DNS_STACK_SOURCE_ROOT="$PWD" bash scripts/regression-check.sh
+bash -n install.sh && sh -n install-hk.sh
+node --check web/assets/panel.js && node --check web/mock-api.js
 ```
 
 **每个 `internal/` 包都必须有测试**（`resolvetest` 是脚手架除外）。这条由 regression 断言守着——
@@ -293,6 +316,94 @@ go run ./web/devserver --root ./web    # 注入 mock-api.js，不需要任何后
    正是 2026-09-07 OOM 掀翻整机的起点。`install.sh` 里没有也不该有 `go build`。
 
 ## 7. 当前已知状态与下一步
+
+### 7.10 2026-09-14：规则集接进判据 + 护栏对齐 + 触摸端字号
+
+参照 antsxdp 的递归系统做了一轮打磨。**它的「转发来源」（按线路转发到上游）与本项目
+根本冲突**——本项目是完整递归，公共 DNS 进任何路径都是 §8 的回归。真正可借鉴的只有四项：
+强制最小 TTL、一键清缓存、域名黑名单、ACL 可视化；后两项本来就有。
+
+**`cdn-direct.txt` 从「只做答案侧检测」升级为「参与 ECS 白名单决策」**（详见 §3.3）。
+它此前是一个典型的「判据从未被接上」：Action 每天生成、CN 每天拉取、
+`selfcheck` 也在读，但**没有任何决策依赖它**。
+
+⚠️ **接上判据之后才发现真正的缺口在数据侧**。规则集 20 个 provider，当时只有 6 个有前缀：
+
+```
+amazon 35/6034   cloudflare 1/434   microsoft 5/1010   （大陆段/境外段）
+akamai 0/405     fastly 0/90        imperva 0/380
+阿里 腾讯 华为 百度 七牛 网宿 Apple —— 一条都没有
+```
+
+根因：`officialFeeds` 只覆盖 cloudflare/fastly/amazon，其余靠 `Operator.ASNs`，
+而**国产 CDN 与 Apple 一个 ASN 都没填**。后果是
+`cdn-hit` 对淘宝/腾讯/百度/华为/Apple 一律判 `unknown`——判据接上了，数据侧却是空的。
+（也因此，`MainlandCDN` 这条新判据在补数据之前**增量为零**：
+规则集的 provider 就是从 `cdn.Operators()` 生成的，它们的根域必然已在 `geoSteeringRoots` 里。）
+
+已按 RIPEstat 逐个核实 holder 后补齐 `PrefixASNs`：阿里 24429/37963/45102、
+腾讯 45090/132203/132591、华为 55990/136907、百度 38365/55967、Apple 714/6185。
+**网宿与七牛查不到可靠 ASN，弃权不填**——核实时发现常被当成网宿的 AS4808 其实是中国联通、
+AS137702 是中国电信江苏 IDC，填进去等于把两家运营商的整片地址算给一家 CDN。
+
+⚠️ **`ASNs` 与 `PrefixASNs` 是两个字段，不要合并**。`ASNs` 回答「这个 ASN 上的权威是不是
+多租户共享、因而境外权威不得直连」（`SharedDNSProvider` → `shared-anycast.txt`），
+`PrefixASNs` 只回答「这些地址是谁的节点」。国产云的 ASN 上主要是云主机而不是共享权威，
+喂给前者语义就是错的。`cdnrules.Build` 用 `AllASNs()` 取两者之和，
+`buildSharedDNSAS` 只用 `ASNs`；两条判据由 `TestPrefixASNsStayOutOfTheSharedDNSJudgement`
+和 `TestPrefixASNsActuallyReachThePrefixBuilder` 分别钉住（「填了却拉不到」是最难发现的失效）。
+`cdn-rules.yml` 新增 `MIN_MAINLAND_PROVIDERS=5` 门禁：全都没有大陆段时判据只会一路弃权，
+**而弃权在报表上看起来和通过一模一样**。
+
+**新增 `internal/cdnhit`**：CLI `dns-stack cdn-hit`、面板 `/api/cdn-hit`（90 秒缓存）、
+selfcheck 的「CDN 就近命中」组三方共用一份实现。核心判定是 `stranded`——
+**该 CDN 在大陆有节点、答案却落在境外**。这个方向单独成一类是有意的：
+「拿到境外节点」本身不是缺陷（人家可能就没有大陆节点），
+只有「有大陆节点却没给」才说明 ECS 没送达。`selfcheck` 里 `stranded > 0` 是 fail 不是 warn。
+`internal/selfcheck/query.go` 整个删掉——它的两个函数已并入 cdnhit，留着就是第二份实现。
+
+**审查断言时抓到两个真缺口**，两个都是「同一份清单存在两处」：
+
+1. **`set_arch_epoch` 面板标危险、helper 不拦**。绕开面板直接调 socket 就没有二次确认。
+2. **`publish_github` 在 helper 侧没有角色闸门**。面板按 `Role` 只对 global-builder 显示，
+   但 helper 是独立入口——**CN 机器绕过面板照样能往 GitHub 推**，
+   而「CN 不上传 GitHub」正是主人明确定过的边界。
+   根因：角色清单在 panel 的 `operationSpecs.Role`（8 条）和 helper 里散落的
+   `requireRole` 调用（4 处）各存一份。已收敛成 `helper.RoleOps` 一处，
+   闸门统一在 `Dispatch` 执行，`requireRole` 连同 4 处调用一起删除。
+
+删掉的断言：`helper_test` 里的 `len(h.ops) == 44`。硬编码计数没有任何行为含义，
+每加一个操作都要改数字，改完还会让人以为「审过了」。换成三条有行为含义的：
+危险标记两侧一致、角色闸门两侧一致、`operationOrder` 与 `operationSpecs` 互相覆盖。
+**新判据第一次运行就抓到了上面那两个缺口**——这就是它们与计数断言的区别。
+
+**卸载清单改为扫描 `systemd/` 目录 + 一份显式的历史遗留名**（`install.sh`）。
+手抄的现役清单每次新增单元都会漏；而已删除的旧单元不在目录里，必须显式列，
+否则升级过的机器卸载后会残留启用中的 timer。两个来源都扫（源码树 + `/etc/systemd/system`）。
+
+**缓存策略补齐 antsxdp 的两项**：`set_min_ttl`（强制最小 TTL）与 `flush_cache`
+（可指定域名，走 `SafeDomain` 校验；全清列入 `DangerousOps`）。
+`cache_info` 增加 `cache-min-ttl` 与命中率（`stats_noreset` 的 `cachehits/queries`）。
+⚠️ **最小 TTL 上限刻意压到 300 秒**：它会一并抬高 CDN 那些几十秒的短 TTL，
+而 CDN 正是靠短 TTL 做故障转移与就近调度的——**这一项与本轮的 CDN 就近目标直接冲突**，
+所以默认仍是 0（不强制），代价写在 UI 上由主人自己权衡。
+
+**前端触摸端字号体系**（主人实测反馈：移动端与 iPad mini 字体不协调）：
+
+- **`enterkeyhint` 全站零使用**，iOS/iPadOS 软键盘右下角因此一律显示通用「换行」而不是「搜索」。
+  已按语义补齐；同时给域名/IP 输入框补 `autocapitalize="none" autocorrect="off"`——
+  否则 iOS 会把域名首字母自动大写。
+- **控件字号分裂**：移动端 `--fs-field: 16px`（防 iOS 聚焦缩放）但 `--fs-control: 14px`，
+  同一行里输入框与下拉框差 2px。已让 button / input / xsel 三者共用 `--fs-control`/`--fs-field`，
+  并在 `@media (pointer: coarse)` 下统一为 16px（小号控件 14px）。
+- **iPad mini 转屏换体系**：竖屏 768px 走移动档、横屏 1024px 直接掉回桌面档 13.5px。
+  新增 861–1180px 平板档；xsel 的 bottom sheet 判定改为 `preferSheet()`
+  （宽度 ≤860 或「coarse 指针且 ≤1180」），sheet 在宽屏收窄到 560px 居中。
+- **`word-break: break-all` 用在中英混排上会把英文单词从中间劈开**。
+  混排文本（表格、日志、toast、字段值）改 `overflow-wrap: anywhere`，
+  只有纯 mono 内容（pre、哈希、主机名）保留 break-all；body 加 `line-break: strict` 做中文避头尾。
+- 诊断面板新增**控件字号一致性实测**：取页面上可见的 input / xsel / button 各一个，
+  比对 computed `fontSize`，多于一种就标红。把主人报的现象变成了能自己发现的判据。
 
 ### 7.9 2026-09-10：Python 归零 + 一体化 + 前端实测优化
 
@@ -473,6 +584,22 @@ CLI `dns-stack migration-restore`、前端「试算导入 / 导入并覆盖」�
 - **`internal/` 下的包没有任何测试**（Python 参照已删，测试是唯一证据）。
 - **改了判据却没做阴性对照**（把它改错，测试必须当场变红）。
 - 只比聚合计数、或 Go 侧把空集合序列化成 `null`。
+- **用硬编码的条目数当断言**（`len(ops) == 44` 这类）。它没有行为含义，
+  每次改动只是改数字，还会伪装成「审过了」。要断言的是两侧一致、闸门可达这类性质。
+- **面板与 helper 各存一份危险标记或角色清单**（必须共用 `helper.DangerousOps` /
+  `helper.RoleOps`；分叉过一次，代价是 CN 能绕过面板往 GitHub 推）。
+- **CDN 规则集只用于展示或检测，不接进任何决策**（那就退回「判据从未被接上」）。
+- **接判据时不看数据侧是不是空的**。判据接通了、代码有测试、CI 全绿，
+  而规则集里那家 CDN 一条前缀都没有——结果是永远弃权，且看起来和通过一样。
+- 往 `Operator.ASNs` 里塞只为拉前缀的 ASN（那会让它们被当成共享 DNS 提供商，
+  改用 `PrefixASNs`）。
+- 凭记忆或搜索结果填 ASN。必须逐个查 RIPEstat 的 holder 核实；
+  查不出归属就**弃权**，不要凑数（AS4808/AS137702 是运营商，不是网宿）。
+- 拿「答案落在境外」本身当缺陷报警——只有**该 CDN 有大陆节点却没给**才是缺陷。
+- 强制最小 TTL 开到能压住 CDN 短 TTL 的量级（上限 300 秒，且默认不强制）。
+- 前端把 `word-break: break-all` 用在中英混排文本上（英文单词会被从中间劈开）。
+- 交互式输入框缺 `enterkeyhint`，或域名/IP 输入框缺 `autocapitalize="none"`。
+- 同一行里的 input / select / button 出现不同 computed 字号。
 - 面板处理器用裸 `time.Now()`（必须走可注入的 `s.now()`）。
 - 面板可经 `update_panel_auth` 写入 password hash / salt / session_key。
 - helper 的两条错误通道被合并（参数被拒会被面板当成"执行成功但无输出"）。

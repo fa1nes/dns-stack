@@ -63,10 +63,30 @@
 
 **判定结果绝不回流成判定输入**——那是自我强化的死循环。
 
-### ECS 就近调度
+### ECS 就近调度与 CDN 大陆节点
 
 面板与递归都按客户端 /24 发送 EDNS Client Subnet，让 CDN 返回真正就近的节点；
 白名单按「这台权威服务谁」收敛，而不是按「权威 IP 在不在大陆」。
+
+**这一条对分流架构是必需品而不是优化项**。境外 CDN 的权威在境外，查询必然走隧道；
+如果那台权威收不到中国 ECS，它只能按隧道出口（香港）判断你在哪，
+于是把国内用户整体调度到香港节点——链路通、解析成功、但绕了一圈。
+
+判据由两层组成：
+
+| 层 | 来源 | 回答的问题 |
+|---|---|---|
+| `internal/cdn` 静态后缀表 | 人工维护 | 这个域名属于哪家 CDN、是不是 geo-steering |
+| `cdn-direct.txt` 规则集 | `cdn-rules` Action 每日重建 | 这家 CDN **在大陆到底有没有节点段** |
+
+第二层是可核验的网络事实：规则集从各家官方前缀源与 ASN 通告拉取，
+按 APNIC 大陆基线切成大陆段与境外段。**只要规则集证明某家 CDN 有大陆节点，
+它的境外权威就一律进 ECS 白名单**——不必等人工往静态表里补。
+境外权威只进白名单、永不进直连集合（直连会吃 GFW 污染）。
+
+`dns-stack cdn-hit` 是这条链路的验收判据：以真实中国 /24 的身份解析国内外大厂域名，
+把答案拿去比对规则集，重点报出「该 CDN 在大陆有节点、答案却落在境外」——
+那不是分流出了问题，是 ECS 没送达那台权威。
 
 ---
 
@@ -113,8 +133,9 @@ TLS 证书，否则拒绝启动（宁可起不来，也不裸奔）。
 ## 常用命令
 
 ```bash
-dns-stack health            # 健康检查：递归、分流、采集链路、ECS 白名单
+dns-stack health            # 健康检查：递归、分流、采集链路、ECS 白名单、CDN 就近命中
 dns-stack routing-status    # 当前分流集合与隧道状态
+dns-stack cdn-hit           # 以真实中国 /24 验收 CDN 是否真的给了大陆节点
 dns-stack version
 ```
 
@@ -136,6 +157,10 @@ dns-stack version
 |---|---|
 | `.github/workflows/build.yml` | `gofmt` + `go vet` + `go test`，再交叉编译 linux/amd64、linux/arm64、windows/amd64，打 tag 时附到 Release |
 | `.github/workflows/geoip.yml` | 每日把四个上游归属库镜像到本仓库的 `geoip-latest` 滚动 Release，带体积门槛与**已知地址抽查**（只看文件大小不够，格式变了文件照样够大）。生产端由 `dns-stack routing-data --only geoip` 拉取，多出来的 DB-IP 是权威落点交叉验证的第三个源 |
+| `.github/workflows/cdn-rules.yml` | 每日重建 `cdn-direct.txt`：从各家官方前缀源与 RIPEstat 的 ASN 通告拉取，按 APNIC 大陆基线切成大陆段/境外段。带**校验器自检**（拿一条明知错误的锚点去验，验不红就说明校验器自己失效了）与骤降拒绝。生产端由 `dns-stack sync-rules` 拉取 |
+
+规则集全部由**本仓库的 Action 机器人生成并发布**，不引用任何第三方规则源——
+第三方规则集的口径、更新节奏和存续都不受控，而这条判据直接决定 ECS 发给谁。
 
 ---
 
