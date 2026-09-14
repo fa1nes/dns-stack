@@ -98,6 +98,8 @@ func main() {
 		err = cmdACL(args)
 	case "query-log":
 		err = cmdQueryLog(args)
+	case "trim-logs":
+		err = cmdTrimLogs(args)
 	case "backup":
 		err = cmdBackup(args)
 	case "export":
@@ -182,6 +184,7 @@ func usage() {
   blocklist       域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机
   acl             访问控制：只放行授权网段访问 DoH/DoT 入口(nftables 实现，回环与隧道始终放行)
   query-log       递归日志：按时间/递归类型/域名/来源子网筛选，可 --csv 导出、--breakdown 看构成
+  trim-logs       原地截断过大的运行日志，只保留每份日志末尾内容
   migration-export  导出迁移包(与面板「导出迁移数据」共用同一份清单，一条密钥都不含)
   migration-restore 从面板导出的迁移包恢复数据(按清单白名单写入，可 --dry-run)
   direct4-audit   多个归属库交叉验证 direct4，产出争议(不发 ECS)与晋级(可作大陆证据)清单

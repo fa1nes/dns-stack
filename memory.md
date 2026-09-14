@@ -232,6 +232,7 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 | `internal/cdn` | CDN 后缀表与共享 DNS ASN 表的**唯一真相源**（geo-steering / 多租户两个标志） |
 | `internal/pipeline` | 分流数据流水线：按依赖顺序串起 6 个步骤，各步自带周期与时间戳 |
 | `internal/selfcheck` | 运行时回归判据（只观察在跑的系统，不 grep 源码） |
+| `internal/logtrim` | 原地收缩过大的运行日志，保留 inode 与文件权限；HK 定时任务直接调用 Go 子命令 |
 
 **shell 归零（2026-09-14 复核）**：整个仓库只剩 `install.sh` 与 `install-hk.sh` 两个安装脚本，
 外加 `mosproxy.service` 里那一行必须保留 `-o pipefail` 的管道。曾经的 `scripts/`、`migration/`
@@ -241,6 +242,7 @@ ECS 分片表（`internal/ecszone`）也接了争议清单：qqwry 说是大陆�
 `preflight.sh`→`selfcheck`、`migration/wg-peer.sh`→`dns-stack wg-peer`、
 `update-*.sh`→`routing-data|maintenance`、`regression-check.sh`→`selfcheck`。
 **卸载故意留在 shell**：Go 二进制坏掉时最需要它。
+HK 的日志收缩也已从安装脚本生成的 `trim-logs.sh` 收回 Go：`dns-stack trim-logs` 原地保留每份 `.log` 的末尾内容，安装脚本只负责写入 cron。仓库仍只有两个安装脚本。
 ⚠️ 在本文件里看到任何 `scripts/xxx.sh` 的引用都是历史章节的原文，不要照着去找文件。
 
 ⚠️ **把 shell 改写成 Go 时要逐条清点 curl 的保护参数**。`update-geoip.sh` 的
@@ -410,10 +412,10 @@ res.hc-cdn.com   → 220.181.181.55    ss0.bdstatic.com  → 10 个省份的 IP
 用运营商 IP，AS20940 一条都不宣告，和国产 CDN 是同一个问题。用它当闸门会把真问题吞掉。
 
 **新增 `internal/cdnhit`**：CLI `dns-stack cdn-hit`、面板 `/api/cdn-hit`（90 秒缓存）、
-selfcheck 的「CDN 就近命中」组三方共用一份实现。核心判定是 `stranded`——
-**该 CDN 在大陆有节点、答案却落在境外**。这个方向单独成一类是有意的：
-「拿到境外节点」本身不是缺陷（人家可能就没有大陆节点），
-只有「有大陆节点却没给」才说明 ECS 没送达。`selfcheck` 里 `stranded > 0` 是 fail 不是 warn。
+selfcheck 的「CDN 就近命中」组三方共用一份实现。当前判据不再使用 `stranded`：
+落点在 `direct4` 就是大陆命中；`scope>0` 但落在境外表示权威按子网挑过后仍给境外；
+`scope=0` 表示权威声明不按位置调度；没有 ECS 回显则本轮弃权，不得反推 ECS 没送达。
+只有所有可判定样本都没有大陆命中时，才把它视作整条 ECS 链路可能失效。
 `internal/selfcheck/query.go` 整个删掉——它的两个函数已并入 cdnhit，留着就是第二份实现。
 
 **审查断言时抓到两个真缺口**，两个都是「同一份清单存在两处」：
