@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ func cmdCDNHit(args []string) error {
 	fs := flag.NewFlagSet("cdn-hit", flag.ContinueOnError)
 	state := fs.String("state", envOr("STATE_DIR", "/var/lib/dns-stack"), "状态目录")
 	ruleset := fs.String("ruleset", "", "CDN 直连规则集(默认 <state>/cdn-direct.txt)")
+	direct4 := fs.String("direct4", "", "大陆网段集合(默认 <state>/chnroute/direct4.txt)")
 	resolver := fs.String("resolver", cdnhit.DefaultResolver, "递归解析器地址")
 	subnet := fs.String("subnet", cdnhit.BeijingTelecom, "客户端子网，必须是真实中国 /24")
 	domains := fs.String("domains", "", "自定义探测域名，逗号分隔(默认为内置的国内外大厂清单)")
@@ -29,10 +31,21 @@ func cmdCDNHit(args []string) error {
 	if *ruleset == "" {
 		*ruleset = rulesync.CDNPath(*state)
 	}
+	if *direct4 == "" {
+		*direct4 = filepath.Join(*state, "chnroute", "direct4.txt")
+	}
 
 	set, err := cdnrules.Load(*ruleset)
 	if err != nil {
 		return fmt.Errorf("读不到 CDN 直连规则集 %s: %w（先跑 dns-stack sync-rules）", *ruleset, err)
+	}
+
+	mainland, err := cdnhit.LoadMainland(*direct4)
+	if err != nil {
+		fmt.Fprintf(os.Stderr,
+			"[警告] 读不到大陆网段 %s (%v)：只能靠规则集里的大陆段判定，"+
+				"而国产 CDN 大多把节点放在运营商机房、用运营商的 IP，规则集按 ASN 拉不到那些段\n",
+			*direct4, err)
 	}
 
 	var probes []cdnhit.Probe
@@ -45,7 +58,7 @@ func cmdCDNHit(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	report, err := cdnhit.Run(ctx, cdnhit.Options{
-		Resolver: *resolver, Subnet: *subnet, Probes: probes, Set: set,
+		Resolver: *resolver, Subnet: *subnet, Probes: probes, Set: set, Mainland: mainland,
 	})
 	if err != nil {
 		return err

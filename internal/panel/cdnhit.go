@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -40,10 +41,14 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 			"error": "读不到 CDN 直连规则集，命中判据无法回答任何问题: " + err.Error()})
 		return
 	}
+	mainland, err := cdnhit.LoadMainland(filepath.Join(s.cfg.StateDir, "chnroute", "direct4.txt"))
+	if err != nil {
+		mainland = nil
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	report, err := cdnhit.Run(ctx, cdnhit.Options{
-		Subnet: subnet, Set: set, Timeout: 5 * time.Second, Now: s.now,
+		Subnet: subnet, Set: set, Mainland: mainland, Timeout: 5 * time.Second, Now: s.now,
 	})
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": err.Error()})

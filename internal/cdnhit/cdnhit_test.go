@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
+	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
 func prefixes(t *testing.T, values ...string) []netip.Prefix {
@@ -116,11 +117,60 @@ func TestWithoutMainlandEvidenceTheSameAnswerCannotBeCalledAHit(t *testing.T) {
 	}
 }
 
-func TestAnswerOutsideTheProviderRangesIsFlaggedNotSilentlyPassed(t *testing.T) {
+func mainlandSet(t *testing.T, prefixes ...string) *ipset.Set {
+	t.Helper()
+	ranges := make([]ipset.Range, 0, len(prefixes))
+	for _, value := range prefixes {
+		rg, ok := ipset.PrefixRange(netip.MustParsePrefix(value))
+		if !ok {
+			t.Fatalf("无法转换 %s", value)
+		}
+		ranges = append(ranges, rg)
+	}
+	return ipset.New(ranges)
+}
+
+func runWith(t *testing.T, set *cdnrules.Set, mainland *ipset.Set, resolve Resolver, probes ...Probe) Report {
+	t.Helper()
+	report, err := Run(context.Background(), Options{
+		Set: set, Mainland: mainland, Probes: probes, Resolve: resolve,
+		Now: func() time.Time { return time.Unix(1_700_000_100, 0) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func TestCarrierHostedMainlandNodeCountsAsAHitNotAMismatch(t *testing.T) {
+	const carrier = "220.181.10.93"
+	resolve := answers(map[string][]string{"a.steered.example": {carrier}})
+	probe := Probe{"a.steered.example", "节点在运营商机房"}
+
+	direct4 := mainlandSet(t, "220.181.10.0/24")
+	got := runWith(t, testSet(t, true), direct4, resolve, probe).Probes[0]
+	if got.Verdict != VerdictMainland {
+		t.Fatalf("国产 CDN 大多把节点放在运营商机房、用运营商的 IP，规则集按 ASN 拉不到那些段。"+
+			"要回答的是「用户拿到的是不是大陆节点」，不是「这个 IP 属不属于该 CDN 的 ASN」: %s",
+			got.Verdict)
+	}
+
+	without := runWith(t, testSet(t, true), nil, resolve, probe).Probes[0]
+	if without.Verdict == VerdictMismatch {
+		t.Fatal("没有 direct4 就排除不掉「其实在大陆」，此时必须弃权而不是报成可疑地址")
+	}
+	if without.Verdict != VerdictUnknown {
+		t.Fatalf("缺少大陆网段时应弃权: %s", without.Verdict)
+	}
+}
+
+func TestOffshoreAnswerOutsideTheProviderRangesIsFlaggedNotSilentlyPassed(t *testing.T) {
 	resolve := answers(map[string][]string{"a.steered.example": {"8.8.8.8"}})
-	report := run(t, testSet(t, true), resolve, Probe{"a.steered.example", "投毒或自建源站"})
+	direct4 := mainlandSet(t, "220.181.10.0/24")
+	report := runWith(t, testSet(t, true), direct4, resolve,
+		Probe{"a.steered.example", "投毒或自建源站"})
 	if report.Probes[0].Verdict != VerdictMismatch {
-		t.Fatalf("地址不属于该 CDN 时必须单列出来: %s", report.Probes[0].Verdict)
+		t.Fatalf("已确认不在大陆、又不属于该 CDN 的地址必须单列出来: %s", report.Probes[0].Verdict)
 	}
 	if report.Comparable != 0 {
 		t.Fatal("判不出归属的样本不能计入就近率的分母，否则分母被稀释后比率会虚高")

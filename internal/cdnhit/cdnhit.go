@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/dnswire"
+	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
 const (
@@ -68,7 +70,7 @@ func (v Verdict) Label() string {
 	case VerdictThin:
 		return "境外节点（该 CDN 的大陆段太少，判据弃权）"
 	case VerdictMismatch:
-		return "地址不属于该 CDN"
+		return "境外地址且不属于该 CDN"
 	case VerdictUnknown:
 		return "不在规则集内"
 	default:
@@ -110,9 +112,26 @@ type Options struct {
 	Subnet   string
 	Probes   []Probe
 	Set      *cdnrules.Set
+	Mainland *ipset.Set
 	Timeout  time.Duration
 	Now      func() time.Time
 	Resolve  Resolver
+}
+
+func LoadMainland(path string) (*ipset.Set, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	loaded, err := ipset.LoadReader(file, ipset.LoadOptions{GlobalOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	if loaded.Set == nil || loaded.Set.Len() == 0 {
+		return nil, fmt.Errorf("%s 里没有任何有效的大陆网段", path)
+	}
+	return loaded.Set, nil
 }
 
 func (o Options) now() time.Time {
@@ -203,21 +222,26 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 
 	out.Verdict = VerdictUnknown
 	for _, addr := range addrs {
-		owner, prefix, mainland, hit := opt.Set.Owner(addr)
-		if !hit {
-			if out.Verdict == VerdictUnknown && out.ProviderID != "" {
-				out.Verdict = VerdictMismatch
-			}
-			continue
-		}
-		if out.ProviderID == "" {
+		owner, prefix, inRulesetMainland, hit := opt.Set.Owner(addr)
+		if hit && out.ProviderID == "" {
 			out.Provider, out.ProviderID = owner.Name, owner.ID
 			out.HasMainland, out.MainlandNum = owner.ServesMainland(), len(owner.Mainland)
 		}
-		if mainland {
-			out.Verdict, out.Prefix = VerdictMainland, prefix.String()
+
+		if inRulesetMainland || (opt.Mainland != nil && opt.Mainland.Contains(addr)) {
+			out.Verdict = VerdictMainland
+			if hit {
+				out.Prefix = prefix.String()
+			}
 			out.VerdictText = out.Verdict.Label()
 			return out
+		}
+
+		if !hit {
+			if out.Verdict == VerdictUnknown && out.ProviderID != "" && opt.Mainland != nil {
+				out.Verdict = VerdictMismatch
+			}
+			continue
 		}
 		if out.Prefix == "" {
 			out.Prefix = prefix.String()

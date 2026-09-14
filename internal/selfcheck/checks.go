@@ -328,7 +328,14 @@ func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *c
 
 func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *cdnrules.Set, resolver string) {
 	c := &checker{report: report, group: "CDN 就近命中"}
-	hit, err := cdnhit.Run(ctx, cdnhit.Options{Resolver: resolver, Set: cdnSet})
+	mainland, mainlandErr := cdnhit.LoadMainland(
+		filepath.Join(opt.StateDir, "chnroute", "direct4.txt"))
+	if mainlandErr != nil {
+		c.warn("大陆网段可用", "读不到 direct4 (%v)：只能靠规则集里的大陆段判定，"+
+			"而国产 CDN 的节点大多用运营商 IP，规则集按 ASN 拉不到", mainlandErr)
+	}
+	hit, err := cdnhit.Run(ctx, cdnhit.Options{
+		Resolver: resolver, Set: cdnSet, Mainland: mainland})
 	if err != nil {
 		c.skip("大陆节点命中", "%v", err)
 		return
