@@ -973,15 +973,26 @@ main() {
     dns-stack health || true
 }
 
-UNINSTALL_UNITS=(
-    dns-stack-helper dns-stack-panel dns-stack-classify dns-stack-verify
-    dns-stack-maintenance dns-stack-sync-rules dns-stack-collect-polluted
-    dns-stack-reference-data dns-stack-publish dns-stack-routing-data
-    dns-stack-recursive-routing dns-stack-routing-watchdog
+# 这些单元早已从 systemd/ 删除，但可能还留在旧机器上。它们不会出现在下面的目录扫描里，
+# 所以必须显式列出——否则升级过的机器卸载后会残留启用中的 timer。
+UNINSTALL_LEGACY_UNITS=(
     dns-stack-backup dns-stack-renew-cert dns-stack-chnroute dns-stack-cn-authority
     dns-stack-geoip dns-stack-ecs-zone dns-stack-shared-anycast dns-stack-geo-cross
     dns-stack-dynamic
 )
+
+# 现役单元一律从磁盘扫，不再手抄一份清单：手抄的那份每次新增单元都会漏。
+uninstall_units() {
+    {
+        local path
+        for path in "$SCRIPT_DIR"/systemd/dns-stack-*.service \
+                    /etc/systemd/system/dns-stack-*.service; do
+            [[ -e "$path" ]] || continue
+            basename "$path" .service
+        done
+        printf '%s\n' "${UNINSTALL_LEGACY_UNITS[@]}"
+    } | sort -u
+}
 
 do_uninstall() {
     local purge=0 dry=0 a
@@ -999,12 +1010,13 @@ do_uninstall() {
 
     log_info "正在停止 dns-stack 相关服务..."
     local unit
-    for unit in "${UNINSTALL_UNITS[@]}"; do
+    while IFS= read -r unit; do
+        [[ -n "$unit" ]] || continue
         run systemctl stop "${unit}.timer" 2>/dev/null || true
         run systemctl disable "${unit}.timer" 2>/dev/null || true
         run systemctl stop "${unit}.service" 2>/dev/null || true
         run systemctl disable "${unit}.service" 2>/dev/null || true
-    done
+    done < <(uninstall_units)
     if [[ -f /etc/systemd/system/mosproxy.service ]]; then
         log_info "停止 mosproxy(其二进制位于即将删除的 ${OPT_DIR})"
         run systemctl stop mosproxy.service 2>/dev/null || true
