@@ -209,8 +209,52 @@ function showDiagnostics() {
     try { return (window.CSS && CSS.supports && CSS.supports('selector(' + sel + ')')) ? '是' : '否'; }
     catch (e) { return '否'; }
   };
-  const bp = [440, 560, 640, 760, 860].filter(
+  const bp = [440, 560, 640, 760, 860, 1180].filter(
     (w) => window.matchMedia('(max-width:' + w + 'px)').matches);
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  const controlSizes = () => {
+    const seen = new Map();
+    const probes = [
+      ['输入框', 'input[type="text"], input[type="search"], input[type="password"]'],
+      ['下拉框', '.xsel-btn'],
+      ['按钮', 'button:not(.xsel-btn):not(.sm):not(.icon)'],
+    ];
+    probes.forEach(([label, sel]) => {
+      const el = Array.from(document.querySelectorAll(sel))
+        .find((node) => node.offsetParent !== null);
+      if (!el) return;
+      const size = getComputedStyle(el).fontSize;
+      if (!seen.has(size)) seen.set(size, []);
+      seen.get(size).push(label);
+    });
+    if (!seen.size) return '本页没有可见控件';
+    const parts = Array.from(seen, ([size, labels]) => labels.join('/') + '=' + size);
+    return parts.join('  ') + (seen.size === 1 ? '  ✓ 一致'
+      : '  🔴 同一行控件出现 ' + seen.size + ' 种字号');
+  };
+
+  const cellSpills = () => {
+    const worst = new Map();
+    let cells = 0;
+    $$('.page.active td, .page.active th').forEach((cell) => {
+      if (getComputedStyle(cell).display === 'none' || !cell.offsetParent) return;
+      cells++;
+      const box = cell.getBoundingClientRect();
+      Array.from(cell.children).forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const over = Math.round(Math.max(r.right - box.right, box.left - r.left));
+        if (over <= 0) return;
+        const key = (cell.cellIndex + 1) + ':' + (el.className || el.tagName);
+        if (!worst.has(key) || worst.get(key) < over) worst.set(key, over);
+      });
+    });
+    if (!cells) return '本页没有表格';
+    if (!worst.size) return cells + ' 个单元格，内容都在格内  ✓';
+    const list = Array.from(worst, ([key, over]) => '第' + key.split(':')[0]
+      + '列 ' + key.split(':').slice(1).join(':') + ' 超出 ' + over + 'px');
+    return '🔴 ' + list.slice(0, 3).join('；')
+      + (list.length > 3 ? ' 等 ' + list.length + ' 处' : '');
+  };
 
   const rows = [
     ['浏览器', navigator.userAgent],
@@ -225,7 +269,10 @@ function showDiagnostics() {
     ['横向溢出', 'scrollWidth=' + de.scrollWidth + '  clientWidth=' + de.clientWidth
         + (over > 2 ? '  ← 溢出 ' + over + 'px' : '  (无)')],
     ['样式表', bg ? '已加载 (--bg=' + bg + ')' : '🔴 未加载或解析失败'],
-    ['生效断点', bp.length ? bp.map((w) => '≤' + w).join(' ') : '无(按桌面布局渲染)'],
+    ['生效断点', (bp.length ? bp.map((w) => '≤' + w).join(' ') : '无(按桌面布局渲染)')
+        + '  指针=' + (coarse ? 'coarse(触摸)' : 'fine(鼠标)')],
+    ['控件字号', controlSizes()],
+    ['单元格溢出', cellSpills()],
     ['特性支持', ':has()=' + supSel(':has(*)')
         + '  color-mix=' + sup('color', 'color-mix(in srgb, red, blue)')
         + '  min()=' + sup('width', 'min(10px, 2vw)')
@@ -1595,25 +1642,90 @@ function fmtTtl(sec) {
   return sec + ' 秒';
 }
 
+function syncSelect(id, value) {
+  const sel = $(id);
+  if (!sel || value === null || value === undefined) return;
+  const cur = String(value);
+  if (Array.from(sel.options).some((o) => o.value === cur)) {
+    sel.value = cur;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
 async function loadCacheInfo() {
   try {
     const d = await api('/api/cache');
-    const mp = d.mosproxy || {}, ub = d.unbound || {};
-    setHtml($('#cacheInfo'), kvList([
+    const mp = d.mosproxy || {}, ub = d.unbound || {}, hit = d.hit;
+    const rows = [];
+    if (hit && hit.queries) {
+      rows.push(['Unbound 命中率', html`<b>${hit.rate.toFixed(1)}%</b>
+        <span class="hint">${fmtNum(hit.hits)} / ${fmtNum(hit.queries)} 次查询</span>`]);
+    }
+    rows.push(
       ['mosproxy 乐观缓存', html`<b>${fmtTtl(mp.optimistic_ttl)}</b>`],
       ['mosproxy 最大 TTL', fmtTtl(mp.maximum_ttl)],
       ['Unbound 过期兜底', html`<b>${fmtTtl(ub['serve-expired-ttl'])}</b>`],
       ['Unbound 等待阈值', ub['serve-expired-client-timeout'] !== undefined
         ? ub['serve-expired-client-timeout'] + ' ms（超过就先回旧记录）' : '—'],
+      ['Unbound 最小 TTL', fmtTtl(ub['cache-min-ttl'])],
       ['Unbound 最大 TTL', fmtTtl(ub['cache-max-ttl'])],
-    ]));
-    const sel = $('#cacheTtl');
-    if (sel && mp.optimistic_ttl !== null && mp.optimistic_ttl !== undefined) {
-      const cur = String(mp.optimistic_ttl);
-      if (Array.from(sel.options).some((o) => o.value === cur)) sel.value = cur;
-    }
+    );
+    setHtml($('#cacheInfo'), kvList(rows));
+    syncSelect('#cacheTtl', mp.optimistic_ttl);
+    syncSelect('#minTtl', ub['cache-min-ttl']);
   } catch (e) {
     setHtml($('#cacheInfo'), errState(e));
+  }
+}
+
+const CDN_VERDICT = {
+  mainland: { cls: 'ok', mark: '✓' },
+  stranded: { cls: 'err', mark: '✗' },
+  offshore: { cls: 'unknown', mark: '–' },
+  mismatch: { cls: 'warn', mark: '!' },
+  unknown: { cls: 'unknown', mark: '?' },
+  unresolved: { cls: 'unknown', mark: '?' },
+};
+
+async function loadCdnHit(refresh) {
+  const box = $('#cdnHitResult');
+  setHtml(box, LOADING);
+  try {
+    const subnet = $('#cdnSubnet').value;
+    const q = '?subnet=' + encodeURIComponent(subnet) + (refresh ? '&refresh=1' : '');
+    const d = await api('/api/cdn-hit' + q);
+    const rows = (d.probes || []).map((p) => {
+      const style = CDN_VERDICT[p.verdict] || CDN_VERDICT.unknown;
+      return html`<tr>
+        <td><b>${p.label}</b><div class="mono hint">${p.domain}</div></td>
+        <td>${p.provider || '未识别'}${p.has_mainland ? html`<span class="badge ok sm">有大陆节点</span>` : ''}</td>
+        <td class="wrap mono">${(p.addrs || []).join(' ') || (p.error || '—')}</td>
+        <td class="mono">${p.prefix || '—'}</td>
+        <td><span class="badge ${style.cls}">${style.mark} ${p.verdict_text}</span></td>
+      </tr>`;
+    });
+    const summary = d.comparable
+      ? html`就近命中 <b>${d.mainland}/${d.comparable}</b>`
+      : html`<b>本轮判据没有回答任何问题</b>：没有一个域名的落点能与规则集比对`;
+    setHtml(box, html`<div class="card">
+      <h3>就近命中</h3>
+      ${kvList([
+        ['结果', summary],
+        ['客户端子网', html`<span class="mono">${d.subnet}</span>`],
+        ['规则集版本', fmtTime(d.ruleset_at)],
+        ['探测时间', fmtTime(d.generated_at)],
+      ])}
+      ${d.stranded ? html`<div class="state error">${d.stranded} 个域名的 CDN 在大陆有节点，
+        却返回了境外地址。这不是分流问题——查询本来就该走隧道去问境外权威；
+        问题在于那台权威没收到中国 ECS，于是它按隧道出口(香港)给了就近节点。
+        先复核 ECS 白名单是否覆盖了这些权威：<span class="mono">dns-stack ecs-audit --quick</span></div>` : ''}
+      <div class="table-wrap mt-12"><table class="card-rows">
+        <thead><tr><th>域名</th><th>CDN</th><th>解析结果</th><th>命中段</th><th>判定</th></tr></thead>
+        <tbody>${rows.length ? rows : rowSpan(5, '暂无数据')}</tbody>
+      </table></div>
+    </div>`);
+  } catch (e) {
+    setHtml(box, errState(e));
   }
 }
 
@@ -2437,7 +2549,11 @@ function bindEvents() {
     if (name !== 'logs' && state.logFollow) stopLogFollow();
     if (name === 'location') loadMyLocation();
     if (name === 'ip' && !$('#ipResult').firstChild) loadIpLookup();
+    if (name === 'cdn' && !$('#cdnHitResult').firstChild) loadCdnHit(false);
   });
+
+  $('#btnCdnHit').addEventListener('click', () => loadCdnHit(true));
+  $('#cdnSubnet').addEventListener('change', () => loadCdnHit(false));
   bindTabs('#settingTabs', 'data-stab', (name) => loadSettingTab(name));
 
   $('#btnIpLookup').addEventListener('click', loadIpLookup);
@@ -2534,6 +2650,26 @@ function bindEvents() {
     loadCacheInfo();
   });
 
+  $('#btnSetMinTtl').addEventListener('click', async () => {
+    const ttl = Number($('#minTtl').value);
+    const label = $('#minTtl').selectedOptions[0].textContent;
+    if (!confirm('把强制最小 TTL 设为「' + label + '」？\n\n'
+      + '命中率会上升，但 CDN 的短 TTL 会一并被抬高，就近调度与故障转移随之变慢。')) return;
+    await runOp('set_min_ttl', '调整强制最小 TTL', { ttl: ttl }, false);
+    loadCacheInfo();
+  });
+
+  $('#btnFlushCache').addEventListener('click', async () => {
+    const domain = $('#flushDomain').value.trim();
+    const scope = domain ? '「' + domain + '」及其子域' : '全部缓存';
+    if (!confirm('清理 ' + scope + '？\n\n'
+      + '这些名字接下来都要重新走完整递归，短时间内延迟会明显升高。')) return;
+    const args = { confirm: true };
+    if (domain) args.domain = domain;
+    await runOp('flush_cache', '清理解析缓存', args, false);
+    loadCacheInfo();
+  });
+
   const btnRS = $('#btnSaveRuleSources');
   if (btnRS) btnRS.addEventListener('click', saveRuleSources);
 
@@ -2618,6 +2754,13 @@ async function loadBootstrap() {
 })();
 
 const SELECT_SHEET_BREAKPOINT = 860;
+const SELECT_SHEET_TOUCH_MAX = 1180;
+
+function preferSheet() {
+  if (window.innerWidth <= SELECT_SHEET_BREAKPOINT) return true;
+  if (window.innerWidth > SELECT_SHEET_TOUCH_MAX) return false;
+  return window.matchMedia('(pointer: coarse)').matches;
+}
 
 function selectOptions(sel) {
   return Array.from(sel.options).map((o) => ({
@@ -2677,7 +2820,7 @@ function openSelect(wrap) {
   const sel = wrap._select;
   if (sel.disabled) return;
   closeAllSelects(wrap);
-  const sheet = window.innerWidth <= SELECT_SHEET_BREAKPOINT;
+  const sheet = preferSheet();
   const options = selectOptions(sel);
 
   const list = document.createElement('div');
