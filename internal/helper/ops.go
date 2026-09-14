@@ -14,7 +14,10 @@ import (
 )
 
 const (
-	cacheTTLMax    = 2592000
+	cacheTTLMax = 2592000
+
+	minTTLMax = 300
+
 	minPasswordLen = 12
 	maxPasswordLen = 256
 	maxUpdateBytes = 8192
@@ -49,7 +52,21 @@ var DangerousOps = map[string]bool{
 	"clear_domains": true, "clear_domains_all": true,
 	"restart_mosproxy": true, "restart_unbound": true, "rollback_rules": true,
 	"import": true, "cert_renew": true, "publish_github": true, "rotate_doh_path": true,
-	"set_rule_sources": true, "migration_restore": true,
+	"set_rule_sources": true, "migration_restore": true, "flush_cache": true,
+	"set_arch_epoch": true,
+}
+
+var RoleOps = map[string]string{
+	"pull_candidates":       stack.RoleGlobalBuilder,
+	"classify_start":        stack.RoleGlobalBuilder,
+	"classify_domain":       stack.RoleGlobalBuilder,
+	"classify_authority":    stack.RoleGlobalBuilder,
+	"build_rules":           stack.RoleGlobalBuilder,
+	"rebuild_rules":         stack.RoleGlobalBuilder,
+	"publish_github":        stack.RoleGlobalBuilder,
+	"update_reference_data": stack.RoleGlobalBuilder,
+	"refresh_routing":       stack.RoleCNResolver,
+	"set_min_ttl":           stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
@@ -83,13 +100,6 @@ func (h *Helper) role() string {
 		}
 	}
 	return "unknown"
-}
-
-func (h *Helper) requireRole(want, what string) result {
-	if h.role() != want {
-		return failure(what + "只允许在 " + want + " 节点执行")
-	}
-	return nil
 }
 
 func (h *Helper) opReloadMosproxy(map[string]any) result {
@@ -237,23 +247,14 @@ func (h *Helper) opClassifyDomain(args map[string]any) result {
 }
 
 func (h *Helper) opClassifyAuthority(map[string]any) result {
-	if bad := h.requireRole("global-builder", "权威分类"); bad != nil {
-		return bad
-	}
 	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "classify-authority"}, 1800*time.Second, true)
 }
 
 func (h *Helper) opBuildRules(map[string]any) result {
-	if bad := h.requireRole("global-builder", "规则生成"); bad != nil {
-		return bad
-	}
 	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "build-rules"}, 600*time.Second, true)
 }
 
 func (h *Helper) opRebuildRules(map[string]any) result {
-	if bad := h.requireRole("global-builder", "规则流水线"); bad != nil {
-		return bad
-	}
 	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "pipeline",
 		"--authority-every", "0"}, 2400*time.Second, true)
 }
@@ -299,9 +300,6 @@ func (h *Helper) routingPrerequisiteError() string {
 }
 
 func (h *Helper) opRefreshRouting(map[string]any) result {
-	if bad := h.requireRole("cn-resolver", "分流数据刷新"); bad != nil {
-		return bad
-	}
 	if missing := h.routingPrerequisiteError(); missing != "" {
 		return failure("缺少 " + missing + "，未改动分流产物")
 	}
@@ -495,10 +493,45 @@ func readYAMLInt(path, key string) any {
 	return nil
 }
 
+func (h *Helper) cacheHitRate() map[string]any {
+	r := h.unboundControl(10*time.Second, "stats_noreset")
+	if code, _ := r["returncode"].(int); code != 0 {
+		return nil
+	}
+	text, _ := r["stdout"].(string)
+	var queries, hits float64
+	for _, line := range strings.Split(text, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if !found {
+			continue
+		}
+		number, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			continue
+		}
+		switch key {
+		case "total.num.queries":
+			queries = number
+		case "total.num.cachehits":
+			hits = number
+		}
+	}
+	if queries <= 0 {
+		return nil
+	}
+	return map[string]any{
+		"queries": int64(queries),
+		"hits":    int64(hits),
+		"rate":    hits / queries * 100,
+	}
+}
+
 func (h *Helper) opCacheInfo(map[string]any) result {
 	unbound := map[string]any{}
-	for _, option := range []string{"serve-expired-ttl", "serve-expired-client-timeout", "cache-max-ttl"} {
-		r := h.run([]string{"unbound-control", "-c", "/etc/unbound/unbound.conf", "get_option", option}, 10*time.Second, false)
+	for _, option := range []string{
+		"serve-expired-ttl", "serve-expired-client-timeout", "cache-max-ttl", "cache-min-ttl",
+	} {
+		r := h.unboundControl(10*time.Second, "get_option", option)
 		if code, _ := r["returncode"].(int); code != 0 {
 			continue
 		}
@@ -515,6 +548,7 @@ func (h *Helper) opCacheInfo(map[string]any) result {
 			"maximum_ttl":    readYAMLInt(h.mosproxyConf, "maximum_ttl"),
 		},
 		"unbound": unbound,
+		"hit":     h.cacheHitRate(),
 	}
 	encoded, _ := json.Marshal(info)
 	return result{"ok": true, "returncode": 0, "stdout": string(encoded), "stderr": ""}
@@ -541,30 +575,41 @@ func replaceIntField(path, key string, value int) (bool, error) {
 	return true, nil
 }
 
-func (h *Helper) opSetCacheTTL(args map[string]any) result {
-	raw, ok := args["ttl"].(float64)
-	if !ok {
-		if text := stringArg(args, "ttl"); text != "" {
-			parsed, err := strconv.Atoi(text)
-			if err != nil {
-				return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "ttl 必须是整数(秒)"}
-			}
-			raw = float64(parsed)
-		} else {
-			return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "ttl 必须是整数(秒)"}
+func intArg(args map[string]any, key string) (int, bool) {
+	if raw, ok := args[key].(float64); ok {
+		return int(raw), true
+	}
+	if text := stringArg(args, key); text != "" {
+		if parsed, err := strconv.Atoi(text); err == nil {
+			return parsed, true
 		}
 	}
-	ttl := int(raw)
+	return 0, false
+}
+
+func unboundFailure(prefix string, r result) result {
+	stderr, _ := r["stderr"].(string)
+	return result{"ok": false, "returncode": 1, "stdout": "", "stderr": prefix + stderr}
+}
+
+func (h *Helper) unboundControl(timeout time.Duration, args ...string) result {
+	return h.run(append([]string{"unbound-control", "-c", "/etc/unbound/unbound.conf"}, args...),
+		timeout, false)
+}
+
+func (h *Helper) opSetCacheTTL(args map[string]any) result {
+	ttl, ok := intArg(args, "ttl")
+	if !ok {
+		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "ttl 必须是整数(秒)"}
+	}
 	if ttl < 0 || ttl > cacheTTLMax {
 		return result{"ok": false, "returncode": 1, "stdout": "",
 			"stderr": "ttl 超出允许范围 0~" + strconv.Itoa(cacheTTLMax) + " 秒"}
 	}
 
-	r := h.run([]string{"unbound-control", "-c", "/etc/unbound/unbound.conf",
-		"set_option", "serve-expired-ttl:", strconv.Itoa(ttl)}, 15*time.Second, false)
+	r := h.unboundControl(15*time.Second, "set_option", "serve-expired-ttl:", strconv.Itoa(ttl))
 	if code, _ := r["returncode"].(int); code != 0 {
-		stderr, _ := r["stderr"].(string)
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "Unbound 设置失败: " + stderr}
+		return unboundFailure("Unbound 设置失败: ", r)
 	}
 	lines := []string{"Unbound serve-expired-ttl 已即时生效: " + strconv.Itoa(ttl)}
 
@@ -584,6 +629,51 @@ func (h *Helper) opSetCacheTTL(args map[string]any) result {
 
 	h.log("调整乐观缓存 TTL: " + strconv.Itoa(ttl))
 	return result{"ok": true, "returncode": 0, "stdout": strings.Join(lines, "\n"), "stderr": ""}
+}
+
+func (h *Helper) opSetMinTTL(args map[string]any) result {
+	ttl, ok := intArg(args, "ttl")
+	if !ok {
+		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "ttl 必须是整数(秒)"}
+	}
+	if ttl < 0 || ttl > minTTLMax {
+		return result{"ok": false, "returncode": 1, "stdout": "",
+			"stderr": "ttl 超出允许范围 0~" + strconv.Itoa(minTTLMax) + " 秒。" +
+				"上限刻意压得低：强制最小 TTL 会一并抬高 CDN 那些几十秒的短 TTL，" +
+				"而 CDN 正是靠短 TTL 做故障转移与就近调度的，抬太高等于用命中率换调度精度"}
+	}
+	r := h.unboundControl(15*time.Second, "set_option", "cache-min-ttl:", strconv.Itoa(ttl))
+	if code, _ := r["returncode"].(int); code != 0 {
+		return unboundFailure("Unbound 设置失败: ", r)
+	}
+	lines := []string{"Unbound cache-min-ttl 已即时生效: " + strconv.Itoa(ttl)}
+	if changed, err := replaceIntField(h.unboundConf, "cache-min-ttl", ttl); err != nil {
+		lines = append(lines, "警告: Unbound 配置文件未能同步("+err.Error()+")，重启后会恢复旧值")
+	} else if !changed {
+		lines = append(lines, "警告: 配置文件里没有 cache-min-ttl 这一行，重启后会恢复旧值")
+	} else {
+		lines = append(lines, "Unbound 配置文件已同步")
+	}
+	h.log("调整强制最小 TTL: " + strconv.Itoa(ttl))
+	return result{"ok": true, "returncode": 0, "stdout": strings.Join(lines, "\n"), "stderr": ""}
+}
+
+func (h *Helper) opFlushCache(args map[string]any) result {
+	zone, label := ".", "全部缓存"
+	if raw := stringArg(args, "domain"); raw != "" {
+		safe, err := SafeDomain(raw)
+		if err != nil {
+			return result{"ok": false, "returncode": 1, "stdout": "", "stderr": err.Error()}
+		}
+		zone, label = safe, safe+" 及其子域"
+	}
+	r := h.unboundControl(30*time.Second, "flush_zone", zone)
+	if code, _ := r["returncode"].(int); code != 0 {
+		return unboundFailure("清理失败: ", r)
+	}
+	h.log("清理 Unbound 缓存: " + zone)
+	return result{"ok": true, "returncode": 0, "stderr": "",
+		"stdout": "已清理 " + label + "。这些名字接下来都要重新走完整递归，短时间内延迟会明显升高"}
 }
 
 func (h *Helper) opSetRuleSources(args map[string]any) result {
@@ -852,6 +942,8 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"unbound_stats":         h.opUnboundStats,
 		"cache_info":            h.opCacheInfo,
 		"set_cache_ttl":         h.opSetCacheTTL,
+		"set_min_ttl":           h.opSetMinTTL,
+		"flush_cache":           h.opFlushCache,
 		"set_rule_sources":      h.opSetRuleSources,
 		"service_status":        h.opServiceStatus,
 		"dns_test":              h.opDNSTest,

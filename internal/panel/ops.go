@@ -31,7 +31,8 @@ type operationSpec struct {
 
 var operationOrder = []string{
 	"sync_rules", "rollback_rules", "collect_polluted_ip", "rotate_doh_path",
-	"set_cache_ttl", "reload_mosproxy", "restart_mosproxy", "restart_unbound",
+	"set_cache_ttl", "set_min_ttl", "flush_cache",
+	"reload_mosproxy", "restart_mosproxy", "restart_unbound",
 	"healthcheck", "cert_check", "cert_renew", "backup", "purge_legacy",
 	"clear_audit", "vacuum_logs", "clear_domains", "clear_domains_all",
 	"set_arch_epoch", "export", "import", "pull_candidates", "classify_start",
@@ -46,6 +47,8 @@ var operationSpecs = map[string]operationSpec{
 	"collect_polluted_ip":   {Label: "采集污染 IP", Timeout: 300},
 	"rotate_doh_path":       {Label: "轮换 DoH 私密路径", Dangerous: true, Timeout: 90},
 	"set_cache_ttl":         {Label: "调整乐观缓存时长", Timeout: 30},
+	"set_min_ttl":           {Label: "调整强制最小 TTL", Timeout: 30, Role: "cn-resolver"},
+	"flush_cache":           {Label: "清理解析缓存", Dangerous: true, Timeout: 60},
 	"reload_mosproxy":       {Label: "重载 mosproxy 域名表", Timeout: 30},
 	"restart_mosproxy":      {Label: "重启 mosproxy", Dangerous: true, Timeout: 60},
 	"restart_unbound":       {Label: "重启 Unbound", Dangerous: true, Timeout: 60},

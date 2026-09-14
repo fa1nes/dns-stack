@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/helper"
 )
 
 func checkedEqual(t *testing.T, label string, got, want any) {
@@ -87,6 +89,68 @@ func fakeHelper(t *testing.T, response func(map[string]any) map[string]any) func
 		mutex.Lock()
 		defer mutex.Unlock()
 		return append([]map[string]any{}, calls...)
+	}
+}
+
+func TestDangerFlagAgreesWithHelper(t *testing.T) {
+	for op, spec := range operationSpecs {
+		if _, known := helper.DangerousOps[op]; spec.Dangerous && !known {
+			t.Errorf("面板把 %s 标成危险操作会弹二次确认，但 helper 的 DangerousOps 里没有它——"+
+				"绕开面板直接调 helper 就没有任何闸门", op)
+		}
+	}
+	for op := range helper.DangerousOps {
+		spec, listed := operationSpecs[op]
+		if !listed {
+			continue
+		}
+		if !spec.Dangerous {
+			t.Errorf("helper 认为 %s 危险、会要求 confirm=true，但面板没标 Dangerous 因而不会带上它——"+
+				"用户点下去只会拿到一条看不懂的拒绝", op)
+		}
+	}
+}
+
+func TestRoleGateAgreesWithHelper(t *testing.T) {
+	for op, spec := range operationSpecs {
+		want, gated := helper.RoleOps[op]
+		if spec.Role != "" && !gated {
+			t.Errorf("面板只把 %s 显示给 %s 角色，但 helper 对它没有任何角色闸门——"+
+				"绕开面板直接调 helper socket，另一个角色照样能执行", op, spec.Role)
+			continue
+		}
+		if spec.Role != "" && want != spec.Role {
+			t.Errorf("%s 的角色两处不一致：面板要求 %s，helper 要求 %s", op, spec.Role, want)
+		}
+		if spec.Role == "" && gated {
+			t.Errorf("helper 只允许 %s 执行 %s，但面板对所有角色都显示它——"+
+				"另一个角色点下去只会拿到一条看不懂的拒绝", want, op)
+		}
+	}
+	for op := range helper.RoleOps {
+		if _, listed := operationSpecs[op]; !listed {
+			t.Errorf("helper 给 %s 设了角色闸门，但面板的 operationSpecs 里没有它", op)
+		}
+	}
+}
+
+func TestEveryListedOperationHasASpec(t *testing.T) {
+	for _, op := range operationOrder {
+		if _, ok := operationSpecs[op]; !ok {
+			t.Errorf("%s 在 operationOrder 里但没有 spec，面板会渲染出一个没有标签的按钮", op)
+		}
+	}
+	for op := range operationSpecs {
+		found := false
+		for _, listed := range operationOrder {
+			if listed == op {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s 有 spec 却不在 operationOrder 里，面板上永远看不见它", op)
+		}
 	}
 }
 

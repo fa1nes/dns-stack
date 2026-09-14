@@ -149,6 +149,32 @@ func TestRejectionAndOperationErrorUseDifferentChannels(t *testing.T) {
 	equal(t, "data 里标记失败", refused["data"].(map[string]any)["ok"], false)
 }
 
+func TestCNResolverCannotPublishToGitHub(t *testing.T) {
+	h := newTestHelper(t)
+	ran := false
+	h.ops = map[string]func(map[string]any) result{
+		"publish_github": func(map[string]any) result {
+			ran = true
+			return result{"ok": true, "returncode": 0}
+		},
+	}
+	resp := h.Dispatch("publish_github", map[string]any{"confirm": true})
+	equal(t, "CN 角色被拒", resp["ok"], false)
+	if ran {
+		t.Fatal("这台是 cn-resolver，它不该有能力向 GitHub 推任何东西——闸门没拦住")
+	}
+	if !strings.Contains(resp["message"].(string), "global-builder") {
+		t.Fatalf("拒绝原因要说清需要哪个角色: %v", resp["message"])
+	}
+
+	config := filepath.Join(filepath.Dir(h.configPath), "config.env")
+	if err := os.WriteFile(config, []byte("ROLE=global-builder\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resp = h.Dispatch("publish_github", map[string]any{"confirm": true})
+	equal(t, "构建节点放行", []any{resp["ok"], ran}, []any{true, true})
+}
+
 func TestRedactArgsHidesSecretsAndDropsConfirm(t *testing.T) {
 	got := redactArgs(map[string]any{"password": "hunter2hunter2", "confirm": true, "unit": "mosproxy"})
 	if strings.Contains(got, "hunter2hunter2") {
@@ -169,7 +195,6 @@ func TestOperationSetMatchesDangerousList(t *testing.T) {
 			t.Fatalf("危险操作 %s 不在操作表里，这条闸门永远不会被触发", op)
 		}
 	}
-	equal(t, "操作总数", len(h.ops), 44)
 }
 
 func writeRecord(t *testing.T, path string, record map[string]any) {

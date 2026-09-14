@@ -136,6 +136,13 @@ func (h *Helper) Dispatch(op string, args map[string]any) (resp map[string]any) 
 		h.warn("危险操作缺少确认: " + op)
 		return map[string]any{"ok": false, "message": "危险操作 " + op + " 需要二次确认(confirm=true)"}
 	}
+	if want, restricted := RoleOps[op]; restricted {
+		if role := h.role(); role != want {
+			h.warn("角色不匹配，拒绝操作: " + op + " (本机 " + role + "，需要 " + want + ")")
+			return map[string]any{"ok": false,
+				"message": op + " 只允许在 " + want + " 节点执行，本机角色是 " + role}
+		}
+	}
 	h.log("执行操作: " + op + " args=" + redactArgs(args))
 	out := func() result {
 		h.slots <- struct{}{}
