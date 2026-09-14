@@ -49,10 +49,14 @@ func testSet(t *testing.T, withMainland bool) *cdnrules.Set {
 }
 
 func answers(m map[string][]string) Resolver {
-	return func(_ context.Context, name string, _ netip.Prefix) ([]netip.Addr, error) {
-		var out []netip.Addr
+	return steeredAnswers(m, 0, false)
+}
+
+func steeredAnswers(m map[string][]string, scope int, echoed bool) Resolver {
+	return func(_ context.Context, name string, _ netip.Prefix) (Answer, error) {
+		out := Answer{Scope: scope, Echoed: echoed}
 		for _, value := range m[name] {
-			out = append(out, netip.MustParseAddr(value))
+			out.Addrs = append(out.Addrs, netip.MustParseAddr(value))
 		}
 		return out, nil
 	}
@@ -221,6 +225,55 @@ func TestASingleMainlandPrefixIsNotEvidenceThatTheCDNServesTheMainland(t *testin
 	}
 }
 
+func TestScopeDecidesWhetherAnOffshoreAnswerIsACompliantOrADefect(t *testing.T) {
+	const offshore = "203.0.113.9"
+	body := map[string][]string{"a.steered.example": {offshore}}
+	probe := Probe{"a.steered.example", "境外落点"}
+	direct4 := mainlandSet(t, "220.181.10.0/24")
+
+	notDelivered := runWith(t, testSet(t, true), direct4,
+		steeredAnswers(body, 0, false), probe).Probes[0]
+	if notDelivered.Verdict != VerdictStranded {
+		t.Fatalf("权威没回显 ECS，说明它没收到客户端子网，只能按隧道出口调度——这才是缺陷: %s",
+			notDelivered.Verdict)
+	}
+
+	refused := runWith(t, testSet(t, true), direct4,
+		steeredAnswers(body, 0, true), probe).Probes[0]
+	if refused.Verdict != VerdictStranded {
+		t.Fatalf("scope=0 是权威明说不按位置调度，等同于没送达: %s", refused.Verdict)
+	}
+
+	delivered := runWith(t, testSet(t, true), direct4,
+		steeredAnswers(body, 24, true), probe).Probes[0]
+	if delivered.Verdict == VerdictStranded {
+		t.Fatal("scope=24 说明 ECS 完整送达、权威按位置挑过了，它仍给境外地址只能说明" +
+			"这个服务在大陆没有节点。把这个报成缺陷就是在怪罪一个做对了事的权威——" +
+			"生产上 d1.awsstatic.com 正是这样被误报的")
+	}
+	if delivered.Verdict != VerdictNoNode {
+		t.Fatalf("这一类要单独成一档，别和「没有大陆段」混为一谈: %s", delivered.Verdict)
+	}
+	if delivered.Scope != 24 || !delivered.ECSEchoed {
+		t.Fatalf("scope 要如实报出，它是判断依据本身: scope=%d echoed=%v",
+			delivered.Scope, delivered.ECSEchoed)
+	}
+}
+
+func TestOnlyStrandedCountsAsBad(t *testing.T) {
+	for verdict, bad := range map[Verdict]bool{
+		VerdictStranded: true,
+		VerdictNoNode:   false,
+		VerdictOffshore: false,
+		VerdictThin:     false,
+		VerdictMainland: false,
+	} {
+		if verdict.Bad() != bad {
+			t.Errorf("%s.Bad() = %v，期望 %v", verdict, verdict.Bad(), bad)
+		}
+	}
+}
+
 func TestZeroTimeoutFallsBackInsteadOfExpiringImmediately(t *testing.T) {
 	server, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
@@ -238,7 +291,7 @@ func TestZeroTimeoutFallsBackInsteadOfExpiringImmediately(t *testing.T) {
 	}()
 
 	_, err = Query(context.Background(), server.LocalAddr().String(),
-		"example.com", BeijingTelecomPrefix, 0)
+		"example.com", BeijingTelecom4, 0)
 	if err != nil && strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("timeout=0 被当成了「立刻过期」而不是「用默认值」，"+
 			"调用方每一次探测都会瞬间失败并报成解析不出来: %v", err)

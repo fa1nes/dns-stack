@@ -20,16 +20,32 @@ import (
 const (
 	DefaultResolver = "127.0.0.1:5335"
 
-	BeijingTelecom  = "219.141.136.0/24"
+	BeijingTelecom = "219.141.136.0/24"
+	BeijingUnicom  = "202.106.0.0/24"
+	BeijingMobile  = "221.130.33.0/24"
+
 	GuangdongUnicom = "113.108.10.0/24"
 
 	defaultTimeout = 6 * time.Second
 )
 
 var (
-	BeijingTelecomPrefix  = netip.MustParsePrefix(BeijingTelecom)
-	GuangdongUnicomPrefix = netip.MustParsePrefix(GuangdongUnicom)
+	BeijingTelecom4  = netip.MustParsePrefix(BeijingTelecom)
+	BeijingUnicom4   = netip.MustParsePrefix(BeijingUnicom)
+	BeijingMobile4   = netip.MustParsePrefix(BeijingMobile)
+	GuangdongUnicom4 = netip.MustParsePrefix(GuangdongUnicom)
 )
+
+type Vantage struct {
+	Prefix string
+	Label  string
+}
+
+var Vantages = []Vantage{
+	{BeijingTelecom, "北京电信"},
+	{BeijingUnicom, "北京联通"},
+	{BeijingMobile, "北京移动"},
+}
 
 type Probe struct {
 	Domain string
@@ -52,6 +68,7 @@ type Verdict string
 const (
 	VerdictMainland   Verdict = "mainland"
 	VerdictStranded   Verdict = "stranded"
+	VerdictNoNode     Verdict = "no_node"
 	VerdictOffshore   Verdict = "offshore"
 	VerdictThin       Verdict = "thin"
 	VerdictMismatch   Verdict = "mismatch"
@@ -64,7 +81,9 @@ func (v Verdict) Label() string {
 	case VerdictMainland:
 		return "命中大陆节点"
 	case VerdictStranded:
-		return "该 CDN 有大陆节点，却拿到境外节点"
+		return "ECS 未送达，权威只能按隧道出口调度"
+	case VerdictNoNode:
+		return "ECS 已送达，权威仍给境外（该服务在大陆没有节点）"
 	case VerdictOffshore:
 		return "境外节点（该 CDN 没有大陆段）"
 	case VerdictThin:
@@ -88,6 +107,8 @@ type Outcome struct {
 	HasMainland bool     `json:"has_mainland"`
 	MainlandNum int      `json:"mainland_prefixes"`
 	Addrs       []string `json:"addrs"`
+	Scope       int      `json:"ecs_scope"`
+	ECSEchoed   bool     `json:"ecs_echoed"`
 	Prefix      string   `json:"prefix,omitempty"`
 	Verdict     Verdict  `json:"verdict"`
 	VerdictText string   `json:"verdict_text"`
@@ -105,7 +126,17 @@ type Report struct {
 	Comparable  int       `json:"comparable"`
 }
 
-type Resolver func(ctx context.Context, name string, subnet netip.Prefix) ([]netip.Addr, error)
+type Answer struct {
+	Addrs []netip.Addr
+
+	Scope int
+
+	Echoed bool
+}
+
+func (a Answer) Steered() bool { return a.Echoed && a.Scope > 0 }
+
+type Resolver func(ctx context.Context, name string, subnet netip.Prefix) (Answer, error)
 
 type Options struct {
 	Resolver string
@@ -162,7 +193,7 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 		opt.Timeout = defaultTimeout
 	}
 	if opt.Resolve == nil {
-		opt.Resolve = func(ctx context.Context, name string, subnet netip.Prefix) ([]netip.Addr, error) {
+		opt.Resolve = func(ctx context.Context, name string, subnet netip.Prefix) (Answer, error) {
 			return Query(ctx, opt.Resolver, name, subnet, opt.Timeout)
 		}
 	}
@@ -207,7 +238,9 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 		out.HasMainland, out.MainlandNum = provider.ServesMainland(), len(provider.Mainland)
 	}
 
-	addrs, err := opt.Resolve(ctx, probe.Domain, subnet)
+	answer, err := opt.Resolve(ctx, probe.Domain, subnet)
+	addrs := answer.Addrs
+	out.Scope, out.ECSEchoed = answer.Scope, answer.Echoed
 	if err != nil || len(addrs) == 0 {
 		out.Verdict = VerdictUnresolved
 		if err != nil {
@@ -247,9 +280,12 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 			out.Prefix = prefix.String()
 		}
 		switch {
-		case owner.ServesMainland():
+		case owner.ServesMainland() && !answer.Steered():
 			out.Verdict = VerdictStranded
 		case out.Verdict == VerdictStranded:
+		case owner.ServesMainland():
+			out.Verdict = VerdictNoNode
+		case out.Verdict == VerdictNoNode:
 		case owner.HasMainland():
 			out.Verdict = VerdictThin
 		default:
@@ -260,18 +296,18 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 	return out
 }
 
-func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeout time.Duration) ([]netip.Addr, error) {
+func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeout time.Duration) (Answer, error) {
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
 	packet, err := dnswire.BuildQueryWithSubnet(uint16(rand.Uint32()), name, dnswire.TypeA, subnet)
 	if err != nil {
-		return nil, err
+		return Answer{}, err
 	}
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(ctx, "udp", server)
 	if err != nil {
-		return nil, err
+		return Answer{}, err
 	}
 	defer conn.Close()
 	deadline := time.Now().Add(timeout)
@@ -280,24 +316,27 @@ func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeou
 	}
 	_ = conn.SetDeadline(deadline)
 	if _, err := conn.Write(packet); err != nil {
-		return nil, err
+		return Answer{}, err
 	}
 	buf := make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
-		return nil, err
+		return Answer{}, err
 	}
 	msg, err := dnswire.Unpack(buf[:n])
 	if err != nil {
-		return nil, err
+		return Answer{}, err
 	}
-	var out []netip.Addr
+	out := Answer{}
 	for _, rr := range msg.Answers {
 		if addr, ok := rr.A(); ok {
-			out = append(out, addr)
+			out.Addrs = append(out.Addrs, addr)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Compare(out[j]) < 0 })
+	sort.Slice(out.Addrs, func(i, j int) bool { return out.Addrs[i].Compare(out.Addrs[j]) < 0 })
+	if ecs, ok := msg.ClientSubnet(); ok {
+		out.Scope, out.Echoed = ecs.Scope, true
+	}
 	return out, nil
 }
 

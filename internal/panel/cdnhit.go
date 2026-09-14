@@ -26,6 +26,18 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 	if subnet == "" {
 		subnet = cdnhit.BeijingTelecom
 	}
+	known := false
+	for _, item := range cdnhit.Vantages {
+		if item.Prefix == subnet {
+			known = true
+			break
+		}
+	}
+	if !known {
+		writeJSON(w, 400, map[string]any{
+			"error": "客户端子网只接受内置的观测点，面板不是任意网段的探测入口"})
+		return
+	}
 	refresh := r.URL.Query().Get("refresh") == "1"
 
 	s.cdnHits.mu.Lock()

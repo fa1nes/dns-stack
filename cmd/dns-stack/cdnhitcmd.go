@@ -87,6 +87,7 @@ func renderCDNHit(report cdnhit.Report) {
 	marks := map[cdnhit.Verdict]string{
 		cdnhit.VerdictMainland: "✓", cdnhit.VerdictStranded: "✗",
 		cdnhit.VerdictOffshore: "–", cdnhit.VerdictThin: "–",
+		cdnhit.VerdictNoNode:   "–",
 		cdnhit.VerdictMismatch: "!",
 		cdnhit.VerdictUnknown:  "?", cdnhit.VerdictUnresolved: "?",
 	}

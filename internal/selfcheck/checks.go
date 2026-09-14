@@ -286,6 +286,18 @@ func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
 	return set
 }
 
+func scopeNote(answer cdnhit.Answer) string {
+	switch {
+	case !answer.Echoed:
+		return "权威没有回显 ECS，说明它根本没收到客户端子网"
+	case answer.Scope == 0:
+		return "权威回了 scope=0，它明确表示不按位置调度"
+	default:
+		return fmt.Sprintf("权威回了 scope=%d，ECS 送达了——这个服务在大陆本来就没有节点",
+			answer.Scope)
+	}
+}
+
 func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *cdnrules.Set) {
 	if opt.Role != stack.RoleCNResolver {
 		return
@@ -299,21 +311,21 @@ func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *c
 	}
 	differentiated, comparable := 0, 0
 	for _, probe := range probes {
-		north, errN := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.BeijingTelecomPrefix, 0)
-		south, errS := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.GuangdongUnicomPrefix, 0)
-		if errN != nil || errS != nil || len(north) == 0 || len(south) == 0 {
+		north, errN := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.BeijingTelecom4, 0)
+		south, errS := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.GuangdongUnicom4, 0)
+		if errN != nil || errS != nil || len(north.Addrs) == 0 || len(south.Addrs) == 0 {
 			c.skip(probe.Label+" 按子网分化", "解析未成功，本轮取不到对照")
 			continue
 		}
 		comparable++
-		if cdnhit.JoinAddrs(north, ",") != cdnhit.JoinAddrs(south, ",") {
+		if cdnhit.JoinAddrs(north.Addrs, ",") != cdnhit.JoinAddrs(south.Addrs, ",") {
 			differentiated++
 			c.ok(probe.Label+" 按子网分化", "北京 %s / 广东 %s",
-				cdnhit.JoinAddrs(north, " "), cdnhit.JoinAddrs(south, " "))
+				cdnhit.JoinAddrs(north.Addrs, " "), cdnhit.JoinAddrs(south.Addrs, " "))
 		} else {
 			c.warn(probe.Label+" 按子网分化",
-				"两地答案相同(%s)——该域名的权威没收到 ECS，或它本来就没有国内节点",
-				cdnhit.JoinAddrs(north, " "))
+				"两地答案相同(%s)——%s",
+				cdnhit.JoinAddrs(north.Addrs, " "), scopeNote(north))
 		}
 	}
 	if comparable == 0 {
@@ -344,8 +356,9 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 	for _, probe := range hit.Probes {
 		switch probe.Verdict {
 		case cdnhit.VerdictStranded:
-			stranded = append(stranded, fmt.Sprintf("%s→%s(%s)",
-				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider))
+			stranded = append(stranded, fmt.Sprintf("%s→%s(%s，%s)",
+				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider,
+				scopeNote(cdnhit.Answer{Scope: probe.Scope, Echoed: probe.ECSEchoed})))
 		case cdnhit.VerdictMismatch:
 			mismatched = append(mismatched, fmt.Sprintf("%s→%s",
 				probe.Domain, strings.Join(probe.Addrs, "/")))
@@ -356,8 +369,7 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 	} else {
 		c.assert(hit.Stranded == 0, "大陆节点命中",
 			fmt.Sprintf("%d/%d 个域名拿到了大陆 CDN 节点", hit.Mainland, hit.Comparable),
-			fmt.Sprintf("%s——这些 CDN 在大陆有节点却给了境外地址，"+
-				"多半是权威没收到 ECS；复核 dns-stack ecs-audit --quick", strings.Join(stranded, ", ")))
+			fmt.Sprintf("%s——复核 dns-stack ecs-audit --quick", strings.Join(stranded, ", ")))
 	}
 	if len(mismatched) > 0 {
 		c.warn("答案属于已知 CDN 段",

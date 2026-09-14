@@ -1683,6 +1683,7 @@ const CDN_VERDICT = {
   stranded: { cls: 'err', mark: '✗' },
   offshore: { cls: 'unknown', mark: '–' },
   thin: { cls: 'unknown', mark: '–' },
+  no_node: { cls: 'unknown', mark: '–' },
   mismatch: { cls: 'warn', mark: '!' },
   unknown: { cls: 'unknown', mark: '?' },
   unresolved: { cls: 'unknown', mark: '?' },
@@ -1704,7 +1705,7 @@ async function loadCdnHit(refresh) {
           : (p.mainland_prefixes ? html`<span class="badge unknown sm"
               title="只有 ${p.mainland_prefixes} 条大陆段，不足以判定它为大陆用户提供节点">大陆段偏少</span>` : '')}</td>
         <td class="wrap mono">${(p.addrs || []).join(' ') || (p.error || '—')}</td>
-        <td class="mono">${p.prefix || '—'}</td>
+        <td class="mono">${p.ecs_echoed ? 'scope=' + p.ecs_scope : '无回显'}</td>
         <td><span class="badge ${style.cls}">${style.mark} ${p.verdict_text}</span></td>
       </tr>`;
     });
@@ -1719,12 +1720,12 @@ async function loadCdnHit(refresh) {
         ['规则集版本', fmtTime(d.ruleset_at)],
         ['探测时间', fmtTime(d.generated_at)],
       ])}
-      ${d.stranded ? html`<div class="state error">${d.stranded} 个域名的 CDN 在大陆有节点，
-        却返回了境外地址。这不是分流问题——查询本来就该走隧道去问境外权威；
-        问题在于那台权威没收到中国 ECS，于是它按隧道出口(香港)给了就近节点。
+      ${d.stranded ? html`<div class="state error">${d.stranded} 个域名的权威没有回显 ECS
+        （或回了 scope=0），它收不到你的子网，只能按隧道出口(香港)判断你在哪。
+        这不是分流问题——查询本来就该走隧道去问境外权威。
         先复核 ECS 白名单是否覆盖了这些权威：<span class="mono">dns-stack ecs-audit --quick</span></div>` : ''}
       <div class="table-wrap mt-12"><table class="card-rows">
-        <thead><tr><th>域名</th><th>CDN</th><th>解析结果</th><th>命中段</th><th>判定</th></tr></thead>
+        <thead><tr><th>域名</th><th>CDN</th><th>解析结果</th><th>ECS 回显</th><th>判定</th></tr></thead>
         <tbody>${rows.length ? rows : rowSpan(5, '暂无数据')}</tbody>
       </table></div>
     </div>`);
