@@ -9,6 +9,8 @@ CRON_FILE=/etc/crontabs/root
 GO_BIN="$OPT_DIR/bin/dns-stack-go"
 LOCK_FILE=/run/lock/dns-stack-classifier.lock
 LOG_DIR=/var/log/dns-stack
+TRIM_SCRIPT="$OPT_DIR/bin/trim-logs.sh"
+LOG_KEEP_BYTES=2097152
 
 log_info() { echo "[信息] $*"; }
 log_ok()   { echo "[成功] $*"; }
@@ -70,12 +72,36 @@ cat >> "$CRON_FILE" <<EOF
 */5 * * * * flock -n $LOCK_FILE $GO_BIN classify pipeline --authority-every 6h >>$LOG_DIR/pipeline.log 2>&1
 */30 * * * * flock -n $LOCK_FILE $GO_BIN classify verify-rules >>$LOG_DIR/verify.log 2>&1
 23 3 * * * flock -n $LOCK_FILE $GO_BIN classify update-reference-data >>$LOG_DIR/reference-data.log 2>&1
+41 4 * * * $TRIM_SCRIPT >/dev/null 2>&1
 # 7 */6 * * * flock -n $LOCK_FILE $GO_BIN classify publish >>$LOG_DIR/publish.log 2>&1
 # dns-stack-classifier end
 EOF
 rc-service crond status >/dev/null 2>&1 || rc-service crond start
 rc-update add crond default >/dev/null 2>&1 || true
 log_ok "cron 调度已写入 $CRON_FILE"
+
+# pipeline.log 每 5 分钟追加一次，不截断就会一直涨到把盘撑满——这台只有 989MB。
+# 用 cat 重定向而不是 mv，是为了保住 inode：cron 里正在追加的进程不会写到一个已被替换的文件上。
+log_info "写入日志截断脚本..."
+cat > "$TRIM_SCRIPT" <<EOF
+#!/bin/sh
+for f in $LOG_DIR/*.log; do
+    [ -f "\$f" ] || continue
+    [ "\$(stat -c %s "\$f" 2>/dev/null || echo 0)" -le $LOG_KEEP_BYTES ] && continue
+    tail -c $LOG_KEEP_BYTES "\$f" > "\$f.trim" 2>/dev/null || continue
+    cat "\$f.trim" > "\$f"
+    rm -f "\$f.trim"
+done
+EOF
+chmod 0755 "$TRIM_SCRIPT"
+log_ok "日志截断已配置($TRIM_SCRIPT，每日保留每份日志末尾 $((LOG_KEEP_BYTES/1024/1024))MB)"
+
+for stale in "$LOG_DIR/classify.log" "$LOG_DIR/pull.log" "$LOG_DIR/classify-authority.log"; do
+    [ -f "$stale" ] || continue
+    log_warn "  $stale 是旧调度留下的日志（现在跑的是 classify pipeline），已删除"
+    rm -f "$stale"
+done
+"$TRIM_SCRIPT"
 
 if dig +short +time=3 +tries=1 @127.0.0.1 -p 5335 www.aliyun.com A 2>/dev/null | grep -q '^[0-9]'; then
     log_ok "本机 Unbound 127.0.0.1:5335 应答正常"

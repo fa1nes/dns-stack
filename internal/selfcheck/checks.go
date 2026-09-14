@@ -333,8 +333,7 @@ func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *c
 					"unbound 据此把答案缓存成全局条目。这是协议行为，不是缺陷",
 				cdnhit.JoinAddrs(north.Addrs, " "))
 		case !north.Echoed:
-			c.skip(probe.Label+" 按子网分化",
-				"两地相同(%s)，但本轮没有 ECS 回显——%s",
+			c.skip(probe.Label+" 按子网分化", "两地相同(%s)，%s",
 				cdnhit.JoinAddrs(north.Addrs, " "), scopeNote(north))
 		default:
 			comparable++
