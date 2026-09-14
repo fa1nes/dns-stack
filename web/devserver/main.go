@@ -11,7 +11,8 @@ import (
 	"strings"
 )
 
-const mockTag = `<script src="mock-api.js"></script>` + "\n"
+const mockTag = `<script src="mock-api.js"></script>` + "\n" +
+	`<script src="devserver/layout-scan.js"></script>` + "\n"
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8791", "监听地址")

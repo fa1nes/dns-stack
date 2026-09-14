@@ -463,6 +463,11 @@ input:-webkit-autofill:focus {
 .filters label { font-size: var(--fs-sm); color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
 .filters .grow { flex: 1; min-width: 140px; }
 
+.filters button.sm, .filters .btn.sm, .filters .xsel.sm .xsel-btn {
+  font-size: var(--fs-control); padding: 5px 11px;
+}
+.filters .xsel.sm .xsel-opt { font-size: var(--fs-control); }
+
 .filters.flat { border: none; padding: 0; background: none; margin: 12px 0 0; }
 .filters.flat.m0 { margin: 0; }
 
@@ -941,8 +946,25 @@ code { overflow-wrap: anywhere; }
 #cdnHitResult td .badge { white-space: normal; }
 #cdnHitResult .hint { margin-top: 2px; }
 
-@media (max-width: 860px) {
+@media (max-width: 860px) and (min-width: 641px) {
   #cdnHitResult th:nth-child(2), #cdnHitResult td:nth-child(2) { display: none; }
+}
+
+@media (max-width: 640px) {
+  #cdnHitResult .table-wrap { overflow-x: visible; }
+  #cdnHitResult table, #cdnHitResult tbody, #cdnHitResult tr, #cdnHitResult td { display: block; }
+  #cdnHitResult thead { display: none; }
+  #cdnHitResult table { width: 100%; }
+  #cdnHitResult tr {
+    padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+  }
+  #cdnHitResult tr:last-child { border-bottom: none; }
+  #cdnHitResult td { padding: 1px 0; border: none; font-size: var(--fs-sm); }
+  #cdnHitResult td:nth-child(1) { font-size: var(--fs-base); margin-bottom: 3px; }
+  #cdnHitResult td:nth-child(2)::before { content: "CDN "; color: var(--text-dim); }
+  #cdnHitResult td:nth-child(3)::before { content: "解析 "; color: var(--text-dim); }
+  #cdnHitResult td:nth-child(4)::before { content: "ECS "; color: var(--text-dim); }
+  #cdnHitResult td:nth-child(5) { margin-top: 4px; }
 }
 
 @media (min-width: 641px) {

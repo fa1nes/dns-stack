@@ -298,10 +298,24 @@ PowerShell 传 shell 变量时使用 `runb64`；禁止读取、打印 `.deploy/c
 ### 前端开发
 
 ```bash
-go run ./web/devserver --root ./web    # 注入 mock-api.js，不需要任何后端
+go run ./web/devserver --root ./web    # 注入 mock-api.js 与 layout-scan.js，不需要后端
 ```
 
-`index.html` 对 `mock-api.js` **必须零引用**，假后端只能由开发服务器注入。
+`index.html` 对 `mock-api.js` 与 `devserver/layout-scan.js` **必须零引用**，
+两者都只能由开发服务器注入。
+
+⚠️ **改动前端后必须跑跨视口扫描，只看一两个视口必然漏**。开发服务器注入了
+`__layoutSweep()`，它遍历全部页面与标签页，报出页面横向溢出、单元格内容溢出、
+同一筛选行里的字号不一致、提示块溢出：
+
+```js
+await window.__layoutSweep()   // 在每个视口各跑一次
+```
+
+**必须覆盖的视口**：320 / 393 / 641 / 768 / 861 / 1024 / 1920。
+641 与 861 是断点边界，最容易出问题；320 是最窄真实设备。
+2026-09-14 只测了 1024 和 768 就提交，结果手机上 CDN 就近表格的域名列
+只剩 5px 宽，内容整个溢出——而同一份判据早已在诊断弹窗里，只是没在别的视口跑过。
 
 ## 6. 部署铁律
 
@@ -649,6 +663,11 @@ CLI `dns-stack migration-restore`、前端「试算导入 / 导入并覆盖」�
 - 前端把 `word-break: break-all` 用在中英混排文本上（英文单词会被从中间劈开）。
 - 交互式输入框缺 `enterkeyhint`，或域名/IP 输入框缺 `autocapitalize="none"`。
 - 同一行里的 input / select / button 出现不同 computed 字号。
+  ⚠️ **判据要限定在 `.filters` 这类真正并排的容器内**——拿标签页按钮（`--fs-sm`）
+  去和表单下拉框比，报出来的是判据自己的缺陷，不是页面的。
+- **只在一两个视口验证就提交前端改动**（必跑 320/393/641/768/861/1024/1920）。
+- 给表格设了 `table-layout: fixed` 与固定列宽，却没为窄屏准备堆叠布局——
+  固定列宽之和超过容器时，自动列会被压到几个 px，内容全部溢出。
 - 面板处理器用裸 `time.Now()`（必须走可注入的 `s.now()`）。
 - 面板可经 `update_panel_auth` 写入 password hash / salt / session_key。
 - helper 的两条错误通道被合并（参数被拒会被面板当成"执行成功但无输出"）。

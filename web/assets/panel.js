@@ -215,9 +215,9 @@ function showDiagnostics() {
   const controlSizes = () => {
     const seen = new Map();
     const probes = [
-      ['输入框', 'input[type="text"], input[type="search"], input[type="password"]'],
-      ['下拉框', '.xsel-btn'],
-      ['按钮', 'button:not(.xsel-btn):not(.sm):not(.icon)'],
+      ['输入框', '.filters input[type="text"], .filters input[type="search"]'],
+      ['下拉框', '.filters .xsel-btn'],
+      ['按钮', '.filters button:not(.xsel-btn):not(.icon)'],
     ];
     probes.forEach(([label, sel]) => {
       const el = Array.from(document.querySelectorAll(sel))
@@ -227,10 +227,10 @@ function showDiagnostics() {
       if (!seen.has(size)) seen.set(size, []);
       seen.get(size).push(label);
     });
-    if (!seen.size) return '本页没有可见控件';
+    if (!seen.size) return '本页没有并排的表单控件';
     const parts = Array.from(seen, ([size, labels]) => labels.join('/') + '=' + size);
     return parts.join('  ') + (seen.size === 1 ? '  ✓ 一致'
-      : '  🔴 同一行控件出现 ' + seen.size + ' 种字号');
+      : '  🔴 同一组筛选控件出现 ' + seen.size + ' 种字号');
   };
 
   const cellSpills = () => {

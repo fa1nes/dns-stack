@@ -318,23 +318,39 @@ func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *c
 			c.skip(probe.Label+" 按子网分化", "解析未成功，本轮取不到对照")
 			continue
 		}
-		comparable++
 		if cdnhit.JoinAddrs(north.Addrs, ",") != cdnhit.JoinAddrs(south.Addrs, ",") {
+			comparable++
 			differentiated++
 			c.ok(probe.Label+" 按子网分化", "北京 %s / 广东 %s",
 				cdnhit.JoinAddrs(north.Addrs, " "), cdnhit.JoinAddrs(south.Addrs, " "))
-		} else {
-			c.warn(probe.Label+" 按子网分化",
-				"两地答案相同(%s)——%s",
+			continue
+		}
+
+		switch {
+		case north.Echoed && north.Scope == 0:
+			c.ok(probe.Label+" 按子网分化",
+				"两地相同(%s)，因为权威回了 scope=0——它明确表示不按位置调度，"+
+					"unbound 据此把答案缓存成全局条目。这是协议行为，不是缺陷",
+				cdnhit.JoinAddrs(north.Addrs, " "))
+		case !north.Echoed:
+			c.skip(probe.Label+" 按子网分化",
+				"两地相同(%s)，但本轮没有 ECS 回显——%s",
 				cdnhit.JoinAddrs(north.Addrs, " "), scopeNote(north))
+		default:
+			comparable++
+			c.warn(probe.Label+" 按子网分化",
+				"两地相同(%s)，而权威回了 scope=%d 声称按位置调度——两者矛盾",
+				cdnhit.JoinAddrs(north.Addrs, " "), north.Scope)
 		}
 	}
 	if comparable == 0 {
-		c.skip("ECS 就近整体判据", "没有可比较的域名，本轮判据没有回答任何问题")
+		c.skip("ECS 就近整体判据",
+			"没有一个域名本该按子网分化（权威要么声明不调度，要么本轮没有回显），判据弃权")
 	} else {
 		c.assert(differentiated > 0, "ECS 就近整体判据",
-			fmt.Sprintf("%d/%d 个域名按客户端子网给出不同答案", differentiated, comparable),
-			fmt.Sprintf("%d 个域名全都不按子网分化——ECS 链路可能整条失效", comparable))
+			fmt.Sprintf("%d/%d 个声称按位置调度的域名确实给出了不同答案", differentiated, comparable),
+			fmt.Sprintf("%d 个域名的权威声称按位置调度却给出相同答案——ECS 链路可能整条失效",
+				comparable))
 	}
 	checkCDNLanding(ctx, opt, report, cdnSet, resolver)
 }
