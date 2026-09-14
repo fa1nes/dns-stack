@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dns-stack/dns-stack/internal/cdn"
 	"github.com/dns-stack/dns-stack/internal/domain"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
@@ -357,6 +358,72 @@ func TestGeoSteeredZoneWithMainlandAuthorityKeepsForeignOnesOutOfRoute(t *testin
 	}
 	if !containsAddr(r.ECSPrefixes, foreign) {
 		t.Fatalf("境外 CDN 权威仍要收 ECS: %v", r.ECSPrefixes)
+	}
+}
+
+func TestRulesetMainlandEvidenceAdmitsCDNTheStaticTableNeverHeardOf(t *testing.T) {
+	const zone = "edge.examplecdn.net"
+	if cdn.IsGeoSteered(zone) {
+		t.Fatalf("%s 必须是静态后缀表里没有的域名，否则这条测试证明不了规则集起了作用", zone)
+	}
+	foreign := netip.MustParseAddr("93.184.216.34")
+	snapshot := parseInfra(t, "93.184.216.34 "+zone+". rto 10")
+
+	base := testConfig(t)
+	before, err := Build(snapshot, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsAddr(before.ECSPrefixes, foreign) {
+		t.Fatalf("阴性对照失效：没有规则集证据时 %s 就已经在 ECS 白名单里了", foreign)
+	}
+	if len(before.SteeredZones) != 0 {
+		t.Fatalf("阴性对照失效：没有规则集证据时不该识别出任何 geo-steering 区域: %v", before.SteeredZones)
+	}
+
+	withEvidence := testConfig(t)
+	withEvidence.MainlandCDN = map[string]struct{}{"examplecdn.net": {}}
+	after, err := Build(snapshot, withEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAddr(after.ECSPrefixes, foreign) {
+		t.Fatalf("规则集证实该 CDN 有大陆节点段，它的权威必须收中国子网，否则用户永远拿境外节点: %v", after.ECSPrefixes)
+	}
+	if containsAddr(after.RoutePrefixes, foreign) {
+		t.Fatalf("境外权威只能进 ECS 白名单，绝不能进直连集合: %v", after.RoutePrefixes)
+	}
+	if len(after.SteeredByRuleset) != 1 || after.SteeredByRuleset[0] != zone {
+		t.Fatalf("靠规则集纳入的区域要单独记账，便于区分证据来源: %v", after.SteeredByRuleset)
+	}
+}
+
+func TestRulesetEvidenceMatchesOnLabelBoundary(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.MainlandCDN = map[string]struct{}{"examplecdn.net": {}}
+	foreign := netip.MustParseAddr("93.184.216.35")
+	r, err := Build(parseInfra(t, "93.184.216.35 notexamplecdn.net. rto 10"), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsAddr(r.ECSPrefixes, foreign) {
+		t.Fatal("notexamplecdn.net 不是 examplecdn.net 的子域，后缀匹配必须按标签边界")
+	}
+}
+
+func TestStaticTableStillWinsWhenRulesetHasNoEvidence(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.MainlandCDN = map[string]struct{}{}
+	steered := netip.MustParseAddr("95.100.173.192")
+	r, err := Build(parseInfra(t, "95.100.173.192 akamaiedge.net. rto 10"), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsAddr(r.ECSPrefixes, steered) {
+		t.Fatal("规则集缺席时静态后缀表必须照常生效，新判据只能做加法")
+	}
+	if len(r.SteeredByRuleset) != 0 {
+		t.Fatalf("静态表命中的区域不该记成规则集证据: %v", r.SteeredByRuleset)
 	}
 }
 

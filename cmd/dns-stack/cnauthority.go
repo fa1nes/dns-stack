@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cnauth"
+	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 func envDuration(key string, def time.Duration) time.Duration {
@@ -33,6 +34,7 @@ func cmdCNAuthority(args []string) error {
 	prevECS := fs.String("ecs-prev", "", "现网 ECS 白名单，用于累积保留")
 	ecsState := fs.String("ecs-state", "", "ECS 累积状态(默认 <state>/chnroute/ecs-accum-state.tsv)")
 	sharedOut := fs.String("shared-excluded-out", envOr("SHARED_EXCLUDED_OUTPUT", ""), "共享 anycast 排除清单输出")
+	cdnRules := fs.String("cdn-rules", "", "CDN 直连规则集(默认 <state>/cdn-direct.txt)")
 	agg := fs.Int("aggregate", 24, "大陆权威聚合前缀")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -68,6 +70,9 @@ func cmdCNAuthority(args []string) error {
 	if *ecsState == "" {
 		*ecsState = chn("ecs-accum-state.tsv")
 	}
+	if *cdnRules == "" {
+		*cdnRules = filepath.Join(*state, rulesync.FileCDNDirect)
+	}
 	var pslPaths []string
 	if *psl != "" {
 		pslPaths = []string{*psl}
@@ -91,6 +96,7 @@ func cmdCNAuthority(args []string) error {
 		PrevECSPath:       *prevECS,
 		ECSStatePath:      *ecsState,
 		SharedExcludedOut: *sharedOut,
+		CDNRulesPath:      *cdnRules,
 		Aggregate:         *agg,
 		AccumTTL:          envDuration("ECS_ACCUM_TTL_SEC", cnauth.DefaultAccumTTL),
 		SharedMaxAge:      envDuration("SHARED_ANYCAST_MAX_AGE_SEC", cnauth.DefaultSharedMaxAge),

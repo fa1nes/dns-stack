@@ -43,7 +43,7 @@ func TestOperatorIDsAreUniqueAndNamed(t *testing.T) {
 func TestOperatorASNsDoNotCollide(t *testing.T) {
 	owner := make(map[int]string)
 	for _, op := range operators {
-		for _, asn := range op.ASNs {
+		for _, asn := range op.AllASNs() {
 			if prev, dup := owner[asn]; dup {
 				t.Errorf("AS%d 同时挂在 %s 和 %s 下——拉前缀时会把同一批网段算给两家", asn, prev, op.ID)
 			}
@@ -53,6 +53,45 @@ func TestOperatorASNsDoNotCollide(t *testing.T) {
 	for asn := range dnsOnlyAS {
 		if id, dup := owner[asn]; dup {
 			t.Errorf("AS%d 既在 dnsOnlyAS 又在 operator %s 下", asn, id)
+		}
+	}
+}
+
+func TestPrefixASNsStayOutOfTheSharedDNSJudgement(t *testing.T) {
+	seen := 0
+	for _, op := range operators {
+		for _, asn := range op.PrefixASNs {
+			seen++
+			if label, shared := SharedDNSProvider(asn); shared {
+				t.Errorf("AS%d 只是用来拉 %s 的节点前缀，却被当成共享 DNS 提供商(%s)。"+
+					"这两个字段回答的不是同一个问题：前者问「这些地址是谁的节点」，"+
+					"后者问「这个 ASN 上的权威是不是多租户共享、因而不得直连」", asn, op.ID, label)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("一个 PrefixASN 都没有，这条判据本身失效了")
+	}
+}
+
+func TestPrefixASNsActuallyReachThePrefixBuilder(t *testing.T) {
+	for _, op := range Operators() {
+		if len(op.PrefixASNs) == 0 {
+			continue
+		}
+		all := op.AllASNs()
+		for _, asn := range op.PrefixASNs {
+			found := false
+			for _, item := range all {
+				if item == asn {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s 的 AS%d 没进 AllASNs()，拉前缀那一步永远看不到它——"+
+					"填了却拉不到，是最难发现的一种失效", op.ID, asn)
+			}
 		}
 	}
 }

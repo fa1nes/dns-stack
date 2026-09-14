@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/domain"
 	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/infra"
@@ -41,6 +42,7 @@ type Options struct {
 	ECSStatePath      string
 	SharedExcludedOut string
 	SteeredOutPath    string
+	CDNRulesPath      string
 	Aggregate         int
 	AccumTTL          time.Duration
 	SharedMaxAge      time.Duration
@@ -51,19 +53,20 @@ type Options struct {
 }
 
 type Result struct {
-	Zones           int
-	MatchedZones    int
-	ForcedZones     int
-	DeadZones       int
-	RoutePrefixes   int
-	ECSPrefixes     int
-	SharedExcluded  int
-	DisputedCut     int
-	PromotedUsed    int
-	SteeredZones    int
-	SteeredECSAddrs int
-	AccumKept       int
-	RTOSeen         bool
+	Zones            int
+	MatchedZones     int
+	ForcedZones      int
+	DeadZones        int
+	RoutePrefixes    int
+	ECSPrefixes      int
+	SharedExcluded   int
+	DisputedCut      int
+	PromotedUsed     int
+	SteeredZones     int
+	SteeredByRuleset int
+	SteeredECSAddrs  int
+	AccumKept        int
+	RTOSeen          bool
 }
 
 func (o Options) now() time.Time {
@@ -111,6 +114,31 @@ func loadManual(path string) map[string]struct{} {
 		}
 		out[strings.ToLower(trimmed)] = struct{}{}
 	}
+	return out
+}
+
+func loadMainlandCDN(p printer, path string) map[string]struct{} {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	set, err := cdnrules.Load(path)
+	if err != nil {
+		p.warnf("CDN 直连规则集不可读（%v）：ECS 白名单本轮只认静态后缀表，"+
+			"规则集里新证实有大陆节点的 CDN 拿不到中国子网，用户会被调度到境外节点", err)
+		return nil
+	}
+	providers := set.MainlandProviders()
+	roots := set.MainlandRoots()
+	if len(roots) == 0 {
+		p.warnf("CDN 直连规则集里没有任何 provider 带大陆节点段，这条判据本轮整体弃权")
+		return nil
+	}
+	out := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		out[root] = struct{}{}
+	}
+	p.infof("CDN 直连规则集：%d 个 provider 有大陆节点段，覆盖 %d 个根域（其境外权威一律进 ECS 白名单）",
+		len(providers), len(out))
 	return out
 }
 
@@ -356,6 +384,8 @@ func Run(opt Options) (Result, error) {
 	}
 	res.Zones = len(zoneIPs)
 
+	mainlandCDN := loadMainlandCDN(p, opt.CDNRulesPath)
+
 	built, err := ruleset.Build(snapshot, ruleset.Config{
 		Direct:        direct.Set,
 		Disputed:      disputed.Set,
@@ -363,6 +393,7 @@ func Run(opt Options) (Result, error) {
 		PSL:           psl,
 		ManualZones:   loadManual(opt.ManualPath),
 		SharedAnycast: shared.addrs,
+		MainlandCDN:   mainlandCDN,
 		Aggregate:     opt.Aggregate,
 	})
 	if err != nil {
@@ -427,6 +458,7 @@ func Run(opt Options) (Result, error) {
 	}
 
 	res.SteeredZones = len(built.SteeredZones)
+	res.SteeredByRuleset = len(built.SteeredByRuleset)
 	res.SteeredECSAddrs = built.SteeredECSAddrs
 	if opt.SteeredOutPath != "" {
 		var body strings.Builder
@@ -451,6 +483,14 @@ func Run(opt Options) (Result, error) {
 			set[zone] = struct{}{}
 		}
 		p.infof("  区域：%s", joinSample(set, 10))
+	}
+	if len(built.SteeredByRuleset) > 0 {
+		set := map[string]struct{}{}
+		for _, zone := range built.SteeredByRuleset {
+			set[zone] = struct{}{}
+		}
+		p.infof("  其中 %d 个区域是靠 CDN 直连规则集的大陆段证据纳入的，静态后缀表里没有：%s",
+			len(built.SteeredByRuleset), joinSample(set, 10))
 	}
 
 	res.PromotedUsed = len(built.PromotedUsed)

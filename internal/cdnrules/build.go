@@ -85,7 +85,7 @@ func Build(ctx context.Context, opt Options) (Report, error) {
 			}
 			raw = append(raw, got...)
 		}
-		for _, asn := range op.ASNs {
+		for _, asn := range op.AllASNs() {
 			url := fmt.Sprintf("%s%d", opt.ASNEndpoint, asn)
 			got, err := fetchPrefixes(ctx, opt.Fetch, url, decodeRIPEStat)
 			if err != nil {

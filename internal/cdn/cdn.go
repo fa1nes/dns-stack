@@ -16,7 +16,17 @@ type Operator struct {
 	ID    string
 	Name  string
 	Roots []string
-	ASNs  []int
+
+	ASNs []int
+
+	PrefixASNs []int
+}
+
+func (o Operator) AllASNs() []int {
+	out := make([]int, 0, len(o.ASNs)+len(o.PrefixASNs))
+	out = append(out, o.ASNs...)
+	out = append(out, o.PrefixASNs...)
+	return out
 }
 
 var operators = []Operator{
@@ -32,7 +42,8 @@ var operators = []Operator{
 	},
 	{
 		ID: "apple", Name: "Apple",
-		Roots: []string{"aaplimg.com", "apple-dns.net", "cdn-apple.com"},
+		Roots:      []string{"aaplimg.com", "apple-dns.net", "cdn-apple.com"},
+		PrefixASNs: []int{714, 6185},
 	},
 	{
 		ID: "microsoft", Name: "Microsoft",
@@ -97,6 +108,7 @@ var operators = []Operator{
 			"alicdn.com", "alikunlun.com", "kunlunsl.com", "kunlunca.com", "kunlunar.com",
 			"alidns.com", "hichina.com", "aliyuncs.com",
 		},
+		PrefixASNs: []int{24429, 37963, 45102},
 	},
 	{
 		ID: "tencent", Name: "腾讯云",
@@ -104,6 +116,7 @@ var operators = []Operator{
 			"myqcloud.com", "qcloudcdn.com", "ourdvsss.com", "tcdnvod.com", "cdngslb.com",
 			"cdntip.com", "dnsv1.com", "dnsv2.com", "dnsv3.com", "dnsv4.com", "dnsv5.com",
 		},
+		PrefixASNs: []int{45090, 132203, 132591},
 	},
 	{
 		ID: "huawei", Name: "华为云",
@@ -111,6 +124,7 @@ var operators = []Operator{
 			"cdnhwc1.com", "cdnhwc2.com", "cdnhwc3.com", "cdnhwc5.com",
 			"dbankcdn.cn", "dbankcdn.com", "livehwc3.cn",
 		},
+		PrefixASNs: []int{55990, 136907},
 	},
 	{
 		ID: "wangsu", Name: "网宿",
@@ -118,7 +132,8 @@ var operators = []Operator{
 	},
 	{
 		ID: "baidu", Name: "百度云",
-		Roots: []string{"bdydns.com"},
+		Roots:      []string{"bdydns.com"},
+		PrefixASNs: []int{38365, 55967},
 	},
 	{
 		ID: "qiniu", Name: "七牛云",
@@ -222,13 +237,15 @@ func Operators() []Operator {
 	out := make([]Operator, len(operators))
 	for i, op := range operators {
 		out[i] = Operator{
-			ID:    op.ID,
-			Name:  op.Name,
-			Roots: append([]string(nil), op.Roots...),
-			ASNs:  append([]int(nil), op.ASNs...),
+			ID:         op.ID,
+			Name:       op.Name,
+			Roots:      append([]string(nil), op.Roots...),
+			ASNs:       append([]int(nil), op.ASNs...),
+			PrefixASNs: append([]int(nil), op.PrefixASNs...),
 		}
 		sort.Strings(out[i].Roots)
 		sort.Ints(out[i].ASNs)
+		sort.Ints(out[i].PrefixASNs)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out

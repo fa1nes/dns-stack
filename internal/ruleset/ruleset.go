@@ -26,7 +26,25 @@ type Config struct {
 	PSL           *domain.PSL
 	ManualZones   map[string]struct{}
 	SharedAnycast map[netip.Addr]struct{}
+	MainlandCDN   map[string]struct{}
 	Aggregate     int
+}
+
+func (cfg Config) mainlandCDN(zone string) bool {
+	if len(cfg.MainlandCDN) == 0 {
+		return false
+	}
+	for rest := strings.ToLower(strings.TrimRight(zone, ".")); rest != ""; {
+		if _, ok := cfg.MainlandCDN[rest]; ok {
+			return true
+		}
+		dot := strings.IndexByte(rest, '.')
+		if dot < 0 {
+			return false
+		}
+		rest = rest[dot+1:]
+	}
+	return false
 }
 
 func (cfg Config) routable(addr netip.Addr) bool {
@@ -70,6 +88,7 @@ type Result struct {
 	DisputedExcluded []string
 	PromotedUsed     []string
 	SteeredZones     []string
+	SteeredByRuleset []string
 	SteeredECSAddrs  int
 	RTOSeen          bool
 
@@ -129,6 +148,8 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	promotedUsed := make(map[string]struct{})
 	steeredECS := make(map[string]struct{})
 	steeredZones := make(map[string]struct{})
+	rulesetZones := make(map[string]struct{})
+	fromRuleset := make(map[string]bool)
 	steer := func(zone string, e infra.Entry) bool {
 		if !e.IP.Is4() || !ipset.IsGlobalPrefix(netip.PrefixFrom(e.IP, 32)) {
 			return false
@@ -136,6 +157,9 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 		ecsExtra = append(ecsExtra, netip.PrefixFrom(e.IP, SteeredECSBits).Masked())
 		steeredECS[e.IP.String()] = struct{}{}
 		steeredZones[zone] = struct{}{}
+		if fromRuleset[zone] {
+			rulesetZones[zone] = struct{}{}
+		}
 		return true
 	}
 	for zone, entries := range zones {
@@ -158,6 +182,10 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 			}
 		}
 		steered := cdn.IsGeoSteered(zone)
+		if !steered && cfg.mainlandCDN(zone) {
+			steered = true
+			fromRuleset[zone] = true
+		}
 		if !forced && !hasCN {
 			if steered {
 				for _, e := range entries {
@@ -238,6 +266,9 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	for zone := range steeredZones {
 		r.SteeredZones = append(r.SteeredZones, zone)
 	}
+	for zone := range rulesetZones {
+		r.SteeredByRuleset = append(r.SteeredByRuleset, zone)
+	}
 	r.SteeredECSAddrs = len(steeredECS)
 	allECS := append(append([]netip.Prefix{}, ecsExact...), ecsExtra...)
 	directECS := directECSPrefixes(cfg)
@@ -255,6 +286,7 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	sort.Strings(r.DisputedExcluded)
 	sort.Strings(r.PromotedUsed)
 	sort.Strings(r.SteeredZones)
+	sort.Strings(r.SteeredByRuleset)
 	for key := range r.Defective {
 		sort.Strings(r.Defective[key])
 	}

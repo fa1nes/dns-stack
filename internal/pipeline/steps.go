@@ -15,6 +15,7 @@ import (
 	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 func Steps() []Step {
@@ -301,6 +302,7 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		ECSStatePath:      cfg.Chnroute("ecs-accum-state.tsv"),
 		SharedExcludedOut: cfg.Chnroute("shared-excluded.txt"),
 		SteeredOutPath:    cfg.Chnroute("cdn-steered-zones.txt"),
+		CDNRulesPath:      cfg.Path(rulesync.FileCDNDirect),
 		Aggregate:         cfg.Aggregate,
 		AccumTTL:          cfg.Duration("ECS_ACCUM_TTL_SEC", cnauth.DefaultAccumTTL),
 		SharedMaxAge:      cfg.Duration("SHARED_ANYCAST_MAX_AGE_SEC", cnauth.DefaultSharedMaxAge),

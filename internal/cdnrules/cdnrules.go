@@ -138,6 +138,38 @@ func (s *Set) DomainCount() int { return len(s.suffix) }
 
 func (s *Set) Empty() bool { return s == nil || len(s.providers) == 0 }
 
+func (s *Set) MainlandRoots() []string {
+	if s == nil {
+		return nil
+	}
+	var out []string
+	for _, p := range s.providers {
+		if !p.HasMainland() {
+			continue
+		}
+		for _, d := range p.Domains {
+			if key := normalize(d); key != "" {
+				out = append(out, key)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Set) MainlandProviders() []Provider {
+	if s == nil {
+		return nil
+	}
+	out := make([]Provider, 0, len(s.providers))
+	for _, p := range s.providers {
+		if p.HasMainland() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (s *Set) ProviderFor(name string) (Provider, bool) {
 	if s == nil {
 		return Provider{}, false

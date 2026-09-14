@@ -23,6 +23,7 @@ env:
   RULESET: cdn-direct.txt
   MIN_PREFIXES: "1000"
   MIN_PROVIDERS: "18"
+  MIN_MAINLAND_PROVIDERS: "5"
   MAX_SHRINK_PERCENT: "20"
 
 jobs:
@@ -66,6 +67,18 @@ jobs:
             --out "dist/${RULESET}" \
             --min-prefixes "${MIN_PREFIXES}"
 
+      - name: refuse a ruleset with no mainland evidence
+        run: |
+          set -Eeuo pipefail
+          mainland_providers=$(awk -F'\t' '$1=="N" && $3=="cn"{print $2}' "dist/${RULESET}" | sort -u | wc -l)
+          echo "有大陆节点段的 provider: ${mainland_providers}"
+          if [ "$mainland_providers" -lt "${MIN_MAINLAND_PROVIDERS}" ]; then
+            echo "::error::只有 ${mainland_providers} 家 CDN 有大陆节点段（下限 ${MIN_MAINLAND_PROVIDERS}）。" >&2
+            echo "「这家 CDN 在大陆有没有节点」正是 ECS 白名单与就近命中判据要回答的问题；" >&2
+            echo "全都没有大陆段时判据只会一路弃权，而弃权在报表上看起来和通过一模一样" >&2
+            exit 1
+          fi
+
       - name: verify ruleset
         run: |
           set -Eeuo pipefail
@@ -73,7 +86,7 @@ jobs:
             --file "dist/${RULESET}" \
             --min-providers "${MIN_PROVIDERS}" \
             --min-prefixes "${MIN_PREFIXES}" \
-            --require-nets cloudflare,fastly,amazon,akamai,microsoft \
+            --require-nets cloudflare,fastly,amazon,akamai,microsoft,alibaba,tencent,huawei,baidu,apple \
             --expect 104.16.0.1=cloudflare \
             --expect 151.101.1.1=fastly
 
