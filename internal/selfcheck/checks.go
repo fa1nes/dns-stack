@@ -289,7 +289,8 @@ func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
 func scopeNote(answer cdnhit.Answer) string {
 	switch {
 	case !answer.Echoed:
-		return "权威没有回显 ECS，说明它根本没收到客户端子网"
+		return "这次没有 ECS 回显——scope=0 的答案会被 unbound 缓存成全局条目、" +
+			"后续查询都不回显，所以分不清是没送达还是命中了缓存；用 dns-stack ecs-audit 确认"
 	case answer.Scope == 0:
 		return "权威回了 scope=0，它明确表示不按位置调度"
 	default:
