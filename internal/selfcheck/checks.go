@@ -13,6 +13,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/cdn"
+	"github.com/dns-stack/dns-stack/internal/cdnhit"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/rulesync"
@@ -290,72 +291,70 @@ func checkResolution(ctx context.Context, opt Options, report *Report, cdnSet *c
 		return
 	}
 	c := &checker{report: report, group: "解析与就近"}
-	probes := []struct {
-		domain string
-		label  string
-	}{
-		{"www.apple.com", "Apple 主站"},
-		{"www.microsoft.com", "微软主站"},
-		{"www.qq.com", "腾讯"},
+	resolver := cdnhit.DefaultResolver
+	probes := []cdnhit.Probe{
+		{Domain: "www.apple.com", Label: "Apple 主站"},
+		{Domain: "www.microsoft.com", Label: "微软主站"},
+		{Domain: "www.qq.com", Label: "腾讯"},
 	}
-	const (
-		beijing   = "219.141.136.0/24"
-		guangdong = "113.108.10.0/24"
-	)
-	resolver := "127.0.0.1:5335"
 	differentiated, comparable := 0, 0
-	var offshoreHits, mismatched []string
 	for _, probe := range probes {
-		north, errN := queryWithSubnet(ctx, resolver, probe.domain, beijing)
-		south, errS := queryWithSubnet(ctx, resolver, probe.domain, guangdong)
+		north, errN := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.BeijingTelecomPrefix, 0)
+		south, errS := cdnhit.Query(ctx, resolver, probe.Domain, cdnhit.GuangdongUnicomPrefix, 0)
 		if errN != nil || errS != nil || len(north) == 0 || len(south) == 0 {
-			c.skip(probe.label+" 按子网分化", "解析未成功，本轮取不到对照")
+			c.skip(probe.Label+" 按子网分化", "解析未成功，本轮取不到对照")
 			continue
 		}
 		comparable++
-		if joinAddrs(north, ",") != joinAddrs(south, ",") {
+		if cdnhit.JoinAddrs(north, ",") != cdnhit.JoinAddrs(south, ",") {
 			differentiated++
-			c.ok(probe.label+" 按子网分化", "北京 %s / 广东 %s",
-				joinAddrs(north, " "), joinAddrs(south, " "))
+			c.ok(probe.Label+" 按子网分化", "北京 %s / 广东 %s",
+				cdnhit.JoinAddrs(north, " "), cdnhit.JoinAddrs(south, " "))
 		} else {
-			c.warn(probe.label+" 按子网分化",
+			c.warn(probe.Label+" 按子网分化",
 				"两地答案相同(%s)——该域名的权威没收到 ECS，或它本来就没有国内节点",
-				joinAddrs(north, " "))
-		}
-		if cdnSet == nil {
-			continue
-		}
-		for _, addr := range north {
-			owner, prefix, isMainland, hit := cdnSet.Owner(addr)
-			switch {
-			case !hit:
-				mismatched = append(mismatched, fmt.Sprintf("%s->%s", probe.domain, addr))
-			case isMainland:
-				c.ok(probe.label+" 命中大陆 CDN 节点", "%s 属于 %s %s", addr, owner.Name, prefix)
-			case owner.HasMainland():
-				offshoreHits = append(offshoreHits,
-					fmt.Sprintf("%s->%s(%s 境外段，但该 CDN 有大陆段)", probe.domain, addr, owner.Name))
-			default:
-				c.skip(probe.label+" 命中大陆 CDN 节点",
-					"%s 属于 %s，但规则集里该 CDN 没有大陆段可比对", addr, owner.Name)
-			}
-		}
-	}
-	if cdnSet != nil {
-		if len(offshoreHits) > 0 {
-			c.warn("大陆有节点却拿到境外节点", "%s——ECS 可能没送达该权威", strings.Join(offshoreHits, ", "))
-		}
-		if len(mismatched) > 0 {
-			c.warn("答案不属于任何已知 CDN 段",
-				"%s——可能是自建源站，也可能是投毒地址，用 dns-stack cdn-rules lookup 复核",
-				strings.Join(mismatched, ", "))
+				cdnhit.JoinAddrs(north, " "))
 		}
 	}
 	if comparable == 0 {
 		c.skip("ECS 就近整体判据", "没有可比较的域名，本轮判据没有回答任何问题")
+	} else {
+		c.assert(differentiated > 0, "ECS 就近整体判据",
+			fmt.Sprintf("%d/%d 个域名按客户端子网给出不同答案", differentiated, comparable),
+			fmt.Sprintf("%d 个域名全都不按子网分化——ECS 链路可能整条失效", comparable))
+	}
+	checkCDNLanding(ctx, opt, report, cdnSet, resolver)
+}
+
+func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *cdnrules.Set, resolver string) {
+	c := &checker{report: report, group: "CDN 就近命中"}
+	hit, err := cdnhit.Run(ctx, cdnhit.Options{Resolver: resolver, Set: cdnSet})
+	if err != nil {
+		c.skip("大陆节点命中", "%v", err)
 		return
 	}
-	c.assert(differentiated > 0, "ECS 就近整体判据",
-		fmt.Sprintf("%d/%d 个域名按客户端子网给出不同答案", differentiated, comparable),
-		fmt.Sprintf("%d 个域名全都不按子网分化——ECS 链路可能整条失效", comparable))
+	var stranded, mismatched []string
+	for _, probe := range hit.Probes {
+		switch probe.Verdict {
+		case cdnhit.VerdictStranded:
+			stranded = append(stranded, fmt.Sprintf("%s→%s(%s)",
+				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider))
+		case cdnhit.VerdictMismatch:
+			mismatched = append(mismatched, fmt.Sprintf("%s→%s",
+				probe.Domain, strings.Join(probe.Addrs, "/")))
+		}
+	}
+	if hit.Comparable == 0 {
+		c.skip("大陆节点命中", "没有一个域名的落点能与规则集比对，本轮判据没有回答任何问题")
+	} else {
+		c.assert(hit.Stranded == 0, "大陆节点命中",
+			fmt.Sprintf("%d/%d 个域名拿到了大陆 CDN 节点", hit.Mainland, hit.Comparable),
+			fmt.Sprintf("%s——这些 CDN 在大陆有节点却给了境外地址，"+
+				"多半是权威没收到 ECS；复核 dns-stack ecs-audit --quick", strings.Join(stranded, ", ")))
+	}
+	if len(mismatched) > 0 {
+		c.warn("答案属于已知 CDN 段",
+			"%s 不属于任何已知 CDN 段——可能是自建源站，也可能是投毒地址，"+
+				"用 dns-stack cdn-rules lookup 复核", strings.Join(mismatched, ", "))
+	}
 }

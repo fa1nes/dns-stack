@@ -88,6 +88,8 @@ func main() {
 		err = cmdRules(args)
 	case "cdn-rules":
 		err = cmdCDNRules(args)
+	case "cdn-hit":
+		err = cmdCDNHit(args)
 	case "sync-rules":
 		err = cmdSyncRules(args)
 	case "blocklist":
@@ -173,6 +175,8 @@ func usage() {
   rules           规则包清洗与校验(域名形态/CIDR 汇总/不重叠/父子覆盖)
   cdn-rules       CDN 直连规则集：build 由官方前缀源与 ASN 合成(跑在 Action)、verify 锚点断言、
                   lookup 查单个域名+IP 的判据(大陆节点/境外节点/地址不属于该 CDN)
+  cdn-hit         以真实中国 /24 的身份解析国内外大厂域名，判定是否真的拿到了大陆 CDN 节点；
+                  重点报出「该 CDN 在大陆有节点、答案却落在境外」——那是 ECS 没送达权威
   sync-rules      从规则源同步四文件规则包与 CDN 规则集，校验后原子替换并重载
                   (骤降/同版本冲突保护默认开启，--force 跳过；--rollback 回退到上一份)
   blocklist       域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机

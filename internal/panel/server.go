@@ -58,6 +58,8 @@ type Server struct {
 	online       *geoip.OnlineLookup
 	geoOnline    *geoip.OnlineLookup
 
+	cdnHits cdnHitCache
+
 	rates rateTracker
 
 	exits    exitCache
@@ -158,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/logs/stream", s.logsStream)
 	mux.HandleFunc("/api/my-location", s.myLocation)
 	mux.HandleFunc("/api/dns-test", s.dnsTest)
+	mux.HandleFunc("/api/cdn-hit", s.cdnHit)
 	mux.HandleFunc("/", s.static)
 
 	return s.gzipMiddleware(s.corsMiddleware(s.originMiddleware(s.authMiddleware(mux))))
