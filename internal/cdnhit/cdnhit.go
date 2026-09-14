@@ -51,6 +51,7 @@ const (
 	VerdictMainland   Verdict = "mainland"
 	VerdictStranded   Verdict = "stranded"
 	VerdictOffshore   Verdict = "offshore"
+	VerdictThin       Verdict = "thin"
 	VerdictMismatch   Verdict = "mismatch"
 	VerdictUnknown    Verdict = "unknown"
 	VerdictUnresolved Verdict = "unresolved"
@@ -64,6 +65,8 @@ func (v Verdict) Label() string {
 		return "该 CDN 有大陆节点，却拿到境外节点"
 	case VerdictOffshore:
 		return "境外节点（该 CDN 没有大陆段）"
+	case VerdictThin:
+		return "境外节点（该 CDN 的大陆段太少，判据弃权）"
 	case VerdictMismatch:
 		return "地址不属于该 CDN"
 	case VerdictUnknown:
@@ -81,6 +84,7 @@ type Outcome struct {
 	Provider    string   `json:"provider"`
 	ProviderID  string   `json:"provider_id"`
 	HasMainland bool     `json:"has_mainland"`
+	MainlandNum int      `json:"mainland_prefixes"`
 	Addrs       []string `json:"addrs"`
 	Prefix      string   `json:"prefix,omitempty"`
 	Verdict     Verdict  `json:"verdict"`
@@ -181,7 +185,7 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 	out := Outcome{Domain: probe.Domain, Label: probe.Label}
 	if provider, known := opt.Set.ProviderFor(probe.Domain); known {
 		out.Provider, out.ProviderID = provider.Name, provider.ID
-		out.HasMainland = provider.HasMainland()
+		out.HasMainland, out.MainlandNum = provider.ServesMainland(), len(provider.Mainland)
 	}
 
 	addrs, err := opt.Resolve(ctx, probe.Domain, subnet)
@@ -208,7 +212,7 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 		}
 		if out.ProviderID == "" {
 			out.Provider, out.ProviderID = owner.Name, owner.ID
-			out.HasMainland = owner.HasMainland()
+			out.HasMainland, out.MainlandNum = owner.ServesMainland(), len(owner.Mainland)
 		}
 		if mainland {
 			out.Verdict, out.Prefix = VerdictMainland, prefix.String()
@@ -218,9 +222,13 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 		if out.Prefix == "" {
 			out.Prefix = prefix.String()
 		}
-		if owner.HasMainland() {
+		switch {
+		case owner.ServesMainland():
 			out.Verdict = VerdictStranded
-		} else if out.Verdict != VerdictStranded {
+		case out.Verdict == VerdictStranded:
+		case owner.HasMainland():
+			out.Verdict = VerdictThin
+		default:
 			out.Verdict = VerdictOffshore
 		}
 	}
@@ -229,6 +237,9 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 }
 
 func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeout time.Duration) ([]netip.Addr, error) {
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	packet, err := dnswire.BuildQueryWithSubnet(uint16(rand.Uint32()), name, dnswire.TypeA, subnet)
 	if err != nil {
 		return nil, err

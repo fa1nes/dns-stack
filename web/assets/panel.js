@@ -1682,6 +1682,7 @@ const CDN_VERDICT = {
   mainland: { cls: 'ok', mark: '✓' },
   stranded: { cls: 'err', mark: '✗' },
   offshore: { cls: 'unknown', mark: '–' },
+  thin: { cls: 'unknown', mark: '–' },
   mismatch: { cls: 'warn', mark: '!' },
   unknown: { cls: 'unknown', mark: '?' },
   unresolved: { cls: 'unknown', mark: '?' },
@@ -1698,7 +1699,10 @@ async function loadCdnHit(refresh) {
       const style = CDN_VERDICT[p.verdict] || CDN_VERDICT.unknown;
       return html`<tr>
         <td><b>${p.label}</b><div class="mono hint">${p.domain}</div></td>
-        <td>${p.provider || '未识别'}${p.has_mainland ? html`<span class="badge ok sm">有大陆节点</span>` : ''}</td>
+        <td>${p.provider || '未识别'}${p.has_mainland
+          ? html`<span class="badge ok sm" title="规则集里有 ${p.mainland_prefixes} 条大陆段">有大陆节点</span>`
+          : (p.mainland_prefixes ? html`<span class="badge unknown sm"
+              title="只有 ${p.mainland_prefixes} 条大陆段，不足以判定它为大陆用户提供节点">大陆段偏少</span>` : '')}</td>
         <td class="wrap mono">${(p.addrs || []).join(' ') || (p.error || '—')}</td>
         <td class="mono">${p.prefix || '—'}</td>
         <td><span class="badge ${style.cls}">${style.mark} ${p.verdict_text}</span></td>

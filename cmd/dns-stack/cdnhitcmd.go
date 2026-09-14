@@ -73,8 +73,9 @@ func renderCDNHit(report cdnhit.Report) {
 		time.Unix(report.RulesetAt, 0).Format("2006-01-02 15:04"))
 	marks := map[cdnhit.Verdict]string{
 		cdnhit.VerdictMainland: "✓", cdnhit.VerdictStranded: "✗",
-		cdnhit.VerdictOffshore: "–", cdnhit.VerdictMismatch: "!",
-		cdnhit.VerdictUnknown: "?", cdnhit.VerdictUnresolved: "?",
+		cdnhit.VerdictOffshore: "–", cdnhit.VerdictThin: "–",
+		cdnhit.VerdictMismatch: "!",
+		cdnhit.VerdictUnknown:  "?", cdnhit.VerdictUnresolved: "?",
 	}
 	for _, probe := range report.Probes {
 		provider := probe.Provider

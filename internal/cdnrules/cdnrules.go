@@ -50,7 +50,11 @@ type Provider struct {
 	Offshore []netip.Prefix
 }
 
+const MinMainlandPrefixes = 4
+
 func (p Provider) HasMainland() bool { return len(p.Mainland) > 0 }
+
+func (p Provider) ServesMainland() bool { return len(p.Mainland) >= MinMainlandPrefixes }
 
 func (p Provider) PrefixCount() int { return len(p.Mainland) + len(p.Offshore) }
 

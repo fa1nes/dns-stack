@@ -2,7 +2,9 @@ package cdnhit
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +28,8 @@ func testSet(t *testing.T, withMainland bool) *cdnrules.Set {
 		Offshore: prefixes(t, "203.0.113.0/24"),
 	}
 	if withMainland {
-		steered.Mainland = prefixes(t, "116.116.116.0/24")
+		steered.Mainland = prefixes(t,
+			"116.116.116.0/24", "116.116.117.0/24", "116.116.118.0/24", "116.116.119.0/24")
 	}
 	return cdnrules.New(time.Unix(1_700_000_000, 0), []cdnrules.Provider{
 		steered,
@@ -34,6 +37,12 @@ func testSet(t *testing.T, withMainland bool) *cdnrules.Set {
 			ID: "offshoreonly", Name: "只有境外节点的 CDN",
 			Domains:  []string{"offshore.example"},
 			Offshore: prefixes(t, "198.51.100.0/24"),
+		},
+		{
+			ID: "thin", Name: "只有一条大陆段的 CDN",
+			Domains:  []string{"thin.example"},
+			Mainland: prefixes(t, "116.116.200.0/24"),
+			Offshore: prefixes(t, "198.51.101.0/24"),
 		},
 	})
 }
@@ -137,6 +146,52 @@ func TestEmptyRulesetRefusesToReportInsteadOfPassingEverything(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("规则集为空时必须报错；静默返回全绿的报告是最坏的一种通过")
+	}
+}
+
+func TestASingleMainlandPrefixIsNotEvidenceThatTheCDNServesTheMainland(t *testing.T) {
+	resolve := answers(map[string][]string{"a.thin.example": {"198.51.101.9"}})
+	report := run(t, testSet(t, true), resolve, Probe{"a.thin.example", "只有一条大陆段"})
+	got := report.Probes[0]
+	if got.Verdict == VerdictStranded {
+		t.Fatal("一条 /24 可能只是测试段或边缘案例，据此断言「本该给大陆节点」会把正常的全球 " +
+			"anycast 答案报成缺陷；生产上 Cloudflare 正是这样被误报的")
+	}
+	if got.Verdict != VerdictThin {
+		t.Fatalf("弃权要留下痕迹，让人看得出为什么不判: %s", got.Verdict)
+	}
+	if got.HasMainland {
+		t.Fatal("展示用的「有大陆节点」也该按同一条线收敛，否则面板上的徽章与判定自相矛盾")
+	}
+	if got.MainlandNum != 1 {
+		t.Fatalf("原始条数要如实报出，供人判断阈值是否合适: %d", got.MainlandNum)
+	}
+	if report.Comparable != 0 {
+		t.Fatal("弃权的样本不能进就近率的分母")
+	}
+}
+
+func TestZeroTimeoutFallsBackInsteadOfExpiringImmediately(t *testing.T) {
+	server, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("拿不到本地 UDP 端口: %v", err)
+	}
+	defer server.Close()
+	go func() {
+		buf := make([]byte, 1500)
+		n, addr, err := server.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+		server.WriteTo(buf[:n], addr)
+	}()
+
+	_, err = Query(context.Background(), server.LocalAddr().String(),
+		"example.com", BeijingTelecomPrefix, 0)
+	if err != nil && strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("timeout=0 被当成了「立刻过期」而不是「用默认值」，"+
+			"调用方每一次探测都会瞬间失败并报成解析不出来: %v", err)
 	}
 }
 
