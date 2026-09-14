@@ -1,5 +1,5 @@
 # schema: cdn-direct/1
-# generated-at: 1789361946
+# generated-at: 1789362705
 # providers: 20
 # domains: 78
 # prefixes: 9720
