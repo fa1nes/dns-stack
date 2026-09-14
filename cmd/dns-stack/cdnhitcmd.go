@@ -85,33 +85,42 @@ func renderCDNHit(report cdnhit.Report) {
 		report.Resolver, report.Subnet,
 		time.Unix(report.RulesetAt, 0).Format("2006-01-02 15:04"))
 	marks := map[cdnhit.Verdict]string{
-		cdnhit.VerdictMainland: "✓", cdnhit.VerdictStranded: "✗",
-		cdnhit.VerdictOffshore: "–", cdnhit.VerdictThin: "–",
-		cdnhit.VerdictNoNode:   "–",
-		cdnhit.VerdictMismatch: "!",
-		cdnhit.VerdictUnknown:  "?", cdnhit.VerdictUnresolved: "?",
+		cdnhit.VerdictMainland:   "✓",
+		cdnhit.VerdictStranded:   "✗",
+		cdnhit.VerdictNoSteering: "–",
+		cdnhit.VerdictNoNode:     "–",
+		cdnhit.VerdictUnresolved: "?",
 	}
 	for _, probe := range report.Probes {
 		provider := probe.Provider
 		if provider == "" {
 			provider = "未识别"
 		}
-		fmt.Printf("  %s %-24s %-14s %s\n", marks[probe.Verdict], probe.Domain, provider, probe.VerdictText)
+		ecs := "无回显"
+		if probe.ECSEchoed {
+			ecs = fmt.Sprintf("scope=%d", probe.Scope)
+		}
+		fmt.Printf("  %s %-24s %-12s %-10s %s\n",
+			marks[probe.Verdict], probe.Domain, provider, ecs, probe.VerdictText)
 		if len(probe.Addrs) > 0 {
-			fmt.Printf("      %s\n", strings.Join(probe.Addrs, " "))
+			note := ""
+			if probe.Mismatch {
+				note = "   ← 不属于该 CDN 的任何段，可能是自建源站或投毒地址"
+			}
+			fmt.Printf("      %s%s\n", strings.Join(probe.Addrs, " "), note)
 		}
 		if probe.Error != "" {
 			fmt.Printf("      %s\n", probe.Error)
 		}
 	}
 	if report.Comparable == 0 {
-		fmt.Printf("\n没有一个域名的落点能与规则集比对，本轮判据没有回答任何问题\n")
+		fmt.Printf("\n没有一个域名能回答「本该拿到大陆节点吗」，本轮判据弃权\n")
 		return
 	}
 	fmt.Printf("\n就近命中 %d/%d", report.Mainland, report.Comparable)
 	if report.Stranded > 0 {
-		fmt.Printf("；%d 个域名的 CDN 在大陆有节点却给了境外地址——先查这些权威有没有收到 ECS："+
-			"dns-stack ecs-audit --quick", report.Stranded)
+		fmt.Printf("；%d 个域名的权威没收到中国子网，只能按隧道出口调度——"+
+			"这些权威多半不在 ECS 白名单里：dns-stack ecs-audit --quick", report.Stranded)
 	}
 	fmt.Println()
 }

@@ -68,11 +68,8 @@ type Verdict string
 const (
 	VerdictMainland   Verdict = "mainland"
 	VerdictStranded   Verdict = "stranded"
+	VerdictNoSteering Verdict = "no_steering"
 	VerdictNoNode     Verdict = "no_node"
-	VerdictOffshore   Verdict = "offshore"
-	VerdictThin       Verdict = "thin"
-	VerdictMismatch   Verdict = "mismatch"
-	VerdictUnknown    Verdict = "unknown"
 	VerdictUnresolved Verdict = "unresolved"
 )
 
@@ -81,38 +78,50 @@ func (v Verdict) Label() string {
 	case VerdictMainland:
 		return "命中大陆节点"
 	case VerdictStranded:
-		return "ECS 未送达，权威只能按隧道出口调度"
+		return "权威没收到你的子网，只能按隧道出口调度"
+	case VerdictNoSteering:
+		return "权威收到了子网但声明不按位置调度"
 	case VerdictNoNode:
-		return "ECS 已送达，权威仍给境外（该服务在大陆没有节点）"
-	case VerdictOffshore:
-		return "境外节点（该 CDN 没有大陆段）"
-	case VerdictThin:
-		return "境外节点（该 CDN 的大陆段太少，判据弃权）"
-	case VerdictMismatch:
-		return "境外地址且不属于该 CDN"
-	case VerdictUnknown:
-		return "不在规则集内"
+		return "权威按你的子网挑过了，仍给境外（这个服务在大陆没有节点）"
 	default:
 		return "未解析出地址"
+	}
+}
+
+func (v Verdict) Short() string {
+	switch v {
+	case VerdictMainland:
+		return "命中大陆节点"
+	case VerdictStranded:
+		return "ECS 未送达"
+	case VerdictNoSteering:
+		return "不按位置调度"
+	case VerdictNoNode:
+		return "大陆无节点"
+	default:
+		return "未解析出"
 	}
 }
 
 func (v Verdict) Bad() bool { return v == VerdictStranded }
 
 type Outcome struct {
-	Domain      string   `json:"domain"`
-	Label       string   `json:"label"`
-	Provider    string   `json:"provider"`
-	ProviderID  string   `json:"provider_id"`
-	HasMainland bool     `json:"has_mainland"`
-	MainlandNum int      `json:"mainland_prefixes"`
-	Addrs       []string `json:"addrs"`
-	Scope       int      `json:"ecs_scope"`
-	ECSEchoed   bool     `json:"ecs_echoed"`
-	Prefix      string   `json:"prefix,omitempty"`
-	Verdict     Verdict  `json:"verdict"`
-	VerdictText string   `json:"verdict_text"`
-	Error       string   `json:"error,omitempty"`
+	Domain       string   `json:"domain"`
+	Label        string   `json:"label"`
+	Provider     string   `json:"provider"`
+	ProviderID   string   `json:"provider_id"`
+	HasMainland  bool     `json:"has_mainland"`
+	MainlandNum  int      `json:"mainland_prefixes"`
+	Addrs        []string `json:"addrs"`
+	Scope        int      `json:"ecs_scope"`
+	ECSEchoed    bool     `json:"ecs_echoed"`
+	Prefix       string   `json:"prefix,omitempty"`
+	Foreign      bool     `json:"foreign"`
+	Mismatch     bool     `json:"mismatch"`
+	Verdict      Verdict  `json:"verdict"`
+	VerdictText  string   `json:"verdict_text"`
+	VerdictShort string   `json:"verdict_short"`
+	Error        string   `json:"error,omitempty"`
 }
 
 type Report struct {
@@ -246,53 +255,47 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 		if err != nil {
 			out.Error = err.Error()
 		}
-		out.VerdictText = out.Verdict.Label()
+		out.VerdictText, out.VerdictShort = out.Verdict.Label(), out.Verdict.Short()
 		return out
 	}
 	for _, addr := range addrs {
 		out.Addrs = append(out.Addrs, addr.String())
 	}
 
-	out.Verdict = VerdictUnknown
+	unowned := 0
 	for _, addr := range addrs {
 		owner, prefix, inRulesetMainland, hit := opt.Set.Owner(addr)
-		if hit && out.ProviderID == "" {
-			out.Provider, out.ProviderID = owner.Name, owner.ID
-			out.HasMainland, out.MainlandNum = owner.ServesMainland(), len(owner.Mainland)
+		if hit {
+			if out.ProviderID == "" {
+				out.Provider, out.ProviderID = owner.Name, owner.ID
+				out.HasMainland, out.MainlandNum = owner.ServesMainland(), len(owner.Mainland)
+			}
+			if out.Prefix == "" {
+				out.Prefix = prefix.String()
+			}
+		} else {
+			unowned++
 		}
 
 		if inRulesetMainland || (opt.Mainland != nil && opt.Mainland.Contains(addr)) {
 			out.Verdict = VerdictMainland
-			if hit {
-				out.Prefix = prefix.String()
-			}
-			out.VerdictText = out.Verdict.Label()
+			out.VerdictText, out.VerdictShort = out.Verdict.Label(), out.Verdict.Short()
 			return out
 		}
-
-		if !hit {
-			if out.Verdict == VerdictUnknown && out.ProviderID != "" && opt.Mainland != nil {
-				out.Verdict = VerdictMismatch
-			}
-			continue
-		}
-		if out.Prefix == "" {
-			out.Prefix = prefix.String()
-		}
-		switch {
-		case owner.ServesMainland() && !answer.Steered():
-			out.Verdict = VerdictStranded
-		case out.Verdict == VerdictStranded:
-		case owner.ServesMainland():
-			out.Verdict = VerdictNoNode
-		case out.Verdict == VerdictNoNode:
-		case owner.HasMainland():
-			out.Verdict = VerdictThin
-		default:
-			out.Verdict = VerdictOffshore
-		}
 	}
-	out.VerdictText = out.Verdict.Label()
+
+	out.Foreign = opt.Mainland != nil
+	out.Mismatch = out.Foreign && out.ProviderID != "" && unowned == len(addrs)
+
+	switch {
+	case !answer.Echoed:
+		out.Verdict = VerdictStranded
+	case answer.Scope == 0:
+		out.Verdict = VerdictNoSteering
+	default:
+		out.Verdict = VerdictNoNode
+	}
+	out.VerdictText, out.VerdictShort = out.Verdict.Label(), out.Verdict.Short()
 	return out
 }
 

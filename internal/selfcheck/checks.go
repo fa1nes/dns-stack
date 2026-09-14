@@ -343,8 +343,9 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 	mainland, mainlandErr := cdnhit.LoadMainland(
 		filepath.Join(opt.StateDir, "chnroute", "direct4.txt"))
 	if mainlandErr != nil {
-		c.warn("大陆网段可用", "读不到 direct4 (%v)：只能靠规则集里的大陆段判定，"+
-			"而国产 CDN 的节点大多用运营商 IP，规则集按 ASN 拉不到", mainlandErr)
+		c.fail("大陆网段可用", "读不到 direct4 (%v)：判不出答案在不在大陆，"+
+			"整条就近判据本轮无法回答任何问题", mainlandErr)
+		return
 	}
 	hit, err := cdnhit.Run(ctx, cdnhit.Options{
 		Resolver: resolver, Set: cdnSet, Mainland: mainland})
@@ -352,24 +353,32 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 		c.skip("大陆节点命中", "%v", err)
 		return
 	}
-	var stranded, mismatched []string
+	var stranded, mismatched, noNode []string
 	for _, probe := range hit.Probes {
-		switch probe.Verdict {
-		case cdnhit.VerdictStranded:
-			stranded = append(stranded, fmt.Sprintf("%s→%s(%s，%s)",
-				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider,
-				scopeNote(cdnhit.Answer{Scope: probe.Scope, Echoed: probe.ECSEchoed})))
-		case cdnhit.VerdictMismatch:
+		if probe.Mismatch {
 			mismatched = append(mismatched, fmt.Sprintf("%s→%s",
 				probe.Domain, strings.Join(probe.Addrs, "/")))
 		}
+		switch probe.Verdict {
+		case cdnhit.VerdictStranded:
+			stranded = append(stranded, fmt.Sprintf("%s→%s(%s)",
+				probe.Domain, strings.Join(probe.Addrs, "/"), probe.Provider))
+		case cdnhit.VerdictNoNode:
+			noNode = append(noNode, probe.Domain)
+		}
 	}
 	if hit.Comparable == 0 {
-		c.skip("大陆节点命中", "没有一个域名的落点能与规则集比对，本轮判据没有回答任何问题")
+		c.skip("大陆节点命中", "没有一个域名能回答「本该拿到大陆节点吗」，本轮判据弃权")
 	} else {
 		c.assert(hit.Stranded == 0, "大陆节点命中",
-			fmt.Sprintf("%d/%d 个域名拿到了大陆 CDN 节点", hit.Mainland, hit.Comparable),
-			fmt.Sprintf("%s——复核 dns-stack ecs-audit --quick", strings.Join(stranded, ", ")))
+			fmt.Sprintf("%d/%d 个域名拿到了大陆节点", hit.Mainland, hit.Comparable),
+			fmt.Sprintf("%s 的权威没收到中国子网，只能按隧道出口(香港)调度——"+
+				"这些权威多半不在 ECS 白名单里，复核 dns-stack ecs-audit --quick",
+				strings.Join(stranded, ", ")))
+	}
+	if len(noNode) > 0 {
+		c.ok("按位置调度已生效", "%s 的权威按子网挑过了仍给境外，说明这些服务在大陆没有节点",
+			strings.Join(noNode, ", "))
 	}
 	if len(mismatched) > 0 {
 		c.warn("答案属于已知 CDN 段",

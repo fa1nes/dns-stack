@@ -928,6 +928,23 @@ code { overflow-wrap: anywhere; }
   .exit-ip { display: none; }
 }
 
+.callout {
+  margin: 12px 0 4px; padding: 10px 12px; border-radius: var(--r-sm);
+  font-size: var(--fs-sm); line-height: 1.65; text-align: left;
+  color: var(--text); background: color-mix(in srgb, var(--err) 8%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--err) 70%, transparent);
+}
+.callout .mono { overflow-wrap: anywhere; }
+
+#cdnHitResult table { table-layout: fixed; }
+#cdnHitResult td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+#cdnHitResult td .badge { white-space: normal; }
+#cdnHitResult .hint { margin-top: 2px; }
+
+@media (max-width: 860px) {
+  #cdnHitResult th:nth-child(2), #cdnHitResult td:nth-child(2) { display: none; }
+}
+
 @media (min-width: 641px) {
   table.card-rows:has(#liveBody) { table-layout: fixed; }
 
