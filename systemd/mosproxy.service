@@ -7,7 +7,7 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -o pipefail -c '/opt/dns-stack/bin/mosproxy router -c /etc/dns-stack/mosproxy/config.yaml 2>&1 | /opt/dns-stack/bin/dns-stack-go collect consume-stdin'
+ExecStart=/opt/dns-stack/bin/dns-stack-go collect run-mosproxy
 Environment=MOSPROXY_JSONLOGGER=true
 Restart=always
 RestartSec=3

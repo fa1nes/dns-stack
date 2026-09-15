@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -206,12 +207,14 @@ func usage() {
 
 func cmdCollect(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("用法: dns-stack collect <consume-stdin|stats|pull-batch> [参数]")
+		return fmt.Errorf("用法: dns-stack collect <consume-stdin|run-mosproxy|stats|pull-batch> [参数]")
 	}
 	fs := flag.NewFlagSet("collect", flag.ContinueOnError)
 	dbPath := fs.String("db", os.Getenv("DNS_STACK_DB"), "collector SQLite 路径")
 	stateDir := fs.String("state", os.Getenv("DNS_STACK_STATE"), "状态目录")
 	limit := fs.Int("limit", 2000, "pull-batch 单次上限")
+	mosproxy := fs.String("mosproxy", "/opt/dns-stack/bin/mosproxy", "mosproxy 二进制路径")
+	mosproxyConfig := fs.String("mosproxy-config", "/etc/dns-stack/mosproxy/config.yaml", "mosproxy 配置路径")
 	sub := args[0]
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -220,6 +223,8 @@ func cmdCollect(args []string) error {
 	case "consume-stdin":
 
 		return collect.NewConsumer(*dbPath, *stateDir, os.Stdout).Run(os.Stdin)
+	case "run-mosproxy":
+		return runMosproxyCollector(*mosproxy, *mosproxyConfig, *dbPath, *stateDir)
 	case "stats":
 		db, err := collect.OpenDB(*dbPath)
 		if err != nil {
@@ -250,6 +255,31 @@ func cmdCollect(args []string) error {
 		})
 	}
 	return fmt.Errorf("未知子命令: collect %s", sub)
+}
+
+func runMosproxyCollector(binary, config, dbPath, stateDir string) error {
+	cmd := exec.Command(binary, "router", "-c", config)
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("连接 mosproxy 日志输出失败: %w", err)
+	}
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 mosproxy 失败: %w", err)
+	}
+	consumerErr := collect.NewConsumer(dbPath, stateDir, os.Stdout).Run(pipe)
+	producerErr := cmd.Wait()
+	return pipelineError(producerErr, consumerErr)
+}
+
+func pipelineError(producerErr, consumerErr error) error {
+	if consumerErr != nil {
+		return fmt.Errorf("collector 失败: %w", consumerErr)
+	}
+	if producerErr != nil {
+		return fmt.Errorf("mosproxy 失败: %w", producerErr)
+	}
+	return nil
 }
 
 func writeCompactJSON(value any) error {

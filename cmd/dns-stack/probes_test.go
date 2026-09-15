@@ -42,3 +42,21 @@ func TestFirstNonEmpty(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestPipelineErrorPreservesPipefailSemantics(t *testing.T) {
+	producerErr := errors.New("mosproxy exited 23")
+	consumerErr := errors.New("collector exited 17")
+
+	if err := pipelineError(nil, nil); err != nil {
+		t.Fatalf("两个进程都成功时不应报错: %v", err)
+	}
+	if err := pipelineError(producerErr, nil); !errors.Is(err, producerErr) {
+		t.Fatalf("mosproxy 失败必须传回，得到: %v", err)
+	}
+	if err := pipelineError(nil, consumerErr); !errors.Is(err, consumerErr) {
+		t.Fatalf("collector 失败必须传回，得到: %v", err)
+	}
+	if err := pipelineError(producerErr, consumerErr); !errors.Is(err, consumerErr) {
+		t.Fatalf("两端都失败时必须保留 collector 错误，得到: %v", err)
+	}
+}

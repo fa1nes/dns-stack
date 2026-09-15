@@ -148,7 +148,7 @@ jobs:
           echo "Run the geoip workflow first to publish the geoip-latest release, otherwise this gate is vacuous"
 
   release:
-    needs: verify
+    needs: [verify, scale-gate]
     runs-on: ubuntu-latest
     strategy:
       matrix:
