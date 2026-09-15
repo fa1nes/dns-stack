@@ -41,6 +41,24 @@ window.__layoutScan = function () {
     if (over > 1) issues.push('提示块溢出 ' + (el.className || '').split(' ')[0] + ' ' + over + 'px');
   });
 
+  document.querySelectorAll('.page.active .card, .page.active .filters, .page.active .tabs').forEach((el) => {
+    if (!visible(el)) return;
+    const box = el.getBoundingClientRect();
+    if (box.right > de.clientWidth + 1 || box.left < -1) {
+      issues.push('容器越界 ' + (el.className || el.tagName) + ' [' +
+        Math.round(box.left) + ',' + Math.round(box.right) + ']');
+    }
+  });
+
+  document.querySelectorAll('.page.active input, .page.active button, .page.active .xsel-btn').forEach((el) => {
+    if (!visible(el)) return;
+    const box = el.getBoundingClientRect();
+    if (box.width < 32 || box.height < 28) {
+      issues.push('控件过小 ' + (el.id || el.textContent.trim().slice(0, 12) || el.tagName) +
+        ' ' + Math.round(box.width) + 'x' + Math.round(box.height));
+    }
+  });
+
   return issues;
 };
 

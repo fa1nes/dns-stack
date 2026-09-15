@@ -32,6 +32,9 @@ var GroupOrder = []string{GroupResolve, GroupRouting, GroupRules, GroupOps}
 
 type Module struct {
 	Unit     string
+	OpenRC   string
+	Cron     string
+	LogFile  string
 	Name     string
 	Group    string
 	Purpose  string
@@ -72,6 +75,7 @@ var modules = []Module{
 	},
 	{
 		Unit: "unbound", Name: "递归解析器", Group: GroupResolve,
+		OpenRC:  "unbound",
 		Purpose: "自己从根服务器一级级问下来，不依赖任何公共 DNS",
 		Kind:    KindDaemon, Impl: ImplExternal, Roles: both, Critical: true,
 	},
@@ -82,6 +86,7 @@ var modules = []Module{
 	},
 	{
 		Unit: "wg-quick@wg0", Name: "香港隧道", Group: GroupResolve,
+		OpenRC:  "wg-quick.wg0",
 		Purpose: "通往香港节点的 WireGuard 隧道，境外权威的查询从这里出去",
 		Kind:    KindDaemon, Impl: ImplExternal, Roles: both, Critical: true,
 	},
@@ -112,23 +117,27 @@ var modules = []Module{
 
 	{
 		Unit: "dns-stack-reference-data", Name: "参考数据", Group: GroupRules,
+		Cron: "classify update-reference-data", LogFile: "reference-data.log",
 		Purpose: "更新公共后缀列表与中国 IP 参考表，域名切分靠它",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder},
 		Artifact: "reference/public_suffix_list.dat", Every: 24 * time.Hour,
 	},
 	{
 		Unit: "dns-stack-classify", Name: "域名分类", Group: GroupRules,
+		Cron: "classify pipeline", LogFile: "pipeline.log",
 		Purpose: "同一域名在国内和香港各解析一次，比对两份答案判定国内/被墙",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder},
 		Artifact: "publish/cn.txt", Every: 5 * time.Minute,
 	},
 	{
 		Unit: "dns-stack-verify", Name: "规则复检", Group: GroupRules,
+		Cron: "classify verify-rules", LogFile: "verify.log",
 		Purpose: "对已生效的规则持续重判，域名换了服务商就及时纠正",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder}, Every: 30 * time.Minute,
 	},
 	{
 		Unit: "dns-stack-publish", Name: "规则发布", Group: GroupRules,
+		Cron: "classify publish", LogFile: "publish.log",
 		Purpose: "把复检通过的规则包推到 GitHub，供各台递归节点拉取",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder}, Every: 6 * time.Hour,
 	},
@@ -136,17 +145,17 @@ var modules = []Module{
 	{
 		Unit: "dns-stack-panel", Name: "管理面板", Group: GroupOps,
 		Purpose: "就是你现在看的这个界面",
-		Kind:    KindDaemon, Impl: ImplGo, Roles: both,
+		Kind:    KindDaemon, Impl: ImplGo, Roles: []string{RoleCNResolver},
 	},
 	{
 		Unit: "dns-stack-helper", Name: "特权助手", Group: GroupOps,
 		Purpose: "面板要动系统时经它代办，只放行白名单内的操作",
-		Kind:    KindDaemon, Impl: ImplGo, Roles: both, Critical: true,
+		Kind:    KindDaemon, Impl: ImplGo, Roles: []string{RoleCNResolver}, Critical: true,
 	},
 	{
 		Unit: "dns-stack-maintenance", Name: "例行维护", Group: GroupOps,
 		Purpose: "检查并续签 TLS 证书，每天备份数据库、配置与规则",
-		Kind:    KindJob, Impl: ImplGo, Roles: both, Every: 6 * time.Hour,
+		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver}, Every: 6 * time.Hour,
 	},
 }
 

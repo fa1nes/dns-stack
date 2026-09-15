@@ -225,7 +225,7 @@ body.sb-fold .fold-btn { color: var(--accent); }
 
 .sidebar-foot { padding: 12px; border-top: 1px solid var(--border-soft); }
 
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-x: clip; }
 
 .topbar {
 
@@ -245,11 +245,12 @@ body.sb-fold .fold-btn { color: var(--accent); }
 }
 .topbar .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 
-.content { padding: 24px; flex: 1; max-width: 1480px; }
+.content { width: 100%; padding: 24px; flex: 1; max-width: 1480px; margin-inline: auto; }
 .page { display: none; }
-.page.active { display: block; }
+.page.active { display: block; min-width: 0; }
 
 .grid { display: grid; gap: 16px; margin-bottom: 20px; align-items: stretch; }
+.grid > *, .sec-grid > *, .sec-form-grid > * { min-width: 0; }
 
 .grid.c2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
 .grid.c3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
@@ -259,6 +260,7 @@ body.sb-fold .fold-btn { color: var(--accent); }
 .card {
   background: var(--bg-elev); border: 1px solid var(--border);
   border-radius: var(--r); padding: 18px 20px;
+  min-width: 0;
 
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .04);
 
@@ -334,7 +336,7 @@ body.sb-fold .fold-btn { color: var(--accent); }
 .num.err { color: var(--err); } .num.accent { color: var(--accent); }
 .num.purple { color: var(--purple); }
 
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
 th {
   text-align: left; padding: 10px 14px; font-weight: 600; font-size: var(--fs-sm);
@@ -406,6 +408,7 @@ button.ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--te
 
 button, .btn {
   font-family: inherit; font-size: var(--fs-control); padding: 6px 13px;
+  min-height: 28px;
   border-radius: var(--r-sm); border: 1px solid var(--border);
   background: var(--bg-elev); color: var(--text);
   cursor: pointer;
@@ -651,7 +654,8 @@ pre.block {
 .pager .btns { display: flex; gap: 6px; align-items: center; }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
-        overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.tabs button { flex: 0 0 auto; }
 .tabs button {
   border: none; background: none; border-bottom: 2px solid transparent;
   border-radius: 0; padding: 8px 13px; color: var(--text-muted); font-size: var(--fs-base);
@@ -888,7 +892,9 @@ code { overflow-wrap: anywhere; }
   .nav button .ico { display: none; }
   .sidebar-foot { display: none; }
   .mobile-only { display: inline-flex; }
-  .topbar { padding: 10px 14px; }
+  .topbar { padding: 10px 14px; min-width: 0; }
+  .title-wrap { flex: 1 1 auto; min-width: 0; }
+  .topbar h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .topbar h2 { font-size: var(--fs-md); }
   .page-desc { display: none; }
   .content { padding: 14px; max-width: none; }
@@ -931,6 +937,25 @@ code { overflow-wrap: anywhere; }
   .filters { padding: 9px 10px; }
   .bar-row .name { width: 42%; }
   .exit-ip { display: none; }
+}
+
+@media (min-width: 1481px) {
+  .content { max-width: min(1720px, calc(100vw - 212px)); }
+  body.sb-fold .content { max-width: min(1720px, calc(100vw - 58px)); }
+  .grid.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .content { padding: 10px; }
+  .card { padding: 12px 13px; }
+  .grid { gap: 10px; margin-bottom: 12px; }
+  .grid.c2, .grid.c3, .grid.c4, .sec-grid, .sec-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .filters { padding: 8px; }
+  .filters .grow, .filters input, .filters .xsel { flex-basis: 100%; width: 100%; }
+  .pager { align-items: stretch; }
+  .pager .btns { width: 100%; justify-content: space-between; }
 }
 
 .callout {
