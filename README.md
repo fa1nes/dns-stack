@@ -45,23 +45,21 @@
 隧道断了宁可解析失败，也不回落直连——回落拿到的是污染答案，
 **看着成功、实则更危险**。
 
-### 客户端规则是怎么生成的
+### 两台机器各做什么
 
-分流本身不需要域名规则；域名规则只用于**客户端侧**的代理分流。
-规则由境外构建节点生成，经 GitHub 发布，国内节点拉取：
+| | 角色 | 职责 |
+|---|---|---|
+| 国内 | `cn-resolver` | DoH/DoT/DoQ 入口、递归、出口分流、采集、面板。整套系统的全部功能都在这里 |
+| 境外 | `offshore` | 一台 Unbound + WireGuard 出口。国内节点走隧道过来的递归从这里出网，同时作为降级上游 |
 
-```
-采集候选域名 ─▶ 双视角解析（境内视角 / 境外视角）
-                      │
-              权威位置判定 + 国内落点复核
-                      │
-        七道准入判据（共享 provider 根域拦截、境外落点剔除、
-        人工规则优先、空类保护、发布新鲜度门禁…）
-                      │
-              四份规则文件 ─▶ GitHub ─▶ 国内节点 sync-rules
-```
+境外节点上**没有任何需要维护的业务逻辑**——它不生成数据、不写数据库、不向外发布任何东西。
 
-**判定结果绝不回流成判定输入**——那是自我强化的死循环。
+> 2026-09-19 之前它还兼做「规则构建节点」：双视角解析域名、判定国内/被墙、
+> 生成四份客户端代理规则发到 GitHub。那套东西被整个删掉了（-8379 行）——
+> 产出的规则只用于**客户端侧的代理分流**，与本系统的 DNS 解析毫无关系，
+> 而维护成本（一个 100MB 的分类库、一条 SSH 拉取通道、一个 deploy key、
+> 五个定时任务）全是实打实的。
+> 「直连域名」与「污染 IP」这两份数据本来就由国内节点自己产出，不受影响。
 
 ### ECS 就近调度与 CDN 大陆节点
 
@@ -187,18 +185,17 @@ dns-stack version
 |---|---|
 | `.github/workflows/build.yml` | `gofmt` + `go vet` + `go test`，再交叉编译 linux/amd64、linux/arm64、windows/amd64，打 tag 时附到 Release |
 | `.github/workflows/geoip.yml` | 每日把四个上游归属库镜像到本仓库的 `geoip-latest` 滚动 Release，带体积门槛与**已知地址抽查**（只看文件大小不够，格式变了文件照样够大）。生产端由 `dns-stack routing-data --only geoip` 拉取，多出来的 DB-IP 是权威落点交叉验证的第三个源 |
-| `.github/workflows/cdn-rules.yml` | 每日重建 `cdn-direct.txt`：从各家官方前缀源与 RIPEstat 的 ASN 通告拉取，按 APNIC 大陆基线切成大陆段/境外段。带**校验器自检**（拿一条明知错误的锚点去验，验不红就说明校验器自己失效了）与骤降拒绝。生产端由 `dns-stack sync-rules` 拉取 |
+| `.github/workflows/cdn-rules.yml` | 每日重建 `cdn-direct.txt`：从各家官方前缀源与 RIPEstat 的 ASN 通告拉取，按 APNIC 大陆基线切成大陆段/境外段。带**校验器自检**（拿一条明知错误的锚点去验，验不红就说明校验器自己失效了）与骤降拒绝。生产端由 `routing-data` 的 `cdn-rules` 步骤每日拉取 |
 
 规则集全部由**本仓库的 Action 机器人生成并发布**，不引用任何第三方规则源——
 第三方规则集的口径、更新节奏和存续都不受控，而这条判据直接决定 ECS 发给谁。
 
-二进制同样只由 Actions 构建：**国内节点不编译、也不向 GitHub 推任何东西**，
-只从 Release 下载并校验 sha256。这条不是约定而是闸门——
-构建与发布类命令（`publish` / `build-rules` / `rebuild-rules` / `classify-*` /
-`pull` / `update-cn-ip`）在 CLI 和受限助手**两侧**都按 `ROLE` 拒绝，
-角色读不出来时按拒绝处理。`internal/opsctl/role_test.go` 与
-`internal/panel/parity_test.go` 负责保证两侧不会走散：
-helper 上有闸门而 CLI 漏了，测试直接红。
+二进制同样只由 Actions 构建：**生产机不编译**，只从 Release 下载并校验 sha256。
+生产机规格与依赖都不受控，且「在生产机跑没做过规模测试的代码」正是
+2026-09-07 OOM 掀翻整机的起点。`install.sh` 里没有也不该有 `go build`。
+
+系统不再向任何 GitHub 仓库写入。受限助手仍按 `ROLE` 拒绝不属于本节点的操作
+（黑名单、ACL 只在国内节点），`internal/panel/parity_test.go` 保证面板与助手两侧的闸门不会走散。
 
 ---
 
@@ -219,7 +216,6 @@ helper 上有闸门而 CLI 漏了，测试直接红。
 |---|---|
 | [`docs/使用指南.md`](docs/使用指南.md) | 日常运维操作 |
 | [`docs/故障模式.md`](docs/故障模式.md) | **反复出现的故障模式**——每一条都是实际踩出来的，多数不止一次 |
-| [`memory.md`](memory.md) | 架构、判定规则、验证入口、部署铁律 |
 | [`fa1nes/mosproxy` 的 FORK-NOTES](https://github.com/fa1nes/mosproxy/blob/dev/FORK-NOTES.zh-CN.md) | mosproxy fork 改了什么、为什么 |
 
 新接手先读 `docs/故障模式.md`：这个项目最贵的经验都在那里。

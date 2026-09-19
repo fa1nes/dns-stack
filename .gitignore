@@ -35,3 +35,6 @@ bin/*.sha256
 bin/*.build-id
 
 *.egg-info/
+
+# 私人运维手册，不进公开仓库
+memory.md

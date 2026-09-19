@@ -126,28 +126,10 @@ step1_check_env() {
     log_ok "环境检查完成"
 }
 
-ROLE="global-builder"
+ROLE="cn-resolver"
 step2_role() {
     log_info "[2/17] 确定服务器角色..."
-    if [[ -f "$CONFIG_FILE" ]]; then
-        EXISTING_ROLE="$(grep -E '^ROLE=' "$CONFIG_FILE" | head -1 | cut -d= -f2- || true)"
-        if [[ -n "$EXISTING_ROLE" ]]; then
-            ROLE="$EXISTING_ROLE"
-            log_info "  沿用已有配置里的角色: ${ROLE}"
-        fi
-    elif [[ -t 0 ]]; then
-        echo "请选择当前服务器角色："
-        echo "  1. cn-resolver    (国内 DNS 服务器: mosproxy + Unbound + collector)"
-        echo "  2. global-builder (规则构建服务器: 分类器 + 规则发布)"
-        read -r -p "请输入选项 [1/2]: " choice
-        [[ "$choice" == "1" ]] && ROLE="cn-resolver"
-    fi
-
-    case "$ROLE" in
-        cn-resolver|global-builder) ;;
-        *) die "未知角色: ${ROLE}(只支持 cn-resolver / global-builder)" ;;
-    esac
-    log_ok "角色: ${ROLE}"
+    log_ok "角色: ${ROLE}（境外递归节点请改用 install-hk.sh）"
 }
 
 cfg_or_default() {
@@ -377,9 +359,6 @@ install_go_runtime() {
         repo="${DNS_STACK_BINARY_REPO:-$(cfg_or_default DNS_STACK_BINARY_REPO "")}"
         base="${DNS_STACK_BINARY_BASE:-${repo:+https://github.com/${repo}/releases/download/binaries-latest}}"
         [[ -n "$base" ]] || die "bin/ 里没有预编产物，且未配置 DNS_STACK_BINARY_REPO，无从下载 Go 二进制
-
-  注意 GITHUB_REPOSITORY 指的是**规则仓库**(cn.txt/gfw.txt/cdn-direct.txt 发布到那里)，
-  代码与二进制在另一个仓库，必须单独配 DNS_STACK_BINARY_REPO，否则会去规则仓库找二进制而 404。
 
   这台机器上不编译是有意的：生产机的规格与依赖都不受控，2026-09-07 的 OOM 事故
   就是从"在生产机上跑没做过规模测试的代码"开始的。构建一律在 CI 完成。
@@ -612,11 +591,7 @@ step8_deploy_mosproxy() {
 }
 
 step9_placeholder_db() {
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        log_info "[9/17] collector.db 将在采集器首次运行时自动建表(见 internal/collect/db.go)"
-    else
-        log_info "[9/17] classifier.db 将在分类器首次运行时自动建表(见 internal/classify/store.go)"
-    fi
+    log_info "[9/17] collector.db 将在采集器首次运行时自动建表(见 internal/collect/db.go)"
 }
 
 step10_deploy_collector() {
@@ -627,14 +602,6 @@ step10_deploy_collector() {
     sleep 2
     systemctl is-active --quiet mosproxy.service || die "mosproxy 未处于运行状态"
     log_ok "collector / 动态分流器已安装，mosproxy 已启动"
-}
-
-step10_deploy_classifier() {
-    log_info "[10/17] 部署规则构建分类器..."
-    install_go_runtime
-    "$OPT_DIR/bin/dns-stack-go" classify status >/dev/null 2>&1 \
-        || log_info "  分类库尚未初始化，首次运行 classify pipeline 时会自动建表"
-    log_ok "分类器随一体化 Go 二进制安装完成"
 }
 
 step11_deploy_helper() {
@@ -739,10 +706,6 @@ step13_deploy_cli() {
     log_ok "配套资源已就位: ${OPT_DIR}/dns-stack"
 }
 
-step14_confirm_publish() {
-    log_info "[14/17] 规则发布程序: ${OPT_DIR}/bin/dns-stack-go classify publish (随一体化二进制安装，已就绪)"
-}
-
 step15_cert() {
     if [[ "$ROLE" != "cn-resolver" ]]; then
         log_info "[15/17] 规则构建节点不对外提供 DoH/DoT，跳过 TLS 证书管理"
@@ -778,8 +741,8 @@ step_backup_timer() {
 
 step_cn_timers() {
     log_info "启用国内角色的定时任务..."
-    install_timers dns-stack-sync-rules dns-stack-collect-polluted dns-stack-routing-data
-    log_ok "定时任务已启用(规则同步 5 分钟 / 污染采集 6 小时 / 分流数据流水线 15 分钟)"
+    install_timers dns-stack-collect-polluted dns-stack-routing-data
+    log_ok "定时任务已启用(污染采集 6 小时 / 分流数据流水线 15 分钟)"
     log_info "  流水线内部各步骤自带周期：归属库与大陆网段每日、共享 anycast 每小时、"
     log_info "  国内权威与 ECS 白名单每 15 分钟，按依赖顺序串行执行"
     if [[ ! -f "$STATE_DIR/chnroute/geo-disputed.txt" || ! -f "$STATE_DIR/geoip/GeoLite2-ASN.mmdb" ]]; then
@@ -873,51 +836,16 @@ step_recursive_routing() {
     fi
 }
 
-step_global_timers() {
-    log_info "启用规则构建角色的规则流水线定时任务..."
-    install_timers dns-stack-reference-data dns-stack-classify dns-stack-verify
-    log_ok "参考数据(每日) / 候选增量分类(5 分钟) / 权威位置分类(6 小时) / 正式规则复检(30 分钟) 已启用"
-
-    cp -a "$SCRIPT_DIR/systemd/dns-stack-publish.service" /etc/systemd/system/ 2>/dev/null || true
-    cp -a "$SCRIPT_DIR/systemd/dns-stack-publish.timer" /etc/systemd/system/ 2>/dev/null || true
-    systemctl daemon-reload
-    if systemctl is-enabled --quiet dns-stack-publish.timer 2>/dev/null; then
-        log_ok "规则自动发布已启用(每 6 小时)"
-    else
-        log_warn "规则自动发布**未启用**(它会向公开 GitHub 仓库 push)"
-        log_warn "  确认 deploy key 已配好后执行: systemctl enable --now dns-stack-publish.timer"
-        log_warn "  不启用的话，分类结果不会传到国内服务器"
-    fi
-}
-
 step16_write_config() {
     log_info "[16/17] 核对基础配置..."
     ensure_config_env
-
-    if [[ "$ROLE" != "global-builder" ]]; then
-        return 0
-    fi
-
-    if [[ ! -f "$SECRETS_DIR/github_deploy_key" ]]; then
-        log_warn "  未检测到 GitHub Deploy Key，正在生成..."
-        ssh-keygen -t ed25519 -N '' -C 'dns-stack-github-deploy' -f "$SECRETS_DIR/github_deploy_key" >/dev/null
-        chmod 0600 "$SECRETS_DIR/github_deploy_key" "$SECRETS_DIR/github_deploy_key.pub"
-        log_warn "  请把下面的公钥添加到 GitHub 仓库 Deploy Keys(勾选 Allow write access):"
-        cat "$SECRETS_DIR/github_deploy_key.pub"
-    else
-        log_info "  GitHub Deploy Key 已存在，跳过生成"
-    fi
 }
 
 step17_firewall_note() {
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        log_info "[17/17] 本机无本地过滤防火墙，边界放行由云安全组/边界防火墙负责，需要放行:"
-        log_info "        TCP+UDP $(cfg_or_default DOH_PORT 443)  (DoH / DoH3)"
-        log_info "        TCP+UDP $(cfg_or_default DOT_PORT 853)  (DoT / DoQ)"
-        log_warn "  安装脚本**不会**修改任何防火墙规则，请自行确认云安全组/边界防火墙已放行上述端口"
-    else
-        log_info "[17/17] 规则构建节点不需要开放额外公网端口(不修改现有防火墙规则)"
-    fi
+    log_info "[17/17] 本机无本地过滤防火墙，边界放行由云安全组/边界防火墙负责，需要放行:"
+    log_info "        TCP+UDP $(cfg_or_default DOH_PORT 443)  (DoH / DoH3)"
+    log_info "        TCP+UDP $(cfg_or_default DOT_PORT 853)  (DoT / DoQ)"
+    log_warn "  安装脚本**不会**修改任何防火墙规则，请自行确认云安全组/边界防火墙已放行上述端口"
 }
 
 main() {
@@ -928,40 +856,25 @@ main() {
     step6_install_deps
 
     ensure_config_env
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        ensure_tls_cert
-    fi
+    ensure_tls_cert
 
     step7_deploy_unbound
     step9_placeholder_db
-
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        step8_deploy_mosproxy
-        step10_deploy_collector
-    else
-        step10_deploy_classifier
-    fi
+    step8_deploy_mosproxy
+    step10_deploy_collector
 
     step11_deploy_helper
     step12_deploy_panel
     step13_deploy_cli
-
-    if [[ "$ROLE" == "global-builder" ]]; then
-        step14_confirm_publish
-    fi
 
     step15_cert
     step16_write_config
 
     step_backup_timer
     step_logrotate
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        step_cn_timers
-        step_sysctl
-        step_recursive_routing
-    else
-        step_global_timers
-    fi
+    step_cn_timers
+    step_sysctl
+    step_recursive_routing
 
     step17_firewall_note
 
