@@ -126,6 +126,15 @@ CLI 侧 `cn-authority --cdn-rules` 默认 `<state>/cdn-direct.txt`。
 
 `scope > 0` 才表示权威按位置调度；没有 ECS 回显或 `scope=0` 必须单独显示。
 
+**「无回显」此前是不可判的，2026-09-19 起可判**（`cdn-hit --fresh` / 面板「清缓存重查」）。
+不可判的根因不是协议而是缓存：`scope=0` 的答案被 unbound 缓存成全局条目，
+之后任何子网都命中它且不回显。`--fresh` 在探测前把域名**连同 CNAME 链**逐个
+`flush_zone` 再查——⚠️ 只清查询名不够，`www.x.com → CNAME → y.cdn.net` 的
+链末端 A 记录仍在缓存里，判据照样是假的；`cdnhit.flushTargets` 先做一次
+priming 查询取回 `Answer.Chain` 再逐个清。清干净后仍无回显只剩一个解释：
+**子网没送到那台权威**（`VerdictNotDelivered`），下一步查 ECS 白名单。
+代价是这批热门域名下一次解析要走完整递归，所以面板侧 10 分钟只允许一次。
+
 `ip_zone` 只改变缓存 key、不改变发给权威的真实客户端 `/24`——**这句话只在 mosproxy 补丁 0016 之后成立**。上游 `serverEntryHandler` 把「分片表没给这个地址打标」当成「这是本地客户端」，直接把 `ECS2Upstream` 清成零值，即整条查询不发 ECS。分片表由归属库生成、天然覆盖不全，2026-09-06 实测 `direct4` 里 **69.85% 的大陆 IPv4 地址空间没有标记**。补丁把判据改成只对非全局地址抑制。判据用 `dns-stack ecs-forward`：分片表内外各取两个 `/24`，表内有差异而表外没有就是这个缺陷的指纹。
 
 ### 3.4 数据源
@@ -316,6 +325,13 @@ await window.__layoutSweep()   // 在每个视口各跑一次
 
 **必须覆盖的视口**：320 / 393 / 641 / 768 / 861 / 1024 / 1920。
 641 与 861 是断点边界，最容易出问题；320 是最窄真实设备。
+2026-09-19 起 **7 个视口全部零 issue**，任何新增的非零都是本次改动引入的。
+
+⚠️ 2026-09-19 清掉的 5 条存量「控件过小」里，4 条的根因是
+`@media (max-width: 860px)` 里的 `.card h3 .xsel-btn, .card h3 button { min-height: 0 }`——
+它**故意**把卡片标题里的控件压扁到 22~27px，正好卡在扫描阈值（32×28）下面。
+一条 CSS 和一条判据长期互相打架而谁都没赢：改成 `28px` 后视觉几乎无变化。
+这类「规则与判据对着干」的地方，先问哪一个是对的，别直接调阈值。
 2026-09-14 只测了 1024 和 768 就提交，结果手机上 CDN 就近表格的域名列
 只剩 5px 宽，内容整个溢出——而同一份判据早已在诊断弹窗里，只是没在别的视口跑过。
 
@@ -330,8 +346,54 @@ await window.__layoutSweep()   // 在每个视口各跑一次
 7. 前端 `web/` 靠 ETag/no-cache，不能恢复旧的服务端 `?v=` 指纹机制。
 8. **Go 二进制只由 CI 构建**。生产机规格与依赖都不受控，且"在生产机跑没做过规模测试的代码"
    正是 2026-09-07 OOM 掀翻整机的起点。`install.sh` 里没有也不该有 `go build`。
+9. **国内节点不向 GitHub 推任何东西**。构建/发布类命令在 CLI（`opsctl.requireRole`）
+   与 helper（`RoleOps`）**两侧**都按 `ROLE` 拒绝，角色读不出来按拒绝处理。
+   只在一侧加闸门是 2026-09-14 到 09-19 之间实际存在过的漏洞：
+   面板拦住了，SSH 上去跑 `dns-stack publish` 照样能推。
 
 ## 7. 当前已知状态与下一步
+
+### 7.11 2026-09-19：把「判不出」变成可判 + 递归管控进面板 + CLI 侧角色闸门补齐
+
+再看一遍 antsxdp 的侧边栏，对照下来本项目唯一真缺的是「域名黑名单 / ACL 有 CLI、无面板」。
+其余（递归日志、统计分析、缓存清理、节点监控）早已有；「转发源」与完整递归根本冲突，见 §7.10。
+
+**1. `cdn-hit --fresh`：ECS 判据的死角被消掉了。** 详见 §3.3。
+这是一条「判据问对了问题，但被环境骗过」的案例——逻辑一直是对的，
+错的是它读到的那个答案来自缓存。**CNAME 链必须一起清**，否则等于没清。
+
+**2. 递归管控进面板**（`/api/access`，`internal/panel/access.go`）。
+⚠️ 三个设计约束，改动时别退回去：
+
+- 列表**由面板直接读文件**，不走 helper。helper 的 `Sanitize` 会把 IPv4 打码成
+  `1.2.x.x`，ACL 网段经 helper stdout 返回就全废了。写入仍然走 helper。
+- ACL 的**防自锁闸门只能在面板做**——只有面板知道是谁在改。改完之后请求方
+  自己不在授权网段里就拒绝、不写文件；回环（SSH 隧道）豁免；空白名单拒绝下发。
+- 这几个操作**故意不进 `operationSpecs`**。进了就等于同时挂在 `/api/action/` 上，
+  通用路径会把防自锁闸门整个绕过。`dedicatedOpRoles` 是它们的注册表，
+  `TestDedicatedOperationsStayOutOfTheGenericActionPath` 盯着这一点。
+
+**3. 审出一个真漏洞：`dns-stack publish` 在 CLI 侧从来没有角色闸门。**
+2026-09-14 修的是 helper 侧（面板绕不过去），但 SSH 上 CN 机直接跑
+`dns-stack publish` 照样能推 GitHub。同类的还有 `pull` / `classify` /
+`update-cn-ip`——helper 都按 `RoleGlobalBuilder` 拦，`opsctl` 四个方法全漏。
+已补齐，并加 `internal/opsctl/role_test.go`：
+从 `helper.RoleOps` 反查，helper 有闸门而 CLI 没覆盖就红。
+**已验证这道护栏本身是有效的**（拿掉 `Publish` 的闸门跑一遍，测试确实变红）。
+
+**4. 死代码清理**（全库零引用，含测试）：`helper.DefaultStackRoot`、
+`domain.DefectLabels`、`ruleset.LoadManual/LoadShared/OpenOptional`、
+`pipeline.LoadNFTSetStrings`、`geoip.MergeRecords`、`collect.WriteAudit`、
+`cdnhit.Answer.Steered`、`cdnhit.BeijingUnicom4/BeijingMobile4`，
+以及两处 `var _ = xxx` 占位。删完编译器自己报出三个随之失效的 import，
+反过来确认了它们确实只有死代码在用。
+
+⚠️ 还有 4 个「只有测试在用」的导出符号**故意保留**：
+`classify.ClearTrafficRuleClass`、`cdn.GeoSteeringRoots`、`cdn.OperatorFor`、
+`dnswire.TypeByName`。它们的测试在记录行为契约，删了连测试一起没。
+
+`nftables` 的表名/链名移到 `internal/stack`（`DefaultNFTTable` / `ACLChain`），
+`pipeline` 与 `helper` 两侧引用同一处，避免各写一份字符串慢慢走散。
 
 ### 7.10 2026-09-14：规则集接进判据 + 护栏对齐 + 触摸端字号
 
