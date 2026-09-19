@@ -408,6 +408,13 @@ HK 的 cron 用的恰恰是原始路径（`classify pipeline`），这说明原�
 `nftables` 的表名/链名移到 `internal/stack`（`DefaultNFTTable` / `ACLChain`），
 `pipeline` 与 `helper` 两侧引用同一处，避免各写一份字符串慢慢走散。
 
+**5. HK 的 publish cron 开了**（主人当次授权）。此前构建每 5 分钟在跑、发布全靠手动，
+于是「规则总是新的、发出去的总是旧的」——09-14 和 09-19 各手动发过一次，
+每次只管 4~5 天，之后 CN 必定冒 2 条「规则包已 N 天未更新」关注。
+⚠️ `install-hk.sh` 里那行**也要一起取消注释**，它会 `sed` 删掉整个 cron 块再重写，
+重跑一次安装脚本就把改动悄悄吞掉——[[deploy-dual-path-src-vs-runtime]] 的又一例。
+顺带发现安装脚本那行**少了 `--defer-not-ready`**（systemd 单元有、实际 cron 有），已补。
+
 ### 7.10 2026-09-14：规则集接进判据 + 护栏对齐 + 触摸端字号
 
 参照 antsxdp 的递归系统做了一轮打磨。**它的「转发来源」（按线路转发到上游）与本项目

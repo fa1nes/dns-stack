@@ -72,7 +72,7 @@ cat >> "$CRON_FILE" <<EOF
 */30 * * * * flock -n $LOCK_FILE $GO_BIN classify verify-rules >>$LOG_DIR/verify.log 2>&1
 23 3 * * * flock -n $LOCK_FILE $GO_BIN classify update-reference-data >>$LOG_DIR/reference-data.log 2>&1
 41 4 * * * $GO_BIN trim-logs --dir $LOG_DIR --keep-bytes $LOG_KEEP_BYTES >/dev/null 2>&1
-# 7 */6 * * * flock -n $LOCK_FILE $GO_BIN classify publish >>$LOG_DIR/publish.log 2>&1
+7 */6 * * * flock -n $LOCK_FILE $GO_BIN classify publish --defer-not-ready >>$LOG_DIR/publish.log 2>&1
 # dns-stack-classifier end
 EOF
 rc-service crond status >/dev/null 2>&1 || rc-service crond start
