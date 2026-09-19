@@ -131,3 +131,11 @@ func (h *Helper) opACLStatus(map[string]any) result {
 	}
 	return result{"ok": true, "returncode": 0, "stdout": string(encoded), "stderr": ""}
 }
+
+func (h *Helper) opPruneBackups(map[string]any) result {
+	return h.run([]string{h.cli, "backup", "--prune"}, 60*time.Second, true)
+}
+
+func (h *Helper) opDropStaleLogs(map[string]any) result {
+	return h.run([]string{h.cli, "trim-logs", "--drop-stale"}, 60*time.Second, true)
+}

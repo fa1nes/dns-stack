@@ -1,4 +1,4 @@
-package logtrim
+package main
 
 import (
 	"fmt"
@@ -8,19 +8,19 @@ import (
 	"strings"
 )
 
-type Result struct {
+type trimResult struct {
 	Trimmed int
 }
 
-func TrimDirectory(dir string, keepBytes int64) (Result, error) {
+func trimDirectory(dir string, keepBytes int64) (trimResult, error) {
 	if keepBytes <= 0 {
-		return Result{}, fmt.Errorf("保留字节数必须大于 0")
+		return trimResult{}, fmt.Errorf("保留字节数必须大于 0")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return Result{}, err
+		return trimResult{}, err
 	}
-	var result Result
+	var result trimResult
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".log") {
 			continue

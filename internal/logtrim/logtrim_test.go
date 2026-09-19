@@ -1,4 +1,4 @@
-package logtrim
+package main
 
 import (
 	"os"
@@ -16,7 +16,7 @@ func TestTrimDirectoryKeepsOnlyTailOfOversizedLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := TrimDirectory(dir, 64)
+	result, err := trimDirectory(dir, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestTrimDirectoryIgnoresSmallAndNonLogFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := TrimDirectory(dir, 64)
+	result, err := trimDirectory(dir, 64)
 	if err != nil {
 		t.Fatal(err)
 	}

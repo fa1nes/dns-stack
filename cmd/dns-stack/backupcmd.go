@@ -29,8 +29,22 @@ func cmdBackup(args []string) error {
 	includeSecrets := fs.Bool("include-secrets", false, "包含机密文件(强制 age 加密)")
 	automatic := fs.Bool("automatic", false, "定时任务调用：周日生成 weekly 前缀")
 	timeout := fs.Duration("timeout", 30*time.Minute, "整体超时")
+	prune := fs.Bool("prune", false, "只按保留策略清理旧备份，不生成新备份")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *prune {
+		res := backupConfig(*stateDir, *configFile).PruneWithConfig()
+		if len(res.Removed) == 0 {
+			fmt.Println("没有超出保留策略的备份，未删除任何文件")
+			return nil
+		}
+		fmt.Printf("已删除 %d 份旧备份，回收 %.1f MB\n",
+			len(res.Removed), float64(res.Bytes)/1024/1024)
+		for _, name := range res.Removed {
+			fmt.Println("  " + name)
+		}
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
