@@ -28,6 +28,11 @@ const (
 	RoleGlobalBuilder = "global-builder"
 )
 
+const (
+	DefaultNFTTable = "dns_route"
+	ACLChain        = "dns_acl"
+)
+
 var GroupOrder = []string{GroupResolve, GroupRouting, GroupRules, GroupOps}
 
 type Module struct {

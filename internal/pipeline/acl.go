@@ -6,10 +6,12 @@ import (
 	"net/netip"
 	"os/exec"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
 const (
-	ACLChain   = "dns_acl"
+	ACLChain   = stack.ACLChain
 	ACLSet4    = "acl_allowed4"
 	ACLSet6    = "acl_allowed6"
 	tunnelCIDR = "10.100.0.0/24"

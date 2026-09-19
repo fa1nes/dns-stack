@@ -54,6 +54,7 @@ var DangerousOps = map[string]bool{
 	"import": true, "cert_renew": true, "publish_github": true, "rotate_doh_path": true,
 	"set_rule_sources": true, "migration_restore": true, "flush_cache": true,
 	"set_arch_epoch": true,
+	"acl_add":        true, "acl_remove": true, "acl_apply": true, "acl_disable": true,
 }
 
 var RoleOps = map[string]string{
@@ -67,6 +68,13 @@ var RoleOps = map[string]string{
 	"update_reference_data": stack.RoleGlobalBuilder,
 	"refresh_routing":       stack.RoleCNResolver,
 	"set_min_ttl":           stack.RoleCNResolver,
+	"blocklist_add":         stack.RoleCNResolver,
+	"blocklist_remove":      stack.RoleCNResolver,
+	"acl_add":               stack.RoleCNResolver,
+	"acl_remove":            stack.RoleCNResolver,
+	"acl_apply":             stack.RoleCNResolver,
+	"acl_disable":           stack.RoleCNResolver,
+	"acl_status":            stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
@@ -89,15 +97,22 @@ func stringArg(args map[string]any, key string) string {
 	}
 }
 
-func (h *Helper) role() string {
+func (h *Helper) configValue(key string) string {
 	data, err := os.ReadFile(h.configPath)
 	if err != nil {
-		return "unknown"
+		return ""
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "ROLE=") {
-			return strings.TrimSpace(strings.SplitN(line, "=", 2)[1])
+		if strings.HasPrefix(line, key+"=") {
+			return strings.Trim(strings.TrimSpace(strings.SplitN(line, "=", 2)[1]), `"'`)
 		}
+	}
+	return ""
+}
+
+func (h *Helper) role() string {
+	if value := h.configValue("ROLE"); value != "" {
+		return value
 	}
 	return "unknown"
 }
@@ -948,5 +963,12 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"service_status":        h.opServiceStatus,
 		"dns_test":              h.opDNSTest,
 		"mosproxy_metrics":      h.opMosproxyMetrics,
+		"blocklist_add":         h.opBlocklistAdd,
+		"blocklist_remove":      h.opBlocklistRemove,
+		"acl_add":               h.opACLAdd,
+		"acl_remove":            h.opACLRemove,
+		"acl_apply":             h.opACLApply,
+		"acl_disable":           h.opACLDisable,
+		"acl_status":            h.opACLStatus,
 	}
 }

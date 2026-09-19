@@ -127,9 +127,33 @@ func TestRoleGateAgreesWithHelper(t *testing.T) {
 				"另一个角色点下去只会拿到一条看不懂的拒绝", want, op)
 		}
 	}
-	for op := range helper.RoleOps {
-		if _, listed := operationSpecs[op]; !listed {
-			t.Errorf("helper 给 %s 设了角色闸门，但面板的 operationSpecs 里没有它", op)
+	for op, want := range helper.RoleOps {
+		if _, listed := operationSpecs[op]; listed {
+			continue
+		}
+		role, dedicated := dedicatedOpRoles[op]
+		if !dedicated {
+			t.Errorf("helper 给 %s 设了角色闸门，但面板既没有 operationSpecs 也没有专属入口——"+
+				"这个操作在面板上根本调不到", op)
+			continue
+		}
+		if role != want {
+			t.Errorf("%s 的角色两处不一致：面板专属入口要求 %s，helper 要求 %s", op, role, want)
+		}
+	}
+}
+
+func TestDedicatedOperationsStayOutOfTheGenericActionPath(t *testing.T) {
+	for op := range dedicatedOpRoles {
+		if _, listed := operationSpecs[op]; listed {
+			t.Errorf("%s 同时挂在 /api/action/ 和专属入口上——专属入口里的额外闸门"+
+				"（防自锁检查、参数校验）会被通用路径整个绕过", op)
+		}
+	}
+	for op := range dedicatedOpRoles {
+		if _, gated := helper.RoleOps[op]; !gated {
+			t.Errorf("面板专属入口按 %s 角色过滤 %s，但 helper 对它没有角色闸门——"+
+				"绕开面板直接调 helper socket，另一个角色照样能执行", dedicatedOpRoles[op], op)
 		}
 	}
 }
