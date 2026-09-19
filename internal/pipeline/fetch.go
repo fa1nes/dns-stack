@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/dns-stack/dns-stack/internal/netfetch"
 )
 
 const stepFetchBudget = 12 * time.Minute
@@ -77,7 +75,7 @@ func download(ctx context.Context, client *http.Client, url, dest, etag string) 
 	if err != nil {
 		return 0, false, "", err
 	}
-	written, copyErr := io.Copy(file, netfetch.Paced(resp.Body))
+	written, copyErr := io.Copy(file, netfetchPaced(resp.Body))
 	closeErr := file.Close()
 	if copyErr != nil || closeErr != nil {
 		os.Remove(temp)
@@ -124,7 +122,7 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 		if ctx.Err() != nil {
 			return FetchResult{}, ctx.Err()
 		}
-		written, notModified, freshTag, err := download(ctx, netfetch.Client(item.local), spec.URL, spec.Dest, etag)
+		written, notModified, freshTag, err := download(ctx, netfetchClient(item.local), spec.URL, spec.Dest, etag)
 		if err != nil {
 			lastErr = err
 			r.Warnf("%s 经%s下载失败：%v", spec.Kind, item.label, err)

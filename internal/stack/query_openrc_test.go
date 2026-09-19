@@ -52,7 +52,7 @@ func TestActiveCronContainsIgnoresCommentedJobs(t *testing.T) {
 }
 
 func TestGlobalBuilderDoesNotClaimCNOnlyPanelServices(t *testing.T) {
-	for _, module := range ForRole(RoleGlobalBuilder) {
+	for _, module := range ForRole(RoleOffshore) {
 		switch module.Unit {
 		case "dns-stack-panel", "dns-stack-helper", "dns-stack-maintenance":
 			t.Fatalf("HK/global-builder must not claim CN-only module %s", module.Unit)

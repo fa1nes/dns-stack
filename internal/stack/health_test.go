@@ -110,7 +110,7 @@ func TestEveryModuleIsReachableByExactlyOneRole(t *testing.T) {
 			t.Errorf("%s 是定时任务却没声明周期，超期判据永远不会生效", m.Unit)
 		}
 	}
-	for _, role := range []string{RoleCNResolver, RoleGlobalBuilder} {
+	for _, role := range []string{RoleCNResolver, RoleOffshore} {
 		seen := map[string]bool{}
 		for _, unit := range UnitsForRole(role) {
 			if seen[unit] {

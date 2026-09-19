@@ -10,7 +10,6 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/cdnhit"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 const (
@@ -84,7 +83,7 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	set, err := cdnrules.Load(rulesync.CDNPath(s.cfg.StateDir))
+	set, err := cdnrules.Load(cdnrules.Path(s.cfg.StateDir))
 	if err != nil {
 		writeJSON(w, 503, map[string]any{
 			"error": "读不到 CDN 直连规则集，命中判据无法回答任何问题: " + err.Error()})
