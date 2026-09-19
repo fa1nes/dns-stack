@@ -134,7 +134,8 @@ func TestExportBadParams(t *testing.T) {
 
 func TestExportRulesJSON(t *testing.T) {
 	server := newExportServer(t)
-	if err := os.WriteFile(filepath.Join(server.cfg.StateDir, "cn.txt"), []byte("example.com\n# 注释\n\nexample.net\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(server.cfg.StateDir, "polluted-ip.txt"),
+		[]byte("1.2.3.4\n# 注释\n\n5.6.7.8\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	response := exportRequest(t, server, "/api/export?dataset=rules&format=json")
@@ -145,6 +146,36 @@ func TestExportRulesJSON(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	checkedEqual(t, "cn count", info["cn_count"], 2)
-	checkedEqual(t, "gfw count", info["gfw_count"], 0)
+	checkedEqual(t, "polluted ip count", info["polluted_ip_count"], 2)
+	checkedEqual(t, "cdn providers", info["cdn_providers"], 0)
+}
+
+func TestExportListDatasets(t *testing.T) {
+	server := newExportServer(t)
+	if err := os.MkdirAll(filepath.Join(server.cfg.StateDir, "chnroute"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(server.cfg.StateDir, "chnroute", "cn-zones-matched.txt"),
+		[]byte("qq.com\n# 注释\n\nbaidu.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(server.cfg.StateDir, "polluted-ip.txt"),
+		[]byte("1.2.3.4\n5.6.7.8\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	text := exportRequest(t, server, "/api/export?dataset=cn_zones&format=txt")
+	checkedEqual(t, "txt status", text.Code, 200)
+	checkedEqual(t, "txt body", text.Body.String(), "qq.com\nbaidu.com\n")
+
+	response := exportRequest(t, server, "/api/export?dataset=polluted&format=json")
+	checkedEqual(t, "json status", response.Code, 200)
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	checkedEqual(t, "count", payload["count"], 2)
+
+	bad := exportRequest(t, server, "/api/export?dataset=queries&format=txt")
+	checkedEqual(t, "txt 只对清单类开放", bad.Code, 400)
 }

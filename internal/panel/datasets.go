@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/cdnrules"
 )
 
 func dataLines(path string) []string {
@@ -35,52 +37,30 @@ func dataLines(path string) []string {
 func (s *Server) statePath(path string) string { return filepath.Join(s.cfg.StateDir, path) }
 
 func (s *Server) rulesInfo() map[string]any {
-	info := map[string]any{"updated_at": nil, "polluted_ip_updated_at": nil, "last_sync_at": nil, "history": []string{}, "rollback_versions": []map[string]any{}}
-	paths := map[string]string{"cn": "cn.txt", "manual_cn": "manual-cn.txt", "gfw": "gfw.txt", "manual_gfw": "manual-gfw.txt", "cn_cidr": "cn-ip-cidr.txt", "polluted_cidr": "polluted-ip-cidr.txt", "polluted_ip": "polluted-ip.txt", "direct4": "chnroute/direct4.txt", "cn_authority": "chnroute/cn-authority.txt", "cn_zones_matched": "chnroute/cn-zones-matched.txt", "manual_cn_zones": "manual-cn-zones.txt"}
+	info := map[string]any{"polluted_ip_updated_at": nil, "cdn_generated_at": nil}
+	paths := map[string]string{
+		"manual_cn": "manual-cn.txt", "manual_gfw": "manual-gfw.txt",
+		"polluted_cidr": "polluted-ip-cidr.txt", "polluted_ip": "polluted-ip.txt",
+		"direct4": "chnroute/direct4.txt", "cn_authority": "chnroute/cn-authority.txt",
+		"cn_zones_matched": "chnroute/cn-zones-matched.txt", "manual_cn_zones": "manual-cn-zones.txt",
+	}
 	for key, path := range paths {
 		info[key+"_count"] = countLines(s.statePath(path))
 	}
-	for key, path := range map[string]string{"updated_at": "cn.txt", "polluted_ip_updated_at": "polluted-ip.txt", "last_sync_at": "sync-state/last-generated-at"} {
-		if stat, err := os.Stat(s.statePath(path)); err == nil {
-			info[key] = stat.ModTime().Unix()
-		}
+	if stat, err := os.Stat(s.statePath("polluted-ip.txt")); err == nil {
+		info["polluted_ip_updated_at"] = stat.ModTime().Unix()
 	}
-	if content, err := os.ReadFile(s.statePath("sync-state/history.log")); err == nil {
-		lines := strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
-		start := len(lines) - 30
-		if start < 0 {
-			start = 0
+	info["cdn_providers"], info["cdn_prefixes"], info["cdn_mainland"] = 0, 0, 0
+	if set, err := cdnrules.Load(cdnrules.Path(s.cfg.StateDir)); err == nil {
+		mainland := 0
+		for _, provider := range set.Providers() {
+			mainland += len(provider.Mainland)
 		}
-		history := []string{}
-		for index := len(lines) - 1; index >= start; index-- {
-			if line := strings.TrimSpace(lines[index]); line != "" {
-				history = append(history, line)
-			}
-		}
-		info["history"] = history
+		info["cdn_providers"] = len(set.Providers())
+		info["cdn_prefixes"] = set.PrefixCount()
+		info["cdn_mainland"] = mainland
+		info["cdn_generated_at"] = set.GeneratedAt().Unix()
 	}
-	versions, _ := filepath.Glob(s.statePath("rule-history/bundle-*"))
-	sort.SliceStable(versions, func(left, right int) bool {
-		leftInfo, leftErr := os.Stat(versions[left])
-		rightInfo, rightErr := os.Stat(versions[right])
-		return leftErr == nil && (rightErr != nil || leftInfo.ModTime().After(rightInfo.ModTime()))
-	})
-	if len(versions) > 10 {
-		versions = versions[:10]
-	}
-	items := []map[string]any{}
-	for _, version := range versions {
-		stat, err := os.Stat(version)
-		if err != nil {
-			continue
-		}
-		count := 0
-		for _, name := range []string{"cn.txt", "gfw.txt", "cn-ip-cidr.txt", "polluted-ip-cidr.txt"} {
-			count += countLines(filepath.Join(version, name))
-		}
-		items = append(items, map[string]any{"name": filepath.Base(version), "mtime": stat.ModTime().Unix(), "count": count})
-	}
-	info["rollback_versions"] = items
 	return info
 }
 
@@ -95,18 +75,40 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "json"
 	}
-	if dataset != "queries" && dataset != "domains" && dataset != "rules" {
+	listSource := map[string]string{
+		"cn_zones": filepath.Join("chnroute", "cn-zones-matched.txt"),
+		"polluted": "polluted-ip.txt",
+	}[dataset]
+
+	switch dataset {
+	case "queries", "domains", "rules", "cn_zones", "polluted":
+	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 dataset 参数"})
 		return
 	}
-
-	if format != "json" && (format != "csv" || dataset == "rules") {
+	switch {
+	case format == "json":
+	case format == "txt" && listSource != "":
+	case format == "csv" && dataset != "rules" && listSource == "":
+	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 format 参数"})
 		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\"dns-stack-"+dataset+"."+format+"\"")
 	if dataset == "rules" {
 		writeExportJSON(w, s.rulesInfo())
+		return
+	}
+	if listSource != "" {
+		lines := dataLines(s.statePath(listSource))
+		if format == "txt" {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			for _, line := range lines {
+				_, _ = w.Write([]byte(line + "\n"))
+			}
+			return
+		}
+		writeExportJSON(w, map[string]any{"dataset": dataset, "count": len(lines), "items": lines})
 		return
 	}
 	db, err := s.openDB()
