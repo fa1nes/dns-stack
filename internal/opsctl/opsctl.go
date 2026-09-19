@@ -205,6 +205,9 @@ func (c *Ctl) RoutingRefresh(ctx context.Context) error {
 }
 
 func (c *Ctl) Pull(ctx context.Context) error {
+	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
+		return err
+	}
 	c.Infof("正在从国内服务器拉取候选域名...")
 	if err := c.Go(ctx, "classify", "pull"); err != nil {
 		c.Warnf("拉取未完成，可能是国内服务器连接信息尚未配置")
@@ -213,6 +216,9 @@ func (c *Ctl) Pull(ctx context.Context) error {
 }
 
 func (c *Ctl) Classify(ctx context.Context, domain string) error {
+	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
+		return err
+	}
 	if domain != "" {
 		c.Infof("正在检测域名: %s", domain)
 		return c.Go(ctx, "classify", "classify", "--domain", domain)
@@ -249,6 +255,9 @@ func (c *Ctl) BuildRules(ctx context.Context, force bool) error {
 }
 
 func (c *Ctl) Publish(ctx context.Context) error {
+	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
+		return err
+	}
 	if !c.Confirm("即将把规则文件推送到 GitHub 仓库，确认继续？") {
 		c.Warnf("已取消")
 		return nil
@@ -262,6 +271,9 @@ func (c *Ctl) Publish(ctx context.Context) error {
 }
 
 func (c *Ctl) UpdateReferenceData(ctx context.Context) error {
+	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
+		return err
+	}
 	c.Infof("正在更新 Public Suffix List（中国 IP 仅作为递归观测附属数据）...")
 	if err := c.Go(ctx, "classify", "update-reference-data"); err != nil {
 		return err
