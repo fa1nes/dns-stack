@@ -437,6 +437,8 @@ button.danger:hover:not(:disabled) {
 button.sm { padding: 3px 9px; font-size: var(--fs-control-sm); }
 button.icon { padding: 5px 8px; }
 
+input[type="file"].sm { min-height: 28px; }
+
 button > svg { width: 13px; height: 13px; flex-shrink: 0; display: block; }
 
 input[type="text"], input[type="search"], input[type="number"],
@@ -1208,7 +1210,7 @@ details.card[open] > summary::before { content: '▾ '; }
   .filters label { display: inline-flex; align-items: center; gap: 6px; }
 
   .card h3 .xsel-btn, .card h3 button {
-    min-height: 0; padding: 4px 8px;
+    min-height: 28px; padding: 4px 8px;
   }
 }
 
