@@ -31,8 +31,6 @@ const (
 
 var (
 	BeijingTelecom4  = netip.MustParsePrefix(BeijingTelecom)
-	BeijingUnicom4   = netip.MustParsePrefix(BeijingUnicom)
-	BeijingMobile4   = netip.MustParsePrefix(BeijingMobile)
 	GuangdongUnicom4 = netip.MustParsePrefix(GuangdongUnicom)
 )
 
@@ -66,11 +64,12 @@ var DefaultProbes = []Probe{
 type Verdict string
 
 const (
-	VerdictMainland   Verdict = "mainland"
-	VerdictNoSteering Verdict = "no_steering"
-	VerdictNoNode     Verdict = "no_node"
-	VerdictNoEcho     Verdict = "no_echo"
-	VerdictUnresolved Verdict = "unresolved"
+	VerdictMainland     Verdict = "mainland"
+	VerdictNoSteering   Verdict = "no_steering"
+	VerdictNoNode       Verdict = "no_node"
+	VerdictNoEcho       Verdict = "no_echo"
+	VerdictNotDelivered Verdict = "not_delivered"
+	VerdictUnresolved   Verdict = "unresolved"
 )
 
 func (v Verdict) Label() string {
@@ -81,6 +80,8 @@ func (v Verdict) Label() string {
 		return "权威收到了子网但声明不按位置调度"
 	case VerdictNoEcho:
 		return "这次没有 ECS 回显，多半命中了缓存，本次判不出"
+	case VerdictNotDelivered:
+		return "清了缓存重查仍无回显——你的子网没送到这台权威，查 ECS 白名单"
 	case VerdictNoNode:
 		return "权威按你的子网挑过了，仍给境外（这个服务在大陆没有节点）"
 	default:
@@ -96,6 +97,8 @@ func (v Verdict) Short() string {
 		return "不按位置调度"
 	case VerdictNoEcho:
 		return "无回显，判不出"
+	case VerdictNotDelivered:
+		return "ECS 没送达"
 	case VerdictNoNode:
 		return "大陆无节点"
 	default:
@@ -104,7 +107,8 @@ func (v Verdict) Short() string {
 }
 
 func (v Verdict) Decided() bool {
-	return v == VerdictMainland || v == VerdictNoSteering || v == VerdictNoNode
+	return v == VerdictMainland || v == VerdictNoSteering ||
+		v == VerdictNoNode || v == VerdictNotDelivered
 }
 
 type Outcome struct {
@@ -117,6 +121,8 @@ type Outcome struct {
 	Addrs        []string `json:"addrs"`
 	Scope        int      `json:"ecs_scope"`
 	ECSEchoed    bool     `json:"ecs_echoed"`
+	Flushed      bool     `json:"flushed"`
+	FlushError   string   `json:"flush_error,omitempty"`
 	Prefix       string   `json:"prefix,omitempty"`
 	Foreign      bool     `json:"foreign"`
 	Mismatch     bool     `json:"mismatch"`
@@ -127,16 +133,18 @@ type Outcome struct {
 }
 
 type Report struct {
-	Resolver    string    `json:"resolver"`
-	Subnet      string    `json:"subnet"`
-	GeneratedAt int64     `json:"generated_at"`
-	RulesetAt   int64     `json:"ruleset_at"`
-	Probes      []Outcome `json:"probes"`
-	Mainland    int       `json:"mainland"`
-	NoNode      int       `json:"no_node"`
-	NoSteering  int       `json:"no_steering"`
-	Undecided   int       `json:"undecided"`
-	Comparable  int       `json:"comparable"`
+	Resolver     string    `json:"resolver"`
+	Subnet       string    `json:"subnet"`
+	GeneratedAt  int64     `json:"generated_at"`
+	RulesetAt    int64     `json:"ruleset_at"`
+	Fresh        bool      `json:"fresh"`
+	Probes       []Outcome `json:"probes"`
+	Mainland     int       `json:"mainland"`
+	NoNode       int       `json:"no_node"`
+	NoSteering   int       `json:"no_steering"`
+	NotDelivered int       `json:"not_delivered"`
+	Undecided    int       `json:"undecided"`
+	Comparable   int       `json:"comparable"`
 }
 
 type Answer struct {
@@ -145,11 +153,13 @@ type Answer struct {
 	Scope int
 
 	Echoed bool
+
+	Chain []string
 }
 
-func (a Answer) Steered() bool { return a.Echoed && a.Scope > 0 }
-
 type Resolver func(ctx context.Context, name string, subnet netip.Prefix) (Answer, error)
+
+type Flusher func(ctx context.Context, name string) error
 
 type Options struct {
 	Resolver string
@@ -160,6 +170,7 @@ type Options struct {
 	Timeout  time.Duration
 	Now      func() time.Time
 	Resolve  Resolver
+	Flush    Flusher
 }
 
 func LoadMainland(path string) (*ipset.Set, error) {
@@ -220,6 +231,7 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 		Subnet:      prefix.Masked().String(),
 		GeneratedAt: opt.now().Unix(),
 		RulesetAt:   opt.Set.GeneratedAt().Unix(),
+		Fresh:       opt.Flush != nil,
 	}
 	report.Probes = make([]Outcome, len(probes))
 	var wg sync.WaitGroup
@@ -239,6 +251,8 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 			report.NoNode++
 		case VerdictNoSteering:
 			report.NoSteering++
+		case VerdictNotDelivered:
+			report.NotDelivered++
 		default:
 			report.Undecided++
 		}
@@ -254,6 +268,16 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 	if provider, known := opt.Set.ProviderFor(probe.Domain); known {
 		out.Provider, out.ProviderID = provider.Name, provider.ID
 		out.HasMainland, out.MainlandNum = provider.ServesMainland(), len(provider.Mainland)
+	}
+
+	if opt.Flush != nil {
+		out.Flushed = true
+		for _, name := range flushTargets(ctx, opt, probe.Domain, subnet) {
+			if err := opt.Flush(ctx, name); err != nil {
+				out.Flushed, out.FlushError = false, err.Error()
+				break
+			}
+		}
 	}
 
 	answer, err := opt.Resolve(ctx, probe.Domain, subnet)
@@ -297,6 +321,8 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 	out.Mismatch = out.Foreign && out.ProviderID != "" && unowned == len(addrs)
 
 	switch {
+	case !answer.Echoed && out.Flushed:
+		out.Verdict = VerdictNotDelivered
 	case !answer.Echoed:
 		out.Verdict = VerdictNoEcho
 	case answer.Scope == 0:
@@ -306,6 +332,24 @@ func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe
 	}
 	out.VerdictText, out.VerdictShort = out.Verdict.Label(), out.Verdict.Short()
 	return out
+}
+
+func flushTargets(ctx context.Context, opt Options, name string, subnet netip.Prefix) []string {
+	targets := []string{name}
+	seen := map[string]bool{strings.ToLower(strings.TrimSuffix(name, ".")): true}
+	prime, err := opt.Resolve(ctx, name, subnet)
+	if err != nil {
+		return targets
+	}
+	for _, link := range prime.Chain {
+		key := strings.ToLower(strings.TrimSuffix(link, "."))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		targets = append(targets, key)
+	}
+	return targets
 }
 
 func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeout time.Duration) (Answer, error) {
@@ -343,6 +387,11 @@ func Query(ctx context.Context, server, name string, subnet netip.Prefix, timeou
 	for _, rr := range msg.Answers {
 		if addr, ok := rr.A(); ok {
 			out.Addrs = append(out.Addrs, addr)
+		}
+		if rr.Type == dnswire.TypeCNAME {
+			if target, ok := rr.TargetName(buf[:n]); ok {
+				out.Chain = append(out.Chain, target)
+			}
 		}
 	}
 	sort.Slice(out.Addrs, func(i, j int) bool { return out.Addrs[i].Compare(out.Addrs[j]) < 0 })

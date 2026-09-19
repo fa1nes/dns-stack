@@ -378,6 +378,7 @@ const PAGE_DESCS = {
 const SETTING_TAB_LOADERS = {
   security: loadSecurity,
   rules: loadRules,
+  access: loadAccess,
   services: loadOps,
   audit: loadAudit,
 };
@@ -1683,15 +1684,20 @@ const CDN_VERDICT = {
   no_steering: { cls: 'unknown', mark: '–' },
   no_node: { cls: 'unknown', mark: '–' },
   no_echo: { cls: 'unknown', mark: '?' },
+  not_delivered: { cls: 'err', mark: '✗' },
   unresolved: { cls: 'unknown', mark: '?' },
 };
 
-async function loadCdnHit(refresh) {
+async function loadCdnHit(mode) {
   const box = $('#cdnHitResult');
-  setHtml(box, LOADING);
+  const fresh = mode === 'fresh';
+  setHtml(box, fresh
+    ? html`<div class="state"><span class="spinner"></span> 正在清缓存并重查，要走完整递归，请稍候…</div>`
+    : LOADING);
   try {
     const subnet = $('#cdnSubnet').value;
-    const q = '?subnet=' + encodeURIComponent(subnet) + (refresh ? '&refresh=1' : '');
+    const q = '?subnet=' + encodeURIComponent(subnet)
+      + (mode === 'refresh' ? '&refresh=1' : '') + (fresh ? '&fresh=1' : '');
     const d = await api('/api/cdn-hit' + q);
     const rows = (d.probes || []).map((p) => {
       const style = CDN_VERDICT[p.verdict] || CDN_VERDICT.unknown;
@@ -1717,9 +1723,17 @@ async function loadCdnHit(refresh) {
       ${kvList([
         ['结果', summary],
         ['客户端子网', html`<span class="mono">${d.subnet}</span>`],
+        ['本轮方式', d.fresh ? '已清缓存后重查（判据可信）' : '复用缓存（无回显时判不出）'],
         ['规则集版本', fmtTime(d.ruleset_at)],
         ['探测时间', fmtTime(d.generated_at)],
       ])}
+      ${d.not_delivered ? html`<div class="callout err">
+        <b>${d.not_delivered} 个域名清掉缓存重查后仍然没有 ECS 回显。</b>
+        你的子网没送到那台权威，它只能按隧道出口（香港）判断你在哪，于是把你调度去了境外节点。
+        用 <span class="mono">dns-stack ecs-audit</span> 查这些权威在不在 ECS 白名单里。</div>` : ''}
+      ${!d.fresh && d.undecided ? html`<div class="callout">
+        ${d.undecided} 个域名本轮没有 ECS 回显——<span class="mono">scope=0</span> 的答案会被 unbound
+        缓存成全局条目，所以分不清是没送达还是命中了缓存。点「清缓存重查」可以把它们判出来。</div>` : ''}
       ${d.mainland === 0 && d.comparable > 0 ? html`<div class="callout">
         <b>一个大陆节点都没拿到。</b>连国内站点都没命中，ECS 链路多半整条失效。
         用 <span class="mono">dns-stack ecs-audit --quick</span> 复核白名单。</div>` : ''}
@@ -1732,13 +1746,87 @@ async function loadCdnHit(refresh) {
         <b>命中大陆节点</b>：答案落在 direct4 里，这次拿到的就是大陆节点。
         <b>无回显，判不出</b>：这次没有 ECS 回显。<span class="mono">scope=0</span> 的答案会被
         unbound 按 ECS 标准缓存成全局条目，后续任何子网的查询都命中它且不回显，
-        所以无回显并不等于没送达——要确认请用 <span class="mono">dns-stack ecs-audit</span>。
+        所以无回显并不等于没送达——点「清缓存重查」把它变成可判的。
+        <b>ECS 没送达</b>：缓存已清、走的是真实递归，权威仍然不回显你的子网，
+        说明它压根没收到——查 ECS 白名单。
         <b>不按位置调度</b>：权威回了 scope=0，明确表示不按位置挑（全球 anycast 常见）。
         <b>大陆无节点</b>：权威按你的子网挑过了仍给境外，说明这个服务在大陆确实没有节点。
       </div>
     </div>`);
   } catch (e) {
     setHtml(box, errState(e));
+  }
+}
+
+const splitEntries = (text) => String(text || '').split(/[\s,;]+/).filter(Boolean);
+
+function accessRows(items, kind, empty) {
+  if (!items.length) return EMPTY(empty);
+  return html`<div class="table-wrap mt-12"><table class="card-rows"><tbody>${
+    items.map((item) => html`<tr>
+      <td class="mono wrap">${item}</td>
+      <td style="width:72px"><button class="danger sm" data-access-remove="${kind}"
+        data-value="${item}">移除</button></td>
+    </tr>`)}</tbody></table></div>`;
+}
+
+function renderAccess(d) {
+  if (d.note) {
+    setHtml($('#blBadge'), '');
+    setHtml($('#aclBadge'), '');
+    setHtml($('#blList'), stateHtml(d.note));
+    setHtml($('#aclList'), stateHtml(d.note));
+    return;
+  }
+  const blocked = d.blocklist || [];
+  const acl = d.acl || [];
+  setHtml($('#blBadge'), html`<span class="badge ${blocked.length ? 'ok' : 'unknown'} sm">${
+    blocked.length} 条</span>`);
+  setHtml($('#aclBadge'), acl.length
+    ? html`<span class="badge ${d.acl_installed ? 'ok' : 'unknown'} sm">${acl.length} 个网段 · ${
+        d.acl_installed ? '已下发到内核' : '尚未下发'}</span>`
+    : html`<span class="badge unknown sm">未启用，入口对全网开放</span>`);
+  setHtml($('#blList'), d.blocklist_error
+    ? stateHtml(d.blocklist_error, 'error')
+    : accessRows(blocked, 'blocklist', '黑名单为空，没有域名被拦截'));
+  setHtml($('#aclList'), html`${d.acl_error
+    ? stateHtml(d.acl_error, 'error')
+    : accessRows(acl, 'acl', '授权网段为空，访问控制未启用')}${
+    acl.length && !d.acl_installed
+      ? html`<div class="callout">列表已改但还没下发到内核，点「重新下发」才会生效。</div>`
+      : ''}${
+    acl.length && !d.client_loopback && !d.client_covered
+      ? html`<div class="callout err">你现在的地址 <span class="mono">${d.client_ip}</span>
+          不在授权网段里。一旦下发，你就会被自己挡在门外。</div>`
+      : ''}`);
+}
+
+async function loadAccess() {
+  setHtml($('#blList'), LOADING);
+  setHtml($('#aclList'), LOADING);
+  try {
+    renderAccess(await api('/api/access'));
+  } catch (e) {
+    setHtml($('#blList'), errState(e));
+    setHtml($('#aclList'), errState(e));
+  }
+}
+
+async function accessAction(action, label, payload, confirmed) {
+  const body = Object.assign({ action: action }, payload || {});
+  if (confirmed) body.confirm = true;
+  try {
+    const d = await api('/api/access', { method: 'POST', body: JSON.stringify(body) });
+    toast(label + (d.ok ? ' 完成' : ' 失败'), (d.message || '').slice(0, 800), d.ok ? 'ok' : 'err');
+    await loadAccess();
+  } catch (e) {
+    if (e.status === 428 && e.body && e.body.need_confirm) {
+      if (confirm(e.body.message + '\n\n确认继续？')) {
+        return accessAction(action, label, payload, true);
+      }
+      return;
+    }
+    toast(label + ' 出错', e.message, 'err');
   }
 }
 
@@ -2541,6 +2629,16 @@ function bindEvents() {
     if (btn) jumpTo(btn.dataset.pageJump, btn.dataset.tab);
   });
 
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-access-remove]');
+    if (!btn) return;
+    if (btn.dataset.accessRemove === 'blocklist') {
+      accessAction('blocklist_remove', '移出域名黑名单', { domains: [btn.dataset.value] });
+    } else {
+      accessAction('acl_remove', '收回网段', { prefixes: [btn.dataset.value] });
+    }
+  });
+
   const bindTabs = (tabsSel, attr, onSwitch) => {
     const tabs = $(tabsSel);
     if (!tabs) return;
@@ -2562,11 +2660,36 @@ function bindEvents() {
     if (name !== 'logs' && state.logFollow) stopLogFollow();
     if (name === 'location') loadMyLocation();
     if (name === 'ip' && !$('#ipResult').firstChild) loadIpLookup();
-    if (name === 'cdn' && !$('#cdnHitResult').firstChild) loadCdnHit(false);
+    if (name === 'cdn' && !$('#cdnHitResult').firstChild) loadCdnHit('');
   });
 
-  $('#btnCdnHit').addEventListener('click', () => loadCdnHit(true));
-  $('#cdnSubnet').addEventListener('change', () => loadCdnHit(false));
+  $('#btnCdnHit').addEventListener('click', () => loadCdnHit('refresh'));
+  $('#btnCdnFresh').addEventListener('click', async () => {
+    const btn = $('#btnCdnFresh');
+    btn.disabled = true;
+    try { await loadCdnHit('fresh'); } finally { btn.disabled = false; }
+  });
+  $('#cdnSubnet').addEventListener('change', () => loadCdnHit(''));
+
+  $('#btnBlAdd').addEventListener('click', () => {
+    const el = $('#blInput');
+    const items = splitEntries(el.value);
+    if (!items.length) { toast('请先输入要拦截的域名', '', 'err'); return; }
+    el.value = '';
+    accessAction('blocklist_add', '加入域名黑名单', { domains: items });
+  });
+  $('#btnAclAdd').addEventListener('click', () => {
+    const el = $('#aclInput');
+    const items = splitEntries(el.value);
+    if (!items.length) { toast('请先输入要放行的网段', '', 'err'); return; }
+    el.value = '';
+    accessAction('acl_add', '放行网段', { prefixes: items });
+  });
+  $('#btnAclApply').addEventListener('click', () => accessAction('acl_apply', '下发访问控制', {}));
+  $('#btnAclDisable').addEventListener('click', () => {
+    if (!confirm('关闭访问控制后，DoH/DoT 入口会对全网开放。\n\n确认继续？')) return;
+    accessAction('acl_disable', '关闭访问控制', {}, true);
+  });
   bindTabs('#settingTabs', 'data-stab', (name) => loadSettingTab(name));
 
   $('#btnIpLookup').addEventListener('click', loadIpLookup);

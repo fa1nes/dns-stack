@@ -340,7 +340,8 @@
     '/api/cdn-hit': () => ({
       resolver: '127.0.0.1:5335', subnet: '219.141.136.0/24',
       generated_at: Math.floor(Date.now() / 1000), ruleset_at: Math.floor(Date.now() / 1000) - 41000,
-      mainland: 4, no_node: 1, no_steering: 1, undecided: 1, comparable: 6,
+      fresh: false,
+      mainland: 4, no_node: 1, no_steering: 1, not_delivered: 0, undecided: 1, comparable: 6,
       probes: [
         { domain: 'www.taobao.com', label: '淘宝', provider: '阿里云', provider_id: 'alibaba',
           has_mainland: true, mainland_prefixes: 86, ecs_echoed: true, ecs_scope: 24,
@@ -367,6 +368,14 @@
           addrs: ['13.107.6.156'], verdict: 'no_steering',
           verdict_short: '不按位置调度', verdict_text: '权威收到了子网但声明不按位置调度' },
       ],
+    }),
+
+    '/api/access': () => ({
+      role: 'cn-resolver',
+      blocklist: ['ads.example.com', 'tracker.example.net'],
+      acl: ['203.0.113.0/24', '198.51.100.7/32'],
+      acl_installed: true, acl_table: 'dns_route',
+      client_ip: '127.0.0.1', client_loopback: true, client_covered: false,
     }),
 
     '/api/doh': () => ({ doh_url: 'https://203.0.113.1/dns-query', is_default: true }),

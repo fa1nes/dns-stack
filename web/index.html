@@ -249,10 +249,13 @@
                 </select>
               </label>
               <button class="primary sm" id="btnCdnHit">重新探测</button>
+              <button class="sm" id="btnCdnFresh" title="先清掉这些域名及其 CNAME 链的缓存再查，判据才不会被缓存骗过">清缓存重查</button>
             </div>
             <div class="hint">以真实中国网段的身份向本机递归发查询，再拿答案去比对 CDN 直连规则集：
               这个 CDN 在大陆有没有节点、这次给的到底是不是大陆节点。
-              规则集由本仓库的 <span class="mono">cdn-rules</span> Action 每天从各家官方前缀源与 ASN 通告重建。</div>
+              规则集由本仓库的 <span class="mono">cdn-rules</span> Action 每天从各家官方前缀源与 ASN 通告重建。
+              <b>「清缓存重查」</b>会先清掉这批域名的缓存，这样「无 ECS 回显」才能断定成「子网没送到那台权威」；
+              代价是这些名字下一次解析要走完整递归，10 分钟内只允许一次。</div>
           </div>
           <div id="cdnHitResult"></div>
         </div>
@@ -327,6 +330,7 @@
         <div class="tabs main-tabs" id="settingTabs">
           <button data-stab="security" class="active">安全</button>
           <button data-stab="rules">规则与证书</button>
+          <button data-stab="access">递归管控</button>
           <button data-stab="services">服务与备份</button>
           <button data-stab="audit">审计</button>
         </div>
@@ -431,6 +435,39 @@
             <div class="card">
               <h3>面板访问 <span id="accessBadge"></span></h3>
               <div id="accessBox"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="stab-access">
+          <div class="grid c2">
+            <div class="card">
+              <h3>域名黑名单 <span id="blBadge"></span></h3>
+              <div class="filters flat m0">
+                <input type="text" id="blInput" class="grow mono" placeholder="要拦截的域名，空格或逗号分隔"
+                       autocomplete="off" enterkeyhint="done" inputmode="url"
+                       autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button class="primary sm" id="btnBlAdd">加入</button>
+              </div>
+              <div class="hint">命中的查询由 mosproxy 直接回 NXDOMAIN，连递归都不会发生，匹配包含其全部子域。
+                拒绝拉黑顶级域。</div>
+              <div id="blList"></div>
+            </div>
+
+            <div class="card">
+              <h3>访问控制 <span id="aclBadge"></span></h3>
+              <div class="filters flat m0">
+                <input type="text" id="aclInput" class="grow mono" placeholder="授权网段 CIDR，空格或逗号分隔"
+                       autocomplete="off" enterkeyhint="done"
+                       autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button class="primary sm" id="btnAclAdd">放行</button>
+                <button class="sm" id="btnAclApply" title="把当前列表重新下发到内核">重新下发</button>
+                <button class="danger sm" id="btnAclDisable" title="移除内核里的访问控制链，入口恢复对全网开放">关闭</button>
+              </div>
+              <div class="hint">只有列出的网段能查询 DoH/DoT/DoQ 入口；列表为空 = 不启用访问控制（全网可查）。
+                回环与隧道网段始终放行。<b>家宽地址会变</b>，变了就连不上自己的 DNS——
+                出事时用 SSH 跑 <span class="mono">dns-stack acl disable</span>。</div>
+              <div id="aclList"></div>
             </div>
           </div>
         </div>

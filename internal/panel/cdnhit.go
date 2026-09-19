@@ -2,6 +2,7 @@ package panel
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -12,13 +13,38 @@ import (
 	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
-const cdnHitTTL = 90 * time.Second
+const (
+	cdnHitTTL      = 90 * time.Second
+	cdnFreshWindow = 10 * time.Minute
+)
 
 type cdnHitCache struct {
-	mu     sync.Mutex
-	at     time.Time
-	subnet string
-	report cdnhit.Report
+	mu      sync.Mutex
+	at      time.Time
+	freshAt time.Time
+	subnet  string
+	report  cdnhit.Report
+}
+
+func cdnHitFlusher() cdnhit.Flusher {
+	return func(ctx context.Context, name string) error {
+		resp, err := helperCall(ctx, "flush_cache", map[string]any{"domain": name, "confirm": true})
+		if err != nil {
+			return err
+		}
+		data := helperData(resp)
+		if !boolValue(resp["ok"]) || numberValue(data["returncode"]) != 0 {
+			message, _ := data["stderr"].(string)
+			if message == "" {
+				message, _ = resp["message"].(string)
+			}
+			if message == "" {
+				message = "助手拒绝了清缓存请求"
+			}
+			return fmt.Errorf("%s", message)
+		}
+		return nil
+	}
 }
 
 func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
@@ -39,12 +65,23 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refresh := r.URL.Query().Get("refresh") == "1"
+	fresh := r.URL.Query().Get("fresh") == "1"
 
 	s.cdnHits.mu.Lock()
 	defer s.cdnHits.mu.Unlock()
-	if !refresh && s.cdnHits.subnet == subnet && s.now().Sub(s.cdnHits.at) < cdnHitTTL {
+	if !refresh && !fresh && s.cdnHits.subnet == subnet && s.now().Sub(s.cdnHits.at) < cdnHitTTL {
 		writeJSON(w, 200, s.cdnHits.report)
 		return
+	}
+	if fresh {
+		if wait := cdnFreshWindow - s.now().Sub(s.cdnHits.freshAt); !s.cdnHits.freshAt.IsZero() && wait > 0 {
+			writeJSON(w, 429, map[string]any{
+				"error": fmt.Sprintf(
+					"清缓存重查会让这些热门域名下一次解析走完整递归，%d 分钟内只允许一次，还需等待 %d 秒",
+					int(cdnFreshWindow/time.Minute), int(wait.Seconds())),
+				"retry_after": int(wait.Seconds())})
+			return
+		}
 	}
 
 	set, err := cdnrules.Load(rulesync.CDNPath(s.cfg.StateDir))
@@ -57,14 +94,28 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		mainland = nil
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	timeout := 30 * time.Second
+	if fresh {
+		timeout = 90 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
-	report, err := cdnhit.Run(ctx, cdnhit.Options{
+	opt := cdnhit.Options{
 		Subnet: subnet, Set: set, Mainland: mainland, Timeout: 5 * time.Second, Now: s.now,
-	})
+	}
+	if fresh {
+		opt.Flush = cdnHitFlusher()
+	}
+	report, err := cdnhit.Run(ctx, opt)
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": err.Error()})
 		return
+	}
+	if fresh {
+		s.cdnHits.freshAt = s.now()
+		s.writeAudit("cdn_hit_fresh", map[string]any{"subnet": subnet}, true,
+			fmt.Sprintf("清缓存重查 %d 个域名：就近命中 %d，ECS 未送达 %d",
+				len(report.Probes), report.Mainland, report.NotDelivered))
 	}
 	s.cdnHits.at, s.cdnHits.subnet, s.cdnHits.report = s.now(), subnet, report
 	writeJSON(w, 200, report)

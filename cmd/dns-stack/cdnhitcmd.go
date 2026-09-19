@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,6 +26,11 @@ func cmdCDNHit(args []string) error {
 	domains := fs.String("domains", "", "自定义探测域名，逗号分隔(默认为内置的国内外大厂清单)")
 	asJSON := fs.Bool("json", false, "以 JSON 输出")
 	minMainland := fs.Int("min-mainland", -1, "至少要有几个域名命中大陆节点，不足则退出码非零")
+	fresh := fs.Bool("fresh", false,
+		"探测前先清掉这些域名及其 CNAME 链的缓存，强制真实递归"+
+			"（这样「无 ECS 回显」才能断定为没送达，代价是这些名字下一次解析会变慢）")
+	ctl := fs.String("unbound-ctl", envOr("UNBOUND_CTL", "unbound-control"), "unbound-control 路径")
+	unboundConf := fs.String("unbound-conf", "/etc/unbound/unbound.conf", "unbound 配置路径")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -55,10 +61,16 @@ func cmdCDNHit(args []string) error {
 		}
 	}
 
+	var flush cdnhit.Flusher
+	if *fresh {
+		flush = unboundFlusher(*ctl, *unboundConf)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	report, err := cdnhit.Run(ctx, cdnhit.Options{
 		Resolver: *resolver, Subnet: *subnet, Probes: probes, Set: set, Mainland: mainland,
+		Flush: flush,
 	})
 	if err != nil {
 		return err
@@ -80,16 +92,39 @@ func cmdCDNHit(args []string) error {
 	return nil
 }
 
+func unboundFlusher(ctl, conf string) cdnhit.Flusher {
+	return func(ctx context.Context, name string) error {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		argv := []string{}
+		if conf != "" {
+			argv = append(argv, "-c", conf)
+		}
+		argv = append(argv, "flush_zone", name)
+		out, err := exec.CommandContext(ctx, ctl, argv...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s flush_zone %s: %v: %s",
+				ctl, name, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+}
+
 func renderCDNHit(report cdnhit.Report) {
-	fmt.Printf("解析器 %s   客户端子网 %s   规则集 %s\n\n",
+	mode := "复用缓存"
+	if report.Fresh {
+		mode = "已清缓存后重查"
+	}
+	fmt.Printf("解析器 %s   客户端子网 %s   规则集 %s   %s\n\n",
 		report.Resolver, report.Subnet,
-		time.Unix(report.RulesetAt, 0).Format("2006-01-02 15:04"))
+		time.Unix(report.RulesetAt, 0).Format("2006-01-02 15:04"), mode)
 	marks := map[cdnhit.Verdict]string{
-		cdnhit.VerdictMainland:   "✓",
-		cdnhit.VerdictNoSteering: "–",
-		cdnhit.VerdictNoNode:     "–",
-		cdnhit.VerdictNoEcho:     "?",
-		cdnhit.VerdictUnresolved: "?",
+		cdnhit.VerdictMainland:     "✓",
+		cdnhit.VerdictNoSteering:   "–",
+		cdnhit.VerdictNoNode:       "–",
+		cdnhit.VerdictNotDelivered: "✗",
+		cdnhit.VerdictNoEcho:       "?",
+		cdnhit.VerdictUnresolved:   "?",
 	}
 	for _, probe := range report.Probes {
 		provider := probe.Provider
@@ -109,12 +144,18 @@ func renderCDNHit(report cdnhit.Report) {
 			}
 			fmt.Printf("      %s%s\n", strings.Join(probe.Addrs, " "), note)
 		}
+		if probe.FlushError != "" {
+			fmt.Printf("      缓存没清掉，本轮仍可能是缓存答案: %s\n", probe.FlushError)
+		}
 		if probe.Error != "" {
 			fmt.Printf("      %s\n", probe.Error)
 		}
 	}
 	if report.Comparable == 0 {
 		fmt.Printf("\n%d 个域名本轮都没有 ECS 回显，判不出\n", report.Undecided)
+		if !report.Fresh {
+			fmt.Println("加 --fresh 重跑：清掉缓存后「无回显」就能断定为 ECS 没送达")
+		}
 		return
 	}
 	fmt.Printf("\n就近命中 %d/%d", report.Mainland, report.Comparable)
@@ -123,9 +164,14 @@ func renderCDNHit(report cdnhit.Report) {
 			report.NoNode+report.NoSteering)
 	}
 	fmt.Println()
+	if report.NotDelivered > 0 {
+		fmt.Printf("%d 个域名清掉缓存重查后仍无 ECS 回显——你的子网没送到那台权威，\n"+
+			"它只能按隧道出口(香港)判断你在哪。用 dns-stack ecs-audit 查这些权威在不在白名单里\n",
+			report.NotDelivered)
+	}
 	if report.Undecided > 0 {
 		fmt.Printf("%d 个域名没有 ECS 回显：scope=0 的答案会被 unbound 按 ECS 标准缓存成全局条目，\n"+
-			"后续任何子网的查询都命中它且不回显。要确认 ECS 是否真的送达，用 dns-stack ecs-audit\n",
+			"后续任何子网的查询都命中它且不回显。加 --fresh 重跑可以把这几个判出来\n",
 			report.Undecided)
 	}
 }

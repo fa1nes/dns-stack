@@ -290,7 +290,8 @@ func scopeNote(answer cdnhit.Answer) string {
 	switch {
 	case !answer.Echoed:
 		return "这次没有 ECS 回显——scope=0 的答案会被 unbound 缓存成全局条目、" +
-			"后续查询都不回显，所以分不清是没送达还是命中了缓存；用 dns-stack ecs-audit 确认"
+			"后续查询都不回显，所以分不清是没送达还是命中了缓存；" +
+			"用 dns-stack cdn-hit --fresh 清掉缓存重查即可判定"
 	case answer.Scope == 0:
 		return "权威回了 scope=0，它明确表示不按位置调度"
 	default:
