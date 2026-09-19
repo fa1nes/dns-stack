@@ -387,6 +387,7 @@ func (c *Consumer) Run(input io.Reader) error {
 		}
 		if now.Sub(lastPrune) >= pruneInterval {
 			_, _ = PruneEvents(c.db, now.Unix())
+			_ = CheckpointTruncate(c.db)
 			lastPrune = now
 		}
 	}

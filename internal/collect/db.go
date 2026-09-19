@@ -329,6 +329,11 @@ func Checkpoint(db *sql.DB) error {
 	return err
 }
 
+func CheckpointTruncate(db *sql.DB) error {
+	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
 type Candidate struct {
 	Domain          string `json:"domain"`
 	FirstSeenAt     int64  `json:"first_seen_at"`
