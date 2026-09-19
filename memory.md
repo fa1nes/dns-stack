@@ -373,13 +373,26 @@ await window.__layoutSweep()   // 在每个视口各跑一次
   通用路径会把防自锁闸门整个绕过。`dedicatedOpRoles` 是它们的注册表，
   `TestDedicatedOperationsStayOutOfTheGenericActionPath` 盯着这一点。
 
-**3. 审出一个真漏洞：`dns-stack publish` 在 CLI 侧从来没有角色闸门。**
-2026-09-14 修的是 helper 侧（面板绕不过去），但 SSH 上 CN 机直接跑
-`dns-stack publish` 照样能推 GitHub。同类的还有 `pull` / `classify` /
-`update-cn-ip`——helper 都按 `RoleGlobalBuilder` 拦，`opsctl` 四个方法全漏。
-已补齐，并加 `internal/opsctl/role_test.go`：
-从 `helper.RoleOps` 反查，helper 有闸门而 CLI 没覆盖就红。
-**已验证这道护栏本身是有效的**（拿掉 `Publish` 的闸门跑一遍，测试确实变红）。
+**3. 审出一个真漏洞，而且是两层的：向 GitHub 发布没有角色闸门。**
+
+第一层：`opsctl.Publish` / `Pull` / `Classify` / `UpdateReferenceData` 四个方法
+没有 `requireRole`，而 helper 对应的 op 全都按 `RoleGlobalBuilder` 拦。
+2026-09-14 修的是 helper 侧（面板绕不过去），SSH 上 CN 机跑 `dns-stack publish` 照样能推。
+
+⚠️ **第二层是补完第一层之后才暴露的**：`opsctl` 只是友好别名，
+底下还有 `dns-stack classify publish` 和 `classify pipeline --publish` 两条原始路径，
+它们**完全不经过 `opsctl`**。只补别名那一层等于没补——
+HK 的 cron 用的恰恰是原始路径（`classify pipeline`），这说明原始路径是常用入口而非边角。
+
+最终闸门放在**唯一真正推 GitHub 的那两个函数**上：`Engine.EnsureRepo` 与
+`Engine.Publish` 开头调 `requireBuilder()`，角色来自 `classify.Config.Role`
+（`LoadConfig` 从 `/etc/dns-stack/config.env` 的 `ROLE` 读）。
+这样任何现在或以后的调用方都绕不过去。**教训：闸门要装在动作发生的地方，
+不是装在你恰好看见的那个入口上**——否则你只是把洞挪到了下一层。
+
+测试：`internal/opsctl/role_test.go` 从 `helper.RoleOps` 反查 CLI 覆盖，
+`internal/classify/publish_role_test.go` 直接打两个 chokepoint。
+**已验证护栏本身有效**（拿掉 `Publish` 的闸门跑一遍，测试确实变红）。
 
 **4. 死代码清理**（全库零引用，含测试）：`helper.DefaultStackRoot`、
 `domain.DefectLabels`、`ruleset.LoadManual/LoadShared/OpenOptional`、

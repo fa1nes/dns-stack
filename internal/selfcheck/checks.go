@@ -396,7 +396,7 @@ func checkCDNLanding(ctx context.Context, opt Options, report *Report, cdnSet *c
 	if hit.Undecided > 0 {
 		c.skip("本轮未判定", "%d 个域名没有 ECS 回显——`scope=0` 的答案会被 unbound 按 ECS 标准"+
 			"缓存成全局条目，后续任何子网的查询都命中它且不回显。"+
-			"要确认 ECS 是否真的送达，用 dns-stack ecs-audit", hit.Undecided)
+			"用 dns-stack cdn-hit --fresh 清掉缓存重查即可判定", hit.Undecided)
 	}
 	if len(mismatched) > 0 {
 		c.warn("答案属于已知 CDN 段",

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
 type PublishResult struct {
@@ -44,7 +46,21 @@ func (e *Engine) sshCommand() string {
 		e.Config.DeployKeyPath)
 }
 
+func (e *Engine) requireBuilder() error {
+	if e.Config.Role == stack.RoleGlobalBuilder {
+		return nil
+	}
+	role := e.Config.Role
+	if role == "" {
+		role = "unknown"
+	}
+	return guardf("本机角色是 %s，只有规则构建节点可以向 GitHub 发布规则", role)
+}
+
 func (e *Engine) EnsureRepo() error {
+	if err := e.requireBuilder(); err != nil {
+		return err
+	}
 	if e.Config.Repository == "" {
 		return guardf("GITHUB_REPOSITORY 未配置")
 	}
@@ -74,6 +90,9 @@ func (e *Engine) EnsureRepo() error {
 }
 
 func (e *Engine) Publish(opts PublishOptions) (PublishResult, error) {
+	if err := e.requireBuilder(); err != nil {
+		return PublishResult{}, err
+	}
 	workdir := e.gitDir()
 	if _, err := os.Stat(filepath.Join(workdir, ".git")); err != nil {
 		return PublishResult{}, guardf("git 工作区未初始化")

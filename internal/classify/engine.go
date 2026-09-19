@@ -46,6 +46,8 @@ type Config struct {
 	CrossMaxAge  time.Duration
 	RequireCross bool
 
+	Role string
+
 	Repository    string
 	Branch        string
 	CommitName    string
@@ -85,6 +87,8 @@ func LoadConfig(path string) (Config, error) {
 		DisputedPath: firstNonEmpty(os.Getenv("DNS_STACK_GEO_DISPUTED_FILE"), env["GEO_DISPUTED_FILE"]),
 		CrossMaxAge:  time.Duration(envPositive(env, "GEO_CROSS_MAX_AGE_SEC", 48*3600)) * time.Second,
 		RequireCross: envBool(env, "RULE_REQUIRE_CROSS", true),
+
+		Role: env["ROLE"],
 
 		Repository:    env["GITHUB_REPOSITORY"],
 		Branch:        envOr(env, "GITHUB_BRANCH", "main"),
