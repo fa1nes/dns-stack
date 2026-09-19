@@ -18,7 +18,6 @@ const (
 	DefaultSocketPath   = "/run/dns-stack/helper.sock"
 	DefaultLogPath      = "/var/log/dns-stack/helper.log"
 	DefaultConfigPath   = "/etc/dns-stack/config.env"
-	DefaultStackRoot    = "/opt/dns-stack/dns-stack"
 	DefaultAuthPath     = "/etc/dns-stack/secrets/panel/auth.json"
 	DefaultCLIPath      = "/usr/local/bin/dns-stack"
 	DefaultGoBin        = "/opt/dns-stack/bin/dns-stack-go"

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
@@ -126,5 +125,3 @@ func truncate(value string, width int) string {
 	}
 	return value[:width-3] + "..."
 }
-
-var _ = strings.TrimSpace

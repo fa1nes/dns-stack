@@ -13,14 +13,6 @@ const (
 	DefectSingleLabel  = "single_label"
 )
 
-var DefectLabels = map[string]string{
-	DefectEmpty:        "空值",
-	DefectMalformed:    "不是合法 DNS 名",
-	DefectReserved:     "RFC 保留域或本地域",
-	DefectPublicSuffix: "公共后缀本身（不是可注册域）",
-	DefectSingleLabel:  "无点单段名（顶级域或本地名）",
-}
-
 var reservedSuffixes = []string{
 	"in-addr.arpa", "ip6.arpa", "arpa",
 	"local", "localhost", "localdomain", "invalid", "test", "example",

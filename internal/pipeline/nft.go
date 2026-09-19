@@ -64,10 +64,6 @@ func (r *Runtime) LoadNFTSet(ctx context.Context, set string, prefixes []netip.P
 	return nftRun(ctx, renderSetScript(r.Config.NFTTable, set, entries))
 }
 
-func (r *Runtime) LoadNFTSetStrings(ctx context.Context, set string, entries []string) error {
-	return nftRun(ctx, renderSetScript(r.Config.NFTTable, set, entries))
-}
-
 var nftEntry = regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 
 func (r *Runtime) NFTSetCount(ctx context.Context, set string) int {

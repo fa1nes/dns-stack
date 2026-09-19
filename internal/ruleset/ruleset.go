@@ -1,11 +1,8 @@
 package ruleset
 
 import (
-	"bufio"
 	"errors"
-	"io"
 	"net/netip"
-	"os"
 	"sort"
 	"strings"
 
@@ -322,45 +319,4 @@ func collapse(prefixes []netip.Prefix) []netip.Prefix {
 		}
 	}
 	return ipset.New(ranges).Prefixes()
-}
-
-func LoadManual(r io.Reader) (map[string]struct{}, error) {
-	sc := bufio.NewScanner(r)
-	out := make(map[string]struct{})
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		out[strings.ToLower(strings.TrimRight(line, "."))] = struct{}{}
-	}
-	return out, sc.Err()
-}
-
-func LoadShared(r io.Reader) (map[netip.Addr]struct{}, error) {
-	sc := bufio.NewScanner(r)
-	out := make(map[netip.Addr]struct{})
-	for sc.Scan() {
-		parts := strings.Fields(sc.Text())
-		if len(parts) == 0 || strings.HasPrefix(parts[0], "#") {
-			continue
-		}
-		ip, err := netip.ParseAddr(parts[0])
-		if err == nil {
-			out[ip] = struct{}{}
-		}
-	}
-	return out, sc.Err()
-}
-
-func OpenOptional(path string, loader func(io.Reader) error) error {
-	if strings.TrimSpace(path) == "" {
-		return nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return loader(f)
 }

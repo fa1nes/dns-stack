@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/config"
@@ -240,5 +239,3 @@ func installedText(installed bool) string {
 	}
 	return "未安装（改动尚未下发，执行 dns-stack acl apply）"
 }
-
-var _ = time.Second

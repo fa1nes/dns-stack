@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -426,21 +425,4 @@ func ReadStats(db *sql.DB) (Stats, error) {
 		return out, err
 	}
 	return out, nil
-}
-
-func WriteAudit(db *sql.DB, operation, args string, ok bool, message, actor string) error {
-	if actor == "" {
-		actor = "panel"
-	}
-	flag := 0
-	if ok {
-		flag = 1
-	}
-	if len(message) > 500 {
-		message = message[:500]
-	}
-	_, err := db.Exec(
-		"INSERT INTO audit_log(ts, actor, operation, args, ok, message) VALUES (?,?,?,?,?,?)",
-		time.Now().Unix(), actor, operation, args, flag, message)
-	return err
 }

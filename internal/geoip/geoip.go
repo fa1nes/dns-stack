@@ -1247,11 +1247,3 @@ func resultFromMap(ip string, m map[string]any, available bool) Result {
 	r.IsCloud, _ = m["is_cloud"].(bool)
 	return r
 }
-
-func MergeRecords(cn, mm map[string]any) Result {
-	m := mergeRecords(cn, mm)
-	if m == nil {
-		return Result{}
-	}
-	return resultFromMap("", m, true)
-}
