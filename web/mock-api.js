@@ -286,24 +286,13 @@
       ],
     }),
 
-    '/api/rules': () => ({
-      cn_count: 270, gfw_count: 325, manual_cn_count: 4, manual_gfw_count: 2,
-      cn_cidr_count: 5813, polluted_cidr_count: 40, polluted_ip_count: 40,
-      direct4_count: 5813, cn_authority_count: 387, cn_zones_matched_count: 270,
-      manual_cn_zones_count: 6,
-      updated_at: now() - 7200,
-      last_sync_at: now() - 180,
-      polluted_ip_updated_at: now() - 21600,
-      sources: {
-        github_raw_base: 'https://raw.githubusercontent.com/example/dns-rules',
-        github_mirror_1: 'https://mirror1.example.com/example/dns-rules',
-        github_mirror_2: '',
-        github_repository: 'example/dns-rules',
-        github_branch: 'main',
-      },
-      history: ['2026-01-01T00:00:00Z applied gen=1767225600',
-                '2026-01-01T00:05:00Z unchanged gen=1767225600'],
-      rollback_versions: [{ name: 'bundle-20260101-000000', count: 6448, mtime: now() - 3600 }],
+        '/api/rules': () => ({
+      cdn_providers: 20, cdn_prefixes: 9722, cdn_mainland: 411,
+      cdn_generated_at: Math.floor(Date.now() / 1000) - 41000,
+      polluted_cidr_count: 51, polluted_ip_count: 40,
+      manual_gfw_count: 2, manual_cn_count: 0,
+      cn_zones_matched_count: 488, direct4_count: 8598, cn_authority_count: 445,
+      polluted_ip_updated_at: Math.floor(Date.now() / 1000) - 7200,
     }),
 
     '/api/collected': () => {

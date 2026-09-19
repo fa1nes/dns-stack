@@ -1049,7 +1049,7 @@ function renderIpLookup(d) {
         <thead><tr><th class="rowhead"></th>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>
       ${(d.divergences || []).length
-        ? html`<div class="hint text-warn">标为分歧的只有 ASN 与国家码——它们是各源都给规范值、可以机器比对的字段。省市与组织名各源语言与写法不同，并列展示供人工判断，不做自动比对。</div>`
+        ? html`<div class="hint text-warn">只有 ASN 与国家码参与比对，省市与组织名各源写法不同，仅并列展示。</div>`
         : html`<div class="hint">各源在 ASN 与国家码上完全一致。</div>`}
       ${unavailable.length
         ? html`<div class="hint">未参与本次查询：${unavailable.map((s) => s.label + (s.error ? '（' + s.error + '）' : '')).join('、')}</div>`
@@ -1547,68 +1547,18 @@ async function loadDomainSummary() {
 
 
 
-const RULE_SOURCE_FIELDS = [
-  ['rsRawBase', 'github_raw_base'],
-  ['rsMirror1', 'github_mirror_1'],
-  ['rsMirror2', 'github_mirror_2'],
-  ['rsRepo', 'github_repository'],
-  ['rsBranch', 'github_branch'],
-];
-
-function fillRuleSources(sources) {
-  const s = sources || {};
-  RULE_SOURCE_FIELDS.forEach(([id, key]) => {
-    const el = $('#' + id);
-    if (el) el.value = s[key] || '';
-  });
-}
-
-async function saveRuleSources() {
-  const args = {};
-  RULE_SOURCE_FIELDS.forEach(([id, key]) => { args[key] = $('#' + id).value.trim(); });
-  await runOp('set_rule_sources', '保存规则源', args, true);
-}
-
-const SYNC_STALE_SEC = 3600;
-
-function syncHealth(ts) {
-  if (window.PANEL_ROLE !== 'cn-resolver') return '本角色不同步规则';
-  if (!ts) return raw('<span class="badge unknown">尚未同步过</span>');
-  const age = Math.floor(Date.now() / 1000) - ts;
-  return age > SYNC_STALE_SEC
-    ? html`<span class="badge err">已中断</span> 最后一次成功同步在${ago(ts)}`
-    : html`<span class="badge ok">正常</span> 最近一次成功同步：${ago(ts)}`;
-}
-
 async function loadRules() {
   loadCollected();
   try {
     const d = await apiCached('/api/rules');
     setHtml($('#rulesInfo'), kvList([
-      ['cn.txt', html`<b>${fmtNum(d.cn_count)}</b> 个域名`],
-      ['gfw.txt', html`<b>${fmtNum(d.gfw_count)}</b> 个域名`],
-      ['cn-ip-cidr.txt', fmtNum(d.cn_cidr_count) + ' 段'],
-      ['polluted-ip-cidr.txt', fmtNum(d.polluted_cidr_count) + ' 段'],
-      ['manual-gfw.txt', fmtNum(d.manual_gfw_count) + ' 条（人工维护）'],
-      ['规则最后变化', d.updated_at ? ago(d.updated_at) : '—'],
-      ['同步链路', syncHealth(d.last_sync_at)],
+      ['provider', html`<b>${fmtNum(d.cdn_providers)}</b> 家`],
+      ['前缀', fmtNum(d.cdn_prefixes) + ' 条'],
+      ['其中大陆段', fmtNum(d.cdn_mainland) + ' 条'],
+      ['规则集版本', d.cdn_generated_at ? ago(d.cdn_generated_at) : '—'],
+      ['污染 IP 网段', fmtNum(d.polluted_cidr_count) + ' 段'],
+      ['人工 GFW 清单', fmtNum(d.manual_gfw_count) + ' 条'],
     ]));
-
-    fillRuleSources(d.sources);
-
-    setHtml($('#syncHistory'), (d.history && d.history.length)
-      ? html`<pre class="block">${d.history.slice(0, 15).join('\n')}</pre>`
-      : EMPTY('暂无同步记录'));
-
-    setHtml($('#rollbackList'), (d.rollback_versions && d.rollback_versions.length)
-      ? html`<div class="table-wrap"><table>
-          <thead><tr><th>版本</th><th>条目</th><th>时间</th></tr></thead>
-          <tbody>${d.rollback_versions.map((v) => html`<tr>
-            <td class="mono">${v.name}</td>
-            <td class="mono">${fmtNum(v.count)}</td>
-            <td class="mono dim">${fmtTime(v.mtime)}</td></tr>`)}</tbody>
-        </table></div>`
-      : EMPTY('暂无历史版本'));
   } catch (e) {
     setHtml($('#rulesInfo'), errState(e));
   }
@@ -1728,14 +1678,12 @@ async function loadCdnHit(mode) {
         ['探测时间', fmtTime(d.generated_at)],
       ])}
       ${d.not_delivered ? html`<div class="callout err">
-        <b>${d.not_delivered} 个域名清掉缓存重查后仍然没有 ECS 回显。</b>
-        你的子网没送到那台权威，它只能按隧道出口（香港）判断你在哪，于是把你调度去了境外节点。
-        用 <span class="mono">dns-stack ecs-audit</span> 查这些权威在不在 ECS 白名单里。</div>` : ''}
+        <b>${d.not_delivered} 个域名清缓存重查后仍无 ECS 回显</b>——子网没送到那台权威。
+        用 <span class="mono">dns-stack ecs-audit</span> 查 ECS 白名单。</div>` : ''}
       ${!d.fresh && d.undecided ? html`<div class="callout">
-        ${d.undecided} 个域名本轮没有 ECS 回显——<span class="mono">scope=0</span> 的答案会被 unbound
-        缓存成全局条目，所以分不清是没送达还是命中了缓存。点「清缓存重查」可以把它们判出来。</div>` : ''}
+        ${d.undecided} 个域名无 ECS 回显，可能是缓存。点「清缓存重查」可判定。</div>` : ''}
       ${d.mainland === 0 && d.comparable > 0 ? html`<div class="callout">
-        <b>一个大陆节点都没拿到。</b>连国内站点都没命中，ECS 链路多半整条失效。
+        <b>一个大陆节点都没拿到</b>，ECS 链路多半整条失效。
         用 <span class="mono">dns-stack ecs-audit --quick</span> 复核白名单。</div>` : ''}
       <div class="table-wrap mt-12"><table class="card-rows">
         <thead><tr><th>域名</th><th style="width:96px">CDN</th><th style="width:150px">解析结果</th>
@@ -1743,14 +1691,11 @@ async function loadCdnHit(mode) {
         <tbody>${rows.length ? rows : rowSpan(5, '暂无数据')}</tbody>
       </table></div>
       <div class="hint mt-8">
-        <b>命中大陆节点</b>：答案落在 direct4 里，这次拿到的就是大陆节点。
-        <b>无回显，判不出</b>：这次没有 ECS 回显。<span class="mono">scope=0</span> 的答案会被
-        unbound 按 ECS 标准缓存成全局条目，后续任何子网的查询都命中它且不回显，
-        所以无回显并不等于没送达——点「清缓存重查」把它变成可判的。
-        <b>ECS 没送达</b>：缓存已清、走的是真实递归，权威仍然不回显你的子网，
-        说明它压根没收到——查 ECS 白名单。
-        <b>不按位置调度</b>：权威回了 scope=0，明确表示不按位置挑（全球 anycast 常见）。
-        <b>大陆无节点</b>：权威按你的子网挑过了仍给境外，说明这个服务在大陆确实没有节点。
+        <b>命中大陆节点</b> 答案落在 direct4 里 ·
+        <b>无回显，判不出</b> 可能是缓存，清缓存重查即可判定 ·
+        <b>ECS 没送达</b> 缓存已清仍不回显，查白名单 ·
+        <b>不按位置调度</b> 权威回 scope=0 ·
+        <b>大陆无节点</b> 权威挑过了仍给境外
       </div>
     </div>`);
   } catch (e) {
@@ -2044,6 +1989,10 @@ async function loadCollected() {
     });
     const s = $('#dataSearch');
     if (s) s.addEventListener('input', renderDataList);
+    const ex = $('#btnExportDataset');
+    if (ex) ex.addEventListener('click', () => downloadBundle(
+      '/api/export?dataset=' + _dataSet + '&format=txt',
+      'dns-stack-' + _dataSet + '.txt'));
     _collectedBound = !!(b && tabs);
   }
   try {
@@ -2312,11 +2261,8 @@ async function loadDohInfo() {
         <button class="danger sm" data-op="rotate_doh_path">轮换私密路径</button>
       </div>
       ${d.is_default
-        ? html`<div class="hint text-warn">
-            当前是默认路径 /dns-query，任何人拿到本机 IP 都能当公共 DNS 用。
-            建议点「轮换私密路径」换成随机地址。</div>`
-        : html`<div class="hint">路径在 TLS 内部传输，探测其它路径一律 404。
-            轮换后所有客户端都要同步换新地址。</div>`}`);
+        ? html`<div class="hint text-warn">默认路径 /dns-query 对任何人开放，建议轮换。</div>`
+        : html`<div class="hint">轮换后所有客户端都要同步换新地址。</div>`}`);
   } catch (e) {
     setHtml(box, errState(e));
     setHtml(badge, raw(''));
@@ -2805,9 +2751,6 @@ function bindEvents() {
     await runOp('flush_cache', '清理解析缓存', args, false);
     loadCacheInfo();
   });
-
-  const btnRS = $('#btnSaveRuleSources');
-  if (btnRS) btnRS.addEventListener('click', saveRuleSources);
 
   const pwForm = $('#pwForm');
   if (pwForm) pwForm.addEventListener('submit', changePassword);

@@ -251,11 +251,8 @@
               <button class="primary sm" id="btnCdnHit">重新探测</button>
               <button class="sm" id="btnCdnFresh" title="先清掉这些域名及其 CNAME 链的缓存再查，判据才不会被缓存骗过">清缓存重查</button>
             </div>
-            <div class="hint">以真实中国网段的身份向本机递归发查询，再拿答案去比对 CDN 直连规则集：
-              这个 CDN 在大陆有没有节点、这次给的到底是不是大陆节点。
-              规则集由本仓库的 <span class="mono">cdn-rules</span> Action 每天从各家官方前缀源与 ASN 通告重建。
-              <b>「清缓存重查」</b>会先清掉这批域名的缓存，这样「无 ECS 回显」才能断定成「子网没送到那台权威」；
-              代价是这些名字下一次解析要走完整递归，10 分钟内只允许一次。</div>
+            <div class="hint">以真实中国网段发查询，再比对 CDN 直连规则集。
+              「清缓存重查」会先清掉缓存，让「无 ECS 回显」变成可判定的结论，10 分钟限一次。</div>
           </div>
           <div id="cdnHitResult"></div>
         </div>
@@ -285,7 +282,7 @@
                      enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
               <button class="primary" id="btnIpLookup">查询</button>
             </div>
-            <div class="hint">四个来源各自独立查询同一地址：纯真负责国内省市与运营商，MaxMind 与 DB-IP 负责全球 ASN，ip.sb 作为在线兜底。只有 ASN 与国家码是可机器比对的规范值，其余字段按各源原样并列，供人工判断。</div>
+            <div class="hint">四个来源各自独立查询。只有 ASN 与国家码可机器比对，其余按各源原样并列。</div>
           </div>
           <div id="ipResult"></div>
         </div>
@@ -329,7 +326,7 @@
       <section class="page" id="page-settings">
         <div class="tabs main-tabs" id="settingTabs">
           <button data-stab="security" class="active">安全</button>
-          <button data-stab="rules">规则与证书</button>
+          <button data-stab="rules">数据与证书</button>
           <button data-stab="access">递归管控</button>
           <button data-stab="services">服务与备份</button>
           <button data-stab="audit">审计</button>
@@ -449,8 +446,7 @@
                        autocapitalize="none" autocorrect="off" spellcheck="false">
                 <button class="primary sm" id="btnBlAdd">加入</button>
               </div>
-              <div class="hint">命中的查询由 mosproxy 直接回 NXDOMAIN，连递归都不会发生，匹配包含其全部子域。
-                拒绝拉黑顶级域。</div>
+              <div class="hint">命中即回 NXDOMAIN，匹配含全部子域。拒绝顶级域。</div>
               <div id="blList"></div>
             </div>
 
@@ -464,9 +460,8 @@
                 <button class="sm" id="btnAclApply" title="把当前列表重新下发到内核">重新下发</button>
                 <button class="danger sm" id="btnAclDisable" title="移除内核里的访问控制链，入口恢复对全网开放">关闭</button>
               </div>
-              <div class="hint">只有列出的网段能查询 DoH/DoT/DoQ 入口；列表为空 = 不启用访问控制（全网可查）。
-                回环与隧道网段始终放行。<b>家宽地址会变</b>，变了就连不上自己的 DNS——
-                出事时用 SSH 跑 <span class="mono">dns-stack acl disable</span>。</div>
+              <div class="hint">列表为空 = 不启用。回环与隧道始终放行。
+                <b>家宽地址会变</b>，被挡在外面时用 SSH 跑 <span class="mono">dns-stack acl disable</span>。</div>
               <div id="aclList"></div>
             </div>
           </div>
@@ -480,6 +475,7 @@
               <span class="row">
                 <input type="text" id="dataSearch" class="ipt-sm" placeholder="筛选…" autocomplete="off"
                         enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button class="sm" id="btnExportDataset" title="导出当前数据集全量">导出</button>
                 <button class="sm" id="btnReloadCollected">刷新</button>
               </span>
             </h3>
@@ -496,43 +492,8 @@
               <div id="failingDomains"></div>
             </div>
             <div class="card">
-              <h3>客户端流量规则</h3>
+              <h3>CDN 直连规则集</h3>
               <div id="rulesInfo"></div>
-              <div class="row mt-10">
-                <button class="primary sm" data-op="sync_rules">同步</button>
-                <button class="sm" data-op="reload_mosproxy">重载域名表</button>
-                <button class="danger sm" data-op="rollback_rules">回滚</button>
-              </div>
-            </div>
-            <div class="card">
-              <h3>规则源</h3>
-              <div class="sec-form-grid">
-                <div class="sec-form-wide">
-                  <label class="f-label" for="rsRawBase">GitHub Raw 基础地址</label>
-                  <input type="text" id="rsRawBase" class="w-full mono" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-                </div>
-                <div>
-                  <label class="f-label" for="rsMirror1">镜像 1</label>
-                  <input type="text" id="rsMirror1" class="w-full mono" placeholder="留空表示不使用"
-                         autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-                </div>
-                <div>
-                  <label class="f-label" for="rsMirror2">镜像 2</label>
-                  <input type="text" id="rsMirror2" class="w-full mono" placeholder="留空表示不使用"
-                         autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-                </div>
-                <div>
-                  <label class="f-label" for="rsRepo">GitHub 仓库</label>
-                  <input type="text" id="rsRepo" class="w-full mono" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-                </div>
-                <div>
-                  <label class="f-label" for="rsBranch">分支</label>
-                  <input type="text" id="rsBranch" class="w-full mono" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-                </div>
-              </div>
-              <div class="row mt-10">
-                <button class="primary sm" id="btnSaveRuleSources">保存</button>
-              </div>
             </div>
           </div>
 
@@ -574,9 +535,7 @@
                 </label>
                 <button class="primary sm" id="btnSetMinTtl">应用</button>
               </div>
-              <div class="hint">强制最小 TTL 会把低于该值的记录一律按该值缓存，命中率随之上升。
-                代价是同时抬高了 CDN 那些几十秒的短 TTL——CDN 正是靠短 TTL 做故障转移与就近调度的，
-                所以上限只开到 300 秒。</div>
+              <div class="hint">抬高最小 TTL 提升命中率，但也会拖慢 CDN 的故障转移与就近调度，上限 300 秒。</div>
               <div class="filters flat">
                 <input type="text" id="flushDomain" class="grow mono" placeholder="要清理的域名，留空表示全部"
                        autocomplete="off" enterkeyhint="go" inputmode="url"
@@ -592,10 +551,6 @@
               <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
               <button class="sm" data-op="set_arch_epoch">重设统计起点</button>
               <button class="danger sm" data-op="purge_legacy">清理旧架构数据</button>
-            </div>
-            <div class="grid c2 mt-12">
-              <div><div class="f-label mb-4">同步历史</div><div id="syncHistory"></div></div>
-              <div><div class="f-label mb-4">可回滚版本</div><div id="rollbackList"></div></div>
             </div>
           </details>
         </div>
@@ -626,9 +581,8 @@
                 <button class="sm danger" id="btnMigrationImport">导入并覆盖</button>
               </div>
               <div id="migrationImportResult" class="hint"></div>
-              <div class="hint">导入只接受本面板导出的迁移包：逐文件校验 sha256、只写清单内的路径、
-                覆盖前自动备份。<b>先「试算导入」看清会写哪些文件再执行。</b>
-                整机迁移仍用 <code>sudo dns-stack migrate root@新服务器</code></div>
+              <div class="hint">只接受本面板导出的包，逐文件校验 sha256，覆盖前自动备份。
+                整机迁移用 <code>sudo dns-stack migrate root@新服务器</code></div>
             </div>
           </div>
           <div class="grid c2" id="opsRoleExtra"></div>
@@ -658,8 +612,7 @@
               <th style="width:52px"></th></tr></thead>
             <tbody id="auditBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
           </table></div></div>
-          <div class="hint">记录所有经面板触发的特权操作。helper 侧另有独立审计日志：
-            <code>/var/log/dns-stack/helper.log</code></div>
+          <div class="hint">helper 侧另有独立审计日志 <code>/var/log/dns-stack/helper.log</code></div>
         </div>
       </section>
     </div>

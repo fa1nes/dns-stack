@@ -140,7 +140,7 @@ a:hover { text-decoration: underline; }
   scrollbar-color: var(--border-strong) transparent;
 }
 
-.app { display: flex; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; min-height: 100dvh; }
 
 .sidebar {
   width: 212px; flex-shrink: 0;
@@ -150,7 +150,7 @@ a:hover { text-decoration: underline; }
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
   transition: width .18s var(--ease);
 }
 
@@ -534,7 +534,7 @@ code {
 
 .toast-wrap {
   position: fixed; right: 16px; bottom: 16px; z-index: 100;
-  display: flex; flex-direction: column; gap: 8px; max-width: min(440px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 8px; max-width: min(440px, calc(100% - 32px));
 }
 .toast {
   background: var(--bg-elev);
@@ -556,7 +556,7 @@ code {
 }
 .drawer-mask.open { display: block; }
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw);
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100%);
   background: var(--bg-elev);
   background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -682,7 +682,7 @@ pre.block {
 }
 
 .login-page {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center;
   padding: 24px;
   background:
     radial-gradient(600px 320px at 88% 112%,
