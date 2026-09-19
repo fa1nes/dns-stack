@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -19,6 +20,9 @@ import (
 const (
 	CertPath      = "/etc/dns-stack/secrets/doh-dot.pem"
 	KeyPath       = "/etc/dns-stack/secrets/doh-dot.key"
+	PanelCertDir  = "/etc/dns-stack/secrets/panel"
+	PanelCertPath = PanelCertDir + "/cert.pem"
+	PanelKeyPath  = PanelCertDir + "/key.pem"
 	AcmeHome      = "/root/.acme.sh"
 	renewWhenDays = 3
 )
@@ -134,7 +138,7 @@ func stepRenewCert(ctx context.Context, rt *Runtime) error {
 	}
 	if status.DaysLeft > renewWhenDays && status.SANHasIP {
 		rt.Infof("证书仍然有效(> %d 天)且 SAN 正确，无需续签", renewWhenDays)
-		return nil
+		return syncPanelCertIfStale(ctx, rt)
 	}
 	if publicIP == "" {
 		return fmt.Errorf("需要续签但 config.env 没有 PUBLIC_IPV4，无法确定证书主体")
@@ -171,8 +175,20 @@ func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
 	return SyncPanelCert(ctx, rt)
 }
 
+func syncPanelCertIfStale(ctx context.Context, rt *Runtime) error {
+	source, err := os.ReadFile(CertPath)
+	if err != nil {
+		return nil
+	}
+	if copied, err := os.ReadFile(PanelCertPath); err == nil && bytes.Equal(source, copied) {
+		return nil
+	}
+	rt.Warnf("面板证书副本与入口证书不一致——acme.sh 自己的 cron 续签后只重载 mosproxy，不会同步副本")
+	return SyncPanelCert(ctx, rt)
+}
+
 func SyncPanelCert(ctx context.Context, rt *Runtime) error {
-	const dir = "/etc/dns-stack/secrets/panel"
+	const dir = PanelCertDir
 	if _, err := exec.LookPath("install"); err != nil {
 		return nil
 	}
@@ -182,7 +198,7 @@ func SyncPanelCert(ctx context.Context, rt *Runtime) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	for _, pair := range [][2]string{{CertPath, dir + "/cert.pem"}, {KeyPath, dir + "/key.pem"}} {
+	for _, pair := range [][2]string{{CertPath, PanelCertPath}, {KeyPath, PanelKeyPath}} {
 		cmd := exec.CommandContext(ctx, "install",
 			"-o", "dns-stack-panel", "-g", "dns-stack-panel", "-m", "0400", pair[0], pair[1])
 		if err := cmd.Run(); err != nil {
