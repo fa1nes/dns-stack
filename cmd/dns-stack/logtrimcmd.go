@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
@@ -38,6 +39,8 @@ func cmdTrimLogs(args []string) error {
 	return nil
 }
 
+const staleLogMinAge = 14 * 24 * time.Hour
+
 func dropStaleLogs(dir string) ([]string, int64, error) {
 	live := map[string]bool{"helper.log": true}
 	for _, module := range stack.All() {
@@ -49,6 +52,7 @@ func dropStaleLogs(dir string) ([]string, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	open := openLogFiles()
 	var removed []string
 	var freed int64
 	for _, entry := range entries {
@@ -56,15 +60,46 @@ func dropStaleLogs(dir string) ([]string, int64, error) {
 		if entry.IsDir() || !strings.HasSuffix(name, ".log") || live[name] {
 			continue
 		}
+		path := filepath.Join(dir, name)
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+		if time.Since(info.ModTime()) < staleLogMinAge {
+			continue
+		}
+		if open[path] {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
 			continue
 		}
 		removed = append(removed, name)
 		freed += info.Size()
 	}
 	return removed, freed, nil
+}
+
+func openLogFiles() map[string]bool {
+	out := map[string]bool{}
+	procs, err := os.ReadDir("/proc")
+	if err != nil {
+		return out
+	}
+	for _, proc := range procs {
+		if !proc.IsDir() || proc.Name()[0] < '0' || proc.Name()[0] > '9' {
+			continue
+		}
+		fds, err := os.ReadDir(filepath.Join("/proc", proc.Name(), "fd"))
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			target, err := os.Readlink(filepath.Join("/proc", proc.Name(), "fd", fd.Name()))
+			if err == nil && strings.HasSuffix(target, ".log") {
+				out[strings.TrimSuffix(target, " (deleted)")] = true
+			}
+		}
+	}
+	return out
 }
