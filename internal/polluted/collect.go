@@ -212,7 +212,7 @@ func Collect(ctx context.Context, opt CollectOptions) (CollectResult, error) {
 	if err := moveFile(evidenceOut, evidenceFile); err != nil {
 		return res, err
 	}
-	if err := moveFile(cidrOut, filepath.Join(syncDir, "polluted-ip-cidr.local.txt")); err != nil {
+	if err := moveFile(cidrOut, filepath.Join(opt.StateDir, "polluted-ip-cidr.txt")); err != nil {
 		return res, err
 	}
 

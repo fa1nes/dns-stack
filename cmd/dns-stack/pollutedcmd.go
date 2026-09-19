@@ -14,8 +14,8 @@ import (
 
 func cmdCollectPolluted(args []string) error {
 	fs := flag.NewFlagSet("collect-polluted", flag.ContinueOnError)
-	stateDir := fs.String("state", envOrDefault("DNS_STACK_STATE", "/var/lib/dns-stack"), "状态目录")
-	configPath := fs.String("config", envOrDefault("CONFIG_FILE", config.DefaultPath), "配置文件")
+	stateDir := fs.String("state", envOr("DNS_STACK_STATE", "/var/lib/dns-stack"), "状态目录")
+	configPath := fs.String("config", envOr("CONFIG_FILE", config.DefaultPath), "配置文件")
 	rounds := fs.Int("rounds", polluted.DefaultRounds, "探测轮数")
 	maxAge := fs.Int("max-age-days", 30, "证据过期天数")
 	minObs := fs.Int("min-observations", 2, "计入所需的最少独立观测次数")

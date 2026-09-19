@@ -13,7 +13,6 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/cdnhit"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 func cmdCDNHit(args []string) error {
@@ -35,7 +34,7 @@ func cmdCDNHit(args []string) error {
 		return err
 	}
 	if *ruleset == "" {
-		*ruleset = rulesync.CDNPath(*state)
+		*ruleset = cdnrules.Path(*state)
 	}
 	if *direct4 == "" {
 		*direct4 = filepath.Join(*state, "chnroute", "direct4.txt")

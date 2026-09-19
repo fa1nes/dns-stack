@@ -38,7 +38,7 @@ const (
 
 var backedUpUnits = []string{
 	"dns-stack-helper", "dns-stack-panel", "dns-stack-classify", "dns-stack-verify",
-	"dns-stack-maintenance", "dns-stack-sync-rules", "dns-stack-collect-polluted",
+	"dns-stack-maintenance", "dns-stack-collect-polluted",
 	"dns-stack-reference-data", "dns-stack-publish", "dns-stack-routing-data",
 	"dns-stack-recursive-routing", "dns-stack-routing-watchdog",
 	"unbound", "mosproxy",
@@ -581,12 +581,35 @@ func (c Config) archivesWithPrefix(prefix string) []string {
 }
 
 func (c Config) cleanupOld(dailyKeep, weeklyKeep int) {
+	c.Prune(dailyKeep, weeklyKeep)
+}
+
+type PruneResult struct {
+	Removed []string
+	Bytes   int64
+}
+
+func (c Config) Prune(dailyKeep, weeklyKeep int) PruneResult {
+	var out PruneResult
 	for prefix, keep := range map[string]int{"daily": dailyKeep, "weekly": weeklyKeep} {
 		files := c.archivesWithPrefix(prefix)
 		for i := keep; i < len(files); i++ {
-			os.Remove(files[i])
+			if info, err := os.Stat(files[i]); err == nil {
+				out.Bytes += info.Size()
+			}
+			if os.Remove(files[i]) == nil {
+				out.Removed = append(out.Removed, filepath.Base(files[i]))
+			}
 		}
 	}
+	sort.Strings(out.Removed)
+	return out
+}
+
+func (c Config) PruneWithConfig() PruneResult {
+	return c.Prune(
+		c.configInt("BACKUP_RETENTION_DAILY", 3, 1, 365),
+		c.configInt("BACKUP_RETENTION_WEEKLY", 2, 1, 104))
 }
 
 func copyFile(src, dst string) error {

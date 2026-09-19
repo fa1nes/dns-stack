@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/netip"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/dns-stack/dns-stack/internal/ipset"
@@ -78,22 +77,7 @@ func SafeClientSubnet(raw string) (string, bool) {
 }
 
 var (
-	retentionPattern  = regexp.MustCompile(`^[0-9]{1,3}[dwm]$`)
-	interfacePattern  = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,15}$`)
-	sincePattern      = regexp.MustCompile(`^[0-9]{1,4}\s?(s|sec|second|seconds|m|min|minute|minutes|h|hour|hours|d|day|days)\s?ago$`)
-	ruleURLPattern    = regexp.MustCompile(`^https://[A-Za-z0-9.-]+(:[0-9]{2,5})?(/[A-Za-z0-9._~%/+-]*)?$`)
-	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	branchPattern     = regexp.MustCompile(`^[A-Za-z0-9_./-]{1,80}$`)
+	retentionPattern = regexp.MustCompile(`^[0-9]{1,3}[dwm]$`)
+	interfacePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,15}$`)
+	sincePattern     = regexp.MustCompile(`^[0-9]{1,4}\s?(s|sec|second|seconds|m|min|minute|minutes|h|hour|hours|d|day|days)\s?ago$`)
 )
-
-const ruleURLMaxLen = 200
-
-func validateRuleURL(value, label string) string {
-	if value == "" {
-		return ""
-	}
-	if len(value) > ruleURLMaxLen || !ruleURLPattern.MatchString(value) {
-		return label + " 必须是合法的 https URL(长度≤" + strconv.Itoa(ruleURLMaxLen) + "，不含空白/引号/反斜杠)"
-	}
-	return ""
-}

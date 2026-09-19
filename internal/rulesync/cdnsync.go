@@ -1,4 +1,4 @@
-package rulesync
+package cdnrules
 
 import (
 	"bytes"
@@ -8,18 +8,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/dns-stack/dns-stack/internal/cdnrules"
 )
 
 const (
-	FileCDNDirect = "cdn-direct.txt"
+	FileName = "cdn-direct.txt"
 
-	cdnSelfTestAddr  = "192.0.2.1"
-	cdnShrinkPercent = 20
+	selfTestAddr  = "192.0.2.1"
+	shrinkPercent = 20
 )
 
-type CDNResult struct {
+type SyncOptions struct {
+	StateDir string
+	Sources  []string
+	Force    bool
+	Fetch    Fetcher
+	Logf     func(format string, args ...any)
+}
+
+func (o SyncOptions) logf(format string, args ...any) {
+	if o.Logf != nil {
+		o.Logf(format, args...)
+	}
+}
+
+type SyncResult struct {
 	Applied     bool
 	GeneratedAt int64
 	Source      string
@@ -28,20 +40,20 @@ type CDNResult struct {
 	Reason      string
 }
 
-func CDNPath(stateDir string) string { return filepath.Join(stateDir, FileCDNDirect) }
+func Path(stateDir string) string { return filepath.Join(stateDir, FileName) }
 
-func SyncCDN(ctx context.Context, opt Options) (CDNResult, error) {
+func Sync(ctx context.Context, opt SyncOptions) (SyncResult, error) {
 	if opt.StateDir == "" {
-		return CDNResult{}, fmt.Errorf("状态目录未配置")
+		return SyncResult{}, fmt.Errorf("状态目录未配置")
 	}
 	if opt.Fetch == nil {
-		return CDNResult{}, fmt.Errorf("未提供下载器")
+		return SyncResult{}, fmt.Errorf("未提供下载器")
 	}
-	dest := CDNPath(opt.StateDir)
+	dest := Path(opt.StateDir)
 
 	var (
 		bestBody []byte
-		bestSet  *cdnrules.Set
+		bestSet  *Set
 		bestSrc  string
 	)
 	for _, src := range opt.Sources {
@@ -49,12 +61,12 @@ func SyncCDN(ctx context.Context, opt Options) (CDNResult, error) {
 		if src == "" {
 			continue
 		}
-		body, err := opt.Fetch(ctx, src+"/"+FileCDNDirect)
+		body, err := opt.Fetch(ctx, src+"/"+FileName)
 		if err != nil {
 			opt.logf("CDN 规则集下载失败 %s: %v", src, err)
 			continue
 		}
-		set, err := validateCDN(body)
+		set, err := validate(body)
 		if err != nil {
 			opt.logf("CDN 规则集校验失败 %s: %v", src, err)
 			continue
@@ -64,10 +76,10 @@ func SyncCDN(ctx context.Context, opt Options) (CDNResult, error) {
 		}
 	}
 	if bestSet == nil {
-		return CDNResult{Reason: "所有来源的 CDN 规则集都不可用，保留当前副本"}, nil
+		return SyncResult{Reason: "所有来源的 CDN 规则集都不可用，保留当前副本"}, nil
 	}
 
-	res := CDNResult{
+	res := SyncResult{
 		GeneratedAt: bestSet.GeneratedAt().Unix(),
 		Source:      bestSrc,
 		Providers:   len(bestSet.Providers()),
@@ -78,15 +90,17 @@ func SyncCDN(ctx context.Context, opt Options) (CDNResult, error) {
 			res.Reason = "内容无变化"
 			return res, nil
 		}
-		if prev, err := cdnrules.Parse(bytes.NewReader(old)); err == nil {
+		if prev, err := Parse(bytes.NewReader(old)); err == nil {
 			if bestSet.GeneratedAt().Before(prev.GeneratedAt()) {
-				res.Reason = fmt.Sprintf("远端版本旧于本机(%s)，跳过", prev.GeneratedAt().Format("2006-01-02 15:04"))
+				res.Reason = fmt.Sprintf("远端版本旧于本机(%s)，跳过",
+					prev.GeneratedAt().Format("2006-01-02 15:04"))
 				return res, nil
 			}
 			if !opt.Force && prev.PrefixCount() > 100 {
-				floor := prev.PrefixCount() * (100 - cdnShrinkPercent) / 100
+				floor := prev.PrefixCount() * (100 - shrinkPercent) / 100
 				if bestSet.PrefixCount() < floor {
-					res.Reason = fmt.Sprintf("前缀数从 %d 骤降到 %d（下限 %d），保留旧规则集（确认无误用 --force）",
+					res.Reason = fmt.Sprintf(
+						"前缀数从 %d 骤降到 %d（下限 %d），保留旧规则集（确认无误用 --force）",
 						prev.PrefixCount(), bestSet.PrefixCount(), floor)
 					return res, nil
 				}
@@ -100,20 +114,35 @@ func SyncCDN(ctx context.Context, opt Options) (CDNResult, error) {
 	return res, nil
 }
 
-func validateCDN(body []byte) (*cdnrules.Set, error) {
-	set, err := cdnrules.Parse(bytes.NewReader(body))
+func validate(body []byte) (*Set, error) {
+	set, err := Parse(bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	if len(set.Providers()) == 0 {
 		return nil, fmt.Errorf("规则集里一个 provider 都没有")
 	}
-	probe, err := netip.ParseAddr(cdnSelfTestAddr)
+	probe, err := netip.ParseAddr(selfTestAddr)
 	if err != nil {
 		return nil, err
 	}
 	if _, _, _, hit := set.Owner(probe); hit {
-		return nil, fmt.Errorf("自检失败: %s 是 TEST-NET-1，任何 CDN 都不该拥有它", cdnSelfTestAddr)
+		return nil, fmt.Errorf("自检失败: %s 是 TEST-NET-1，任何 CDN 都不该拥有它", selfTestAddr)
 	}
 	return set, nil
+}
+
+func writeAtomic(path string, body []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	temp := path + ".new"
+	if err := os.WriteFile(temp, body, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(temp, path); err != nil {
+		os.Remove(temp)
+		return err
+	}
+	return nil
 }

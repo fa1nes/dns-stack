@@ -12,12 +12,11 @@ import (
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/collect"
 	"github.com/dns-stack/dns-stack/internal/geoip"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 func cmdQueryLog(args []string) error {
 	fs := flag.NewFlagSet("query-log", flag.ContinueOnError)
-	stateDir := fs.String("state", envOrDefault("DNS_STACK_STATE", "/var/lib/dns-stack"), "状态目录")
+	stateDir := fs.String("state", envOr("DNS_STACK_STATE", "/var/lib/dns-stack"), "状态目录")
 	dbPath := fs.String("db", "", "collector SQLite 路径，默认 <state>/collector.db")
 	since := fs.Duration("since", 24*time.Hour, "回看时长")
 	kind := fs.String("kind", "", "递归类型: blocked|refused|cache|forward|recursive")
@@ -82,7 +81,7 @@ func cmdQueryLog(args []string) error {
 		filepath.Join(*stateDir, "geoip", "GeoLite2-ASN.mmdb"),
 		filepath.Join(*stateDir, "geoip", "GeoLite2-City.mmdb"),
 		filepath.Join(*stateDir, "geoip", "qqwry.ipdb"))
-	set, _ := cdnrules.Load(rulesync.CDNPath(*stateDir))
+	set, _ := cdnrules.Load(cdnrules.Path(*stateDir))
 	collect.Annotate(rows, geo, set)
 
 	if *csvOut != "" {

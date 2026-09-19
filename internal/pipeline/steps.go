@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/anycast"
+	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/chnroute"
 	"github.com/dns-stack/dns-stack/internal/cnauth"
 	"github.com/dns-stack/dns-stack/internal/ecszone"
 	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/ipset"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
+
+const cdnRulesMaxBytes = 32 << 20
 
 func Steps() []Step {
 	return []Step{
@@ -37,6 +39,10 @@ func Steps() []Step {
 			Needs: []string{"chnroute"}, Run: stepAnycast,
 		},
 		{
+			Name: "cdn-rules", Label: "CDN 直连规则集", Every: 24 * time.Hour,
+			Run: stepCDNRules,
+		},
+		{
 			Name: "cn-authority", Label: "国内权威与 ECS 白名单", Every: 15 * time.Minute,
 			Needs: []string{"chnroute", "geo-cross", "anycast"}, Run: stepCNAuthority,
 		},
@@ -45,6 +51,40 @@ func Steps() []Step {
 			Needs: []string{"chnroute", "geo-cross"}, Run: stepECSZone,
 		},
 	}
+}
+
+func stepCDNRules(ctx context.Context, rt *Runtime) error {
+	cfg := rt.Config
+	var sources []string
+	for _, key := range []string{"CDN_RULES_BASE", "CDN_RULES_MIRROR_1", "CDN_RULES_MIRROR_2"} {
+		if value := strings.TrimSpace(cfg.Value(key)); value != "" {
+			sources = append(sources, value)
+		}
+	}
+	if len(sources) == 0 {
+		rt.Warnf("CDN_RULES_BASE 未配置，ECS 白名单只能依赖静态 CDN 表")
+		return nil
+	}
+	client := netfetchClient("")
+	res, err := cdnrules.Sync(ctx, cdnrules.SyncOptions{
+		StateDir: cfg.StateDir,
+		Sources:  sources,
+		Fetch: func(ctx context.Context, url string) ([]byte, error) {
+			return netfetchBytes(ctx, client, url, cdnRulesMaxBytes)
+		},
+		Logf: rt.Warnf,
+	})
+	if err != nil {
+		return err
+	}
+	switch {
+	case res.Applied:
+		rt.Infof("CDN 直连规则集已更新：%d 个 provider / %d 条前缀（来源 %s）",
+			res.Providers, res.Prefixes, res.Source)
+	case res.Reason != "":
+		rt.Infof("CDN 直连规则集未变更：%s", res.Reason)
+	}
+	return nil
 }
 
 func stepGeoIP(ctx context.Context, rt *Runtime) error {
@@ -302,7 +342,7 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		ECSStatePath:      cfg.Chnroute("ecs-accum-state.tsv"),
 		SharedExcludedOut: cfg.Chnroute("shared-excluded.txt"),
 		SteeredOutPath:    cfg.Chnroute("cdn-steered-zones.txt"),
-		CDNRulesPath:      cfg.Path(rulesync.FileCDNDirect),
+		CDNRulesPath:      cfg.Path(cdnrules.FileName),
 		Aggregate:         cfg.Aggregate,
 		AccumTTL:          cfg.Duration("ECS_ACCUM_TTL_SEC", cnauth.DefaultAccumTTL),
 		SharedMaxAge:      cfg.Duration("SHARED_ANYCAST_MAX_AGE_SEC", cnauth.DefaultSharedMaxAge),

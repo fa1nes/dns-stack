@@ -63,8 +63,6 @@ func main() {
 		err = cmdAuthorityCheck(args)
 	case "collect":
 		err = cmdCollect(args)
-	case "classify":
-		err = cmdClassify(args)
 	case "routing-data":
 		err = cmdRoutingData(args)
 	case "maintenance":
@@ -85,14 +83,10 @@ func main() {
 		err = cmdPollutedEvidence(args)
 	case "collect-polluted":
 		err = cmdCollectPolluted(args)
-	case "rules":
-		err = cmdRules(args)
 	case "cdn-rules":
 		err = cmdCDNRules(args)
 	case "cdn-hit":
 		err = cmdCDNHit(args)
-	case "sync-rules":
-		err = cmdSyncRules(args)
 	case "blocklist":
 		err = cmdBlocklist(args)
 	case "acl":
@@ -175,13 +169,10 @@ func usage() {
   cn-authority    由 infra 记录生成直连路由集与 ECS 白名单(含累积保留)
   chnroute        由 APNIC 委派记录生成 direct4(qqwry 补充 + 反向排除)
   polluted-evidence 聚合污染 IP 观测证据(TTL/门槛)并汇总 CIDR
-  rules           规则包清洗与校验(域名形态/CIDR 汇总/不重叠/父子覆盖)
   cdn-rules       CDN 直连规则集：build 由官方前缀源与 ASN 合成(跑在 Action)、verify 锚点断言、
-                  lookup 查单个域名+IP 的判据(大陆节点/境外节点/地址不属于该 CDN)
+                  lookup 查单个域名+IP 的判据；日常刷新由 routing-data 的 cdn-rules 步骤完成
   cdn-hit         以真实中国 /24 的身份解析国内外大厂域名，判定是否真的拿到了大陆 CDN 节点；
                   重点报出「该 CDN 在大陆有节点、答案却落在境外」——那是 ECS 没送达权威
-  sync-rules      从规则源同步四文件规则包与 CDN 规则集，校验后原子替换并重载
-                  (骤降/同版本冲突保护默认开启，--force 跳过；--rollback 回退到上一份)
   blocklist       域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机
   acl             访问控制：只放行授权网段访问 DoH/DoT 入口(nftables 实现，回环与隧道始终放行)
   query-log       递归日志：按时间/递归类型/域名/来源子网筛选，可 --csv 导出、--breakdown 看构成
@@ -194,9 +185,7 @@ func usage() {
   ecs-forward     直查 mosproxy DoT，验证客户端子网是否真的转发给上游（分片表内外对照）
   doh-probe       向本机 DoH 入口发一个真实查询，输出 ok/bad
   helper-probe    经 helper socket 取日志，数出其中未脱敏的全局 IPv4 个数（-1 表示查不了）
-  collect         消费 mosproxy 日志流(consume-stdin) / 统计 / 拉取候选
-  classify        规则构建节点全流程：候选拉取、双视角分类、权威位置分类、规则包构建与发布
-                  (pipeline 子命令一次跑完全流程，direct4/PSL/解析客户端全程复用)
+  collect         消费 mosproxy 日志流(consume-stdin) / 统计
   helper          以 root 运行受限管理助手，监听 unix socket 供面板调用
   panel           启动嵌入式 DNS 管理面板
   panel-auth      设置面板密码 / 关闭二次认证（需 root，直接写 auth.json）
@@ -207,12 +196,11 @@ func usage() {
 
 func cmdCollect(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("用法: dns-stack collect <consume-stdin|run-mosproxy|stats|pull-batch> [参数]")
+		return fmt.Errorf("用法: dns-stack collect <consume-stdin|run-mosproxy|stats> [参数]")
 	}
 	fs := flag.NewFlagSet("collect", flag.ContinueOnError)
 	dbPath := fs.String("db", os.Getenv("DNS_STACK_DB"), "collector SQLite 路径")
 	stateDir := fs.String("state", os.Getenv("DNS_STACK_STATE"), "状态目录")
-	limit := fs.Int("limit", 2000, "pull-batch 单次上限")
 	mosproxy := fs.String("mosproxy", "/opt/dns-stack/bin/mosproxy", "mosproxy 二进制路径")
 	mosproxyConfig := fs.String("mosproxy-config", "/etc/dns-stack/mosproxy/config.yaml", "mosproxy 配置路径")
 	sub := args[0]
@@ -236,23 +224,6 @@ func cmdCollect(args []string) error {
 			return err
 		}
 		return writeCompactJSON(stats)
-	case "pull-batch":
-
-		db, err := collect.OpenDB(*dbPath)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		rows, err := collect.PullBatch(db, *limit, time.Now().Unix())
-		if err != nil {
-			return err
-		}
-		return writeCompactJSON(map[string]any{
-			"domains":        rows,
-			"polluted_cidrs": collect.LoadPollutedCIDRs(*stateDir),
-			"cn_cidrs":       collect.LoadCNCIDRs(*stateDir),
-			"geo_disputed":   collect.LoadGeoDisputed(*stateDir),
-		})
 	}
 	return fmt.Errorf("未知子命令: collect %s", sub)
 }
@@ -680,9 +651,18 @@ func anycastNote(note string) string {
 	return note
 }
 
+const reloadTimeout = 15 * time.Second
+
 func envOr(key, def string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return def
+}
+
+func atoiOr(value string, def int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && n > 0 {
+		return n
 	}
 	return def
 }

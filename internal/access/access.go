@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
+	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
 const (
@@ -121,7 +121,7 @@ func normalizeDomain(name string) (string, error) {
 	if value == "" {
 		return "", fmt.Errorf("域名为空")
 	}
-	if !rulesync.ValidDomain(value) {
+	if !domain.IsWellFormed(value) {
 		return "", fmt.Errorf("域名格式非法: %s", name)
 	}
 	if !strings.Contains(value, ".") {

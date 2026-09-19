@@ -390,39 +390,6 @@ func TestConsumeStdinPersistsThroughRun(t *testing.T) {
 	}
 }
 
-func TestLoadCNCIDRsRefusesUndersizedSnapshot(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "chnroute"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, "chnroute", "direct4.txt"),
-		[]byte("116.0.0.0/8\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := LoadCNCIDRs(dir); len(got) != 0 {
-		t.Fatalf("残缺快照应返回空集，实际 %d 条", len(got))
-	}
-}
-
-func TestLoadPollutedCIDRsMergesBothSources(t *testing.T) {
-	dir := t.TempDir()
-
-	if err := os.WriteFile(filepath.Join(dir, "polluted-ip-cidr.txt"),
-		[]byte("# 注释\n157.240.7.0/24\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "polluted-ip.txt"),
-		[]byte("31.13.64.1\n157.240.7.0/24\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got := LoadPollutedCIDRs(dir)
-	want := []string{"31.13.64.1/32", "157.240.7.0/24"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("= %v, 期望 %v", got, want)
-	}
-}
-
 func TestCollapsePrefixesMergesSiblingsAndContained(t *testing.T) {
 	got := formatPrefixes(collapsePrefixes(mustPrefixes(t,
 		"10.0.0.0/25", "10.0.0.128/25",

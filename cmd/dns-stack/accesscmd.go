@@ -15,7 +15,7 @@ import (
 
 func accessStore(stateDir string) access.Store {
 	if stateDir == "" {
-		stateDir = envOrDefault("DNS_STACK_STATE", "/var/lib/dns-stack")
+		stateDir = envOr("DNS_STACK_STATE", "/var/lib/dns-stack")
 	}
 	return access.Store{StateDir: stateDir}
 }

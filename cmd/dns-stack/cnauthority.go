@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/cnauth"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 )
 
 func envDuration(key string, def time.Duration) time.Duration {
@@ -71,7 +71,7 @@ func cmdCNAuthority(args []string) error {
 		*ecsState = chn("ecs-accum-state.tsv")
 	}
 	if *cdnRules == "" {
-		*cdnRules = filepath.Join(*state, rulesync.FileCDNDirect)
+		*cdnRules = filepath.Join(*state, cdnrules.FileName)
 	}
 	var pslPaths []string
 	if *psl != "" {

@@ -14,7 +14,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 	"github.com/dns-stack/dns-stack/internal/resolve"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
@@ -62,7 +61,7 @@ func (c *Ctl) TestDomain(ctx context.Context, domain, subnet string) error {
 		c.explainRouting(ctx, domain, ecs)
 	}
 
-	cdnSet, _ := cdnrules.Load(rulesync.CDNPath(c.StateDir))
+	cdnSet, _ := cdnrules.Load(cdnrules.Path(c.StateDir))
 	fmt.Fprintln(c.Out, "  本机 Unbound 视角(A/AAAA/CNAME/HTTPS)  ← 主人实际会拿到的结果:")
 	c.dumpViews(ctx, localResolver, domain, ecs, cdnSet)
 	fmt.Fprintln(c.Out, "  国外 Unbound 视角(A/AAAA/CNAME/HTTPS)  ← 对比用，非主人实际结果:")

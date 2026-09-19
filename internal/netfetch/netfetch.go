@@ -1,4 +1,4 @@
-package netfetch
+package pipeline
 
 import (
 	"context"
@@ -46,9 +46,9 @@ func (p *pacedReader) Read(buf []byte) (int, error) {
 	return n, err
 }
 
-func Paced(r io.Reader) io.Reader { return &pacedReader{inner: r} }
+func netfetchPaced(r io.Reader) io.Reader { return &pacedReader{inner: r} }
 
-func Client(localAddr string) *http.Client {
+func netfetchClient(localAddr string) *http.Client {
 	dialer := &net.Dialer{Timeout: ConnectTimeout, KeepAlive: 30 * time.Second}
 	if localAddr != "" {
 		if addr, err := netip.ParseAddr(localAddr); err == nil {
@@ -66,7 +66,7 @@ func Client(localAddr string) *http.Client {
 	}
 }
 
-func Bytes(ctx context.Context, client *http.Client, url string, maxBytes int64) ([]byte, error) {
+func netfetchBytes(ctx context.Context, client *http.Client, url string, maxBytes int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -80,5 +80,5 @@ func Bytes(ctx context.Context, client *http.Client, url string, maxBytes int64)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(Paced(resp.Body), maxBytes))
+	return io.ReadAll(io.LimitReader(netfetchPaced(resp.Body), maxBytes))
 }

@@ -104,7 +104,7 @@ func cmdECSAudit(args []string) error {
 	resolver := fs.String("resolver", "127.0.0.1", "递归器地址")
 	port := fs.Int("port", 5335, "递归器端口")
 	workers := fs.Int("workers", 12, "并发查询数")
-	quick := fs.Bool("quick", false, "只查内置核心域名，不读 cn.txt/gfw.txt")
+	quick := fs.Bool("quick", false, "只查内置核心域名，不读本机观测到的大陆权威区域")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -137,8 +137,8 @@ func cmdECSAudit(args []string) error {
 	cnDomains := coreCNDomains
 	var gfwDomains []string
 	if !*quick {
-		cnDomains = mergeSorted(coreCNDomains, loadDomainList(filepath.Join(*state, "cn.txt")))
-		gfwDomains = loadDomainList(filepath.Join(*state, "gfw.txt"))
+		cnDomains = mergeSorted(coreCNDomains,
+			loadDomainList(filepath.Join(chnroute, "cn-zones-matched.txt")))
 	}
 
 	client, err := resolve.NewClient(*resolver, *port, resolve.DefaultTimeout)

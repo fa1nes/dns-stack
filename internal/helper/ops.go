@@ -50,31 +50,24 @@ var digTargets = map[string][]string{
 var DangerousOps = map[string]bool{
 	"purge_legacy": true, "clear_audit": true, "vacuum_logs": true,
 	"clear_domains": true, "clear_domains_all": true,
-	"restart_mosproxy": true, "restart_unbound": true, "rollback_rules": true,
-	"import": true, "cert_renew": true, "publish_github": true, "rotate_doh_path": true,
-	"set_rule_sources": true, "migration_restore": true, "flush_cache": true,
+	"restart_mosproxy": true, "restart_unbound": true,
+	"import": true, "cert_renew": true, "rotate_doh_path": true,
+	"migration_restore": true, "flush_cache": true,
 	"set_arch_epoch": true,
 	"acl_add":        true, "acl_remove": true, "acl_apply": true, "acl_disable": true,
+	"prune_backups": true, "drop_stale_logs": true,
 }
 
 var RoleOps = map[string]string{
-	"pull_candidates":       stack.RoleGlobalBuilder,
-	"classify_start":        stack.RoleGlobalBuilder,
-	"classify_domain":       stack.RoleGlobalBuilder,
-	"classify_authority":    stack.RoleGlobalBuilder,
-	"build_rules":           stack.RoleGlobalBuilder,
-	"rebuild_rules":         stack.RoleGlobalBuilder,
-	"publish_github":        stack.RoleGlobalBuilder,
-	"update_reference_data": stack.RoleGlobalBuilder,
-	"refresh_routing":       stack.RoleCNResolver,
-	"set_min_ttl":           stack.RoleCNResolver,
-	"blocklist_add":         stack.RoleCNResolver,
-	"blocklist_remove":      stack.RoleCNResolver,
-	"acl_add":               stack.RoleCNResolver,
-	"acl_remove":            stack.RoleCNResolver,
-	"acl_apply":             stack.RoleCNResolver,
-	"acl_disable":           stack.RoleCNResolver,
-	"acl_status":            stack.RoleCNResolver,
+	"refresh_routing":  stack.RoleCNResolver,
+	"set_min_ttl":      stack.RoleCNResolver,
+	"blocklist_add":    stack.RoleCNResolver,
+	"blocklist_remove": stack.RoleCNResolver,
+	"acl_add":          stack.RoleCNResolver,
+	"acl_remove":       stack.RoleCNResolver,
+	"acl_apply":        stack.RoleCNResolver,
+	"acl_disable":      stack.RoleCNResolver,
+	"acl_status":       stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
@@ -174,14 +167,6 @@ func (h *Helper) opHealthcheck(map[string]any) result {
 	return h.run([]string{h.cli, "health"}, 60*time.Second, true)
 }
 
-func (h *Helper) opSyncRules(map[string]any) result {
-	return h.run([]string{h.goBin, "sync-rules"}, 120*time.Second, true)
-}
-
-func (h *Helper) opRollbackRules(map[string]any) result {
-	return h.run([]string{h.goBin, "sync-rules", "--rollback"}, 120*time.Second, true)
-}
-
 func (h *Helper) opCollectPollutedIP(map[string]any) result {
 	return h.run([]string{h.goBin, "collect-polluted"}, 300*time.Second, false)
 }
@@ -245,35 +230,6 @@ func (h *Helper) opUpdatePanelAuth(args map[string]any) result {
 	return result{"ok": true, "returncode": 0, "stdout": "已更新", "stderr": ""}
 }
 
-func (h *Helper) opClassifyStart(map[string]any) result {
-	return h.run([]string{h.goBin, "classify", "classify"}, 300*time.Second, true)
-}
-
-func (h *Helper) opClassifyStop(map[string]any) result {
-	return h.run([]string{"systemctl", "stop", "dns-stack-classify.service"}, 60*time.Second, true)
-}
-
-func (h *Helper) opClassifyDomain(args map[string]any) result {
-	domain, err := SafeDomain(stringArg(args, "domain"))
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	return h.run([]string{h.goBin, "classify", "classify", "--domain", domain}, 60*time.Second, true)
-}
-
-func (h *Helper) opClassifyAuthority(map[string]any) result {
-	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "classify-authority"}, 1800*time.Second, true)
-}
-
-func (h *Helper) opBuildRules(map[string]any) result {
-	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "build-rules"}, 600*time.Second, true)
-}
-
-func (h *Helper) opRebuildRules(map[string]any) result {
-	return h.run([]string{"flock", "-w", "1700", h.lockPath, h.goBin, "classify", "pipeline",
-		"--authority-every", "0"}, 2400*time.Second, true)
-}
-
 func readable(path string) bool {
 	if path == "" {
 		return false
@@ -319,18 +275,6 @@ func (h *Helper) opRefreshRouting(map[string]any) result {
 		return failure("缺少 " + missing + "，未改动分流产物")
 	}
 	return h.run([]string{h.goBin, "routing-data", "--force"}, 1800*time.Second, false)
-}
-
-func (h *Helper) opPullCandidates(map[string]any) result {
-	return h.run([]string{h.goBin, "classify", "pull"}, 120*time.Second, true)
-}
-
-func (h *Helper) opPublishGitHub(map[string]any) result {
-	return h.run([]string{h.goBin, "classify", "publish"}, 120*time.Second, true)
-}
-
-func (h *Helper) opUpdateReferenceData(map[string]any) result {
-	return h.run([]string{h.goBin, "classify", "update-reference-data"}, 120*time.Second, true)
 }
 
 func (h *Helper) opBackup(args map[string]any) result {
@@ -691,72 +635,6 @@ func (h *Helper) opFlushCache(args map[string]any) result {
 		"stdout": "已清理 " + label + "。这些名字接下来都要重新走完整递归，短时间内延迟会明显升高"}
 }
 
-func (h *Helper) opSetRuleSources(args map[string]any) result {
-	rawBase, _ := args["github_raw_base"].(string)
-	if rawBase == "" {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "github_raw_base 不能为空"}
-	}
-	if message := validateRuleURL(rawBase, "github_raw_base"); message != "" {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": message}
-	}
-	mirror1, _ := args["github_mirror_1"].(string)
-	if message := validateRuleURL(mirror1, "github_mirror_1"); message != "" {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": message}
-	}
-	mirror2, _ := args["github_mirror_2"].(string)
-	if message := validateRuleURL(mirror2, "github_mirror_2"); message != "" {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": message}
-	}
-	repository, _ := args["github_repository"].(string)
-	if !repositoryPattern.MatchString(repository) {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "github_repository 必须是 owner/repo 形式"}
-	}
-	branch, _ := args["github_branch"].(string)
-	if branch == "" {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "github_branch 不能为空"}
-	}
-	if !branchPattern.MatchString(branch) {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "github_branch 含非法字符或过长(≤80)"}
-	}
-
-	updates := [][2]string{
-		{"GITHUB_RAW_BASE", rawBase},
-		{"GITHUB_MIRROR_1", mirror1},
-		{"GITHUB_MIRROR_2", mirror2},
-		{"GITHUB_REPOSITORY", repository},
-		{"GITHUB_BRANCH", branch},
-	}
-	data, err := os.ReadFile(h.configPath)
-	if err != nil {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "读取配置失败: " + err.Error()}
-	}
-	text := string(data)
-	var appended []string
-	for _, pair := range updates {
-		pattern := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(pair[0]) + `=.*$`)
-		if pattern.MatchString(text) {
-			text = pattern.ReplaceAllLiteralString(text, pair[0]+"="+pair[1])
-			continue
-		}
-		appended = append(appended, pair[0]+"="+pair[1])
-	}
-	if len(appended) > 0 {
-		if text != "" && !strings.HasSuffix(text, "\n") {
-			text += "\n"
-		}
-		text += strings.Join(appended, "\n") + "\n"
-	}
-	mode := os.FileMode(0o600)
-	if info, err := os.Stat(h.configPath); err == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := os.WriteFile(h.configPath, []byte(text), mode); err != nil {
-		return result{"ok": false, "returncode": 1, "stdout": "", "stderr": "写入配置失败: " + err.Error()}
-	}
-	h.log("GitHub 规则源已更新: raw_base=" + rawBase + " repository=" + repository + " branch=" + branch)
-	return result{"ok": true, "returncode": 0, "stdout": "规则源已更新，下次 sync-rules 运行时生效", "stderr": ""}
-}
-
 func (h *Helper) opUnboundStats(map[string]any) result {
 	return h.run([]string{"unbound-control", "-c", "/etc/unbound/unbound.conf", "stats_noreset"}, 15*time.Second, false)
 }
@@ -917,58 +795,48 @@ func rejectResult(message string) result {
 
 func (h *Helper) operations() map[string]func(map[string]any) result {
 	return map[string]func(map[string]any) result{
-		"network_exits":         h.opNetworkExits,
-		"reload_mosproxy":       h.opReloadMosproxy,
-		"restart_mosproxy":      h.opRestartMosproxy,
-		"restart_unbound":       h.opRestartUnbound,
-		"healthcheck":           h.opHealthcheck,
-		"sync_rules":            h.opSyncRules,
-		"rollback_rules":        h.opRollbackRules,
-		"collect_polluted_ip":   h.opCollectPollutedIP,
-		"doh_info":              h.opDoHInfo,
-		"rotate_doh_path":       h.opRotateDoHPath,
-		"set_panel_password":    h.opSetPanelPassword,
-		"update_panel_auth":     h.opUpdatePanelAuth,
-		"classify_start":        h.opClassifyStart,
-		"classify_stop":         h.opClassifyStop,
-		"classify_domain":       h.opClassifyDomain,
-		"classify_authority":    h.opClassifyAuthority,
-		"build_rules":           h.opBuildRules,
-		"rebuild_rules":         h.opRebuildRules,
-		"refresh_routing":       h.opRefreshRouting,
-		"pull_candidates":       h.opPullCandidates,
-		"publish_github":        h.opPublishGitHub,
-		"update_reference_data": h.opUpdateReferenceData,
-		"backup":                h.opBackup,
-		"purge_legacy":          h.opPurgeLegacy,
-		"clear_audit":           h.opClearAudit,
-		"vacuum_logs":           h.opVacuumLogs,
-		"clear_domains":         h.opClearDomains,
-		"clear_domains_all":     h.opClearDomainsAll,
-		"set_arch_epoch":        h.opSetArchEpoch,
-		"export":                h.opExport,
-		"import":                h.opImport,
-		"migration_restore":     h.opMigrationRestore,
-		"cert_check":            h.opCertCheck,
-		"cert_info":             h.opCertInfo,
-		"cert_renew":            h.opCertRenew,
-		"list_backups":          h.opListBackups,
-		"logs":                  h.opLogs,
-		"unbound_stats":         h.opUnboundStats,
-		"cache_info":            h.opCacheInfo,
-		"set_cache_ttl":         h.opSetCacheTTL,
-		"set_min_ttl":           h.opSetMinTTL,
-		"flush_cache":           h.opFlushCache,
-		"set_rule_sources":      h.opSetRuleSources,
-		"service_status":        h.opServiceStatus,
-		"dns_test":              h.opDNSTest,
-		"mosproxy_metrics":      h.opMosproxyMetrics,
-		"blocklist_add":         h.opBlocklistAdd,
-		"blocklist_remove":      h.opBlocklistRemove,
-		"acl_add":               h.opACLAdd,
-		"acl_remove":            h.opACLRemove,
-		"acl_apply":             h.opACLApply,
-		"acl_disable":           h.opACLDisable,
-		"acl_status":            h.opACLStatus,
+		"network_exits":       h.opNetworkExits,
+		"reload_mosproxy":     h.opReloadMosproxy,
+		"restart_mosproxy":    h.opRestartMosproxy,
+		"restart_unbound":     h.opRestartUnbound,
+		"healthcheck":         h.opHealthcheck,
+		"collect_polluted_ip": h.opCollectPollutedIP,
+		"doh_info":            h.opDoHInfo,
+		"rotate_doh_path":     h.opRotateDoHPath,
+		"set_panel_password":  h.opSetPanelPassword,
+		"update_panel_auth":   h.opUpdatePanelAuth,
+		"refresh_routing":     h.opRefreshRouting,
+		"backup":              h.opBackup,
+		"purge_legacy":        h.opPurgeLegacy,
+		"clear_audit":         h.opClearAudit,
+		"vacuum_logs":         h.opVacuumLogs,
+		"clear_domains":       h.opClearDomains,
+		"clear_domains_all":   h.opClearDomainsAll,
+		"set_arch_epoch":      h.opSetArchEpoch,
+		"export":              h.opExport,
+		"import":              h.opImport,
+		"migration_restore":   h.opMigrationRestore,
+		"cert_check":          h.opCertCheck,
+		"cert_info":           h.opCertInfo,
+		"cert_renew":          h.opCertRenew,
+		"list_backups":        h.opListBackups,
+		"logs":                h.opLogs,
+		"unbound_stats":       h.opUnboundStats,
+		"cache_info":          h.opCacheInfo,
+		"set_cache_ttl":       h.opSetCacheTTL,
+		"set_min_ttl":         h.opSetMinTTL,
+		"flush_cache":         h.opFlushCache,
+		"service_status":      h.opServiceStatus,
+		"dns_test":            h.opDNSTest,
+		"mosproxy_metrics":    h.opMosproxyMetrics,
+		"blocklist_add":       h.opBlocklistAdd,
+		"blocklist_remove":    h.opBlocklistRemove,
+		"acl_add":             h.opACLAdd,
+		"acl_remove":          h.opACLRemove,
+		"acl_apply":           h.opACLApply,
+		"acl_disable":         h.opACLDisable,
+		"acl_status":          h.opACLStatus,
+		"prune_backups":       h.opPruneBackups,
+		"drop_stale_logs":     h.opDropStaleLogs,
 	}
 }

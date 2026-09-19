@@ -149,30 +149,33 @@ func TestRejectionAndOperationErrorUseDifferentChannels(t *testing.T) {
 	equal(t, "data 里标记失败", refused["data"].(map[string]any)["ok"], false)
 }
 
-func TestCNResolverCannotPublishToGitHub(t *testing.T) {
+func TestRoleGateBlocksOpsThatDoNotBelongToThisNode(t *testing.T) {
 	h := newTestHelper(t)
 	ran := false
 	h.ops = map[string]func(map[string]any) result{
-		"publish_github": func(map[string]any) result {
+		"acl_apply": func(map[string]any) result {
 			ran = true
 			return result{"ok": true, "returncode": 0}
 		},
 	}
-	resp := h.Dispatch("publish_github", map[string]any{"confirm": true})
-	equal(t, "CN 角色被拒", resp["ok"], false)
-	if ran {
-		t.Fatal("这台是 cn-resolver，它不该有能力向 GitHub 推任何东西——闸门没拦住")
+	config := filepath.Join(filepath.Dir(h.configPath), "config.env")
+	if err := os.WriteFile(config, []byte("ROLE=offshore\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(resp["message"].(string), "global-builder") {
+	resp := h.Dispatch("acl_apply", map[string]any{"confirm": true})
+	equal(t, "非入口节点被拒", resp["ok"], false)
+	if ran {
+		t.Fatal("这台不承载 DoH/DoT 入口，不该能改访问控制——闸门没拦住")
+	}
+	if !strings.Contains(resp["message"].(string), "cn-resolver") {
 		t.Fatalf("拒绝原因要说清需要哪个角色: %v", resp["message"])
 	}
 
-	config := filepath.Join(filepath.Dir(h.configPath), "config.env")
-	if err := os.WriteFile(config, []byte("ROLE=global-builder\n"), 0o600); err != nil {
+	if err := os.WriteFile(config, []byte("ROLE=cn-resolver\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	resp = h.Dispatch("publish_github", map[string]any{"confirm": true})
-	equal(t, "构建节点放行", []any{resp["ok"], ran}, []any{true, true})
+	resp = h.Dispatch("acl_apply", map[string]any{"confirm": true})
+	equal(t, "入口节点放行", []any{resp["ok"], ran}, []any{true, true})
 }
 
 func TestRedactArgsHidesSecretsAndDropsConfirm(t *testing.T) {

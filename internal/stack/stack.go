@@ -19,13 +19,12 @@ const (
 const (
 	GroupResolve = "解析链路"
 	GroupRouting = "分流数据"
-	GroupRules   = "规则构建"
 	GroupOps     = "面板与运维"
 )
 
 const (
-	RoleCNResolver    = "cn-resolver"
-	RoleGlobalBuilder = "global-builder"
+	RoleCNResolver = "cn-resolver"
+	RoleOffshore   = "offshore"
 )
 
 const (
@@ -33,7 +32,7 @@ const (
 	ACLChain        = "dns_acl"
 )
 
-var GroupOrder = []string{GroupResolve, GroupRouting, GroupRules, GroupOps}
+var GroupOrder = []string{GroupResolve, GroupRouting, GroupOps}
 
 type Module struct {
 	Unit     string
@@ -70,7 +69,7 @@ func (m Module) HasRole(role string) bool {
 	return false
 }
 
-var both = []string{RoleCNResolver, RoleGlobalBuilder}
+var both = []string{RoleCNResolver, RoleOffshore}
 
 var modules = []Module{
 	{
@@ -113,39 +112,6 @@ var modules = []Module{
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
 		Artifact: "polluted-ip.txt", Every: 6 * time.Hour,
 	},
-	{
-		Unit: "dns-stack-sync-rules", Name: "规则同步", Group: GroupRouting,
-		Purpose: "从 GitHub 拉取规则包与 CDN 直连规则集，校验后热加载进 mosproxy",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver},
-		Artifact: "cn.txt", Every: 5 * time.Minute,
-	},
-
-	{
-		Unit: "dns-stack-reference-data", Name: "参考数据", Group: GroupRules,
-		Cron: "classify update-reference-data", LogFile: "reference-data.log",
-		Purpose: "更新公共后缀列表与中国 IP 参考表，域名切分靠它",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder},
-		Artifact: "reference/public_suffix_list.dat", Every: 24 * time.Hour,
-	},
-	{
-		Unit: "dns-stack-classify", Name: "域名分类", Group: GroupRules,
-		Cron: "classify pipeline", LogFile: "pipeline.log",
-		Purpose: "同一域名在国内和香港各解析一次，比对两份答案判定国内/被墙",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder},
-		Artifact: "publish/cn.txt", Every: 5 * time.Minute,
-	},
-	{
-		Unit: "dns-stack-verify", Name: "规则复检", Group: GroupRules,
-		Cron: "classify verify-rules", LogFile: "verify.log",
-		Purpose: "对已生效的规则持续重判，域名换了服务商就及时纠正",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder}, Every: 30 * time.Minute,
-	},
-	{
-		Unit: "dns-stack-publish", Name: "规则发布", Group: GroupRules,
-		Cron: "classify publish", LogFile: "publish.log",
-		Purpose: "把复检通过的规则包推到 GitHub，供各台递归节点拉取",
-		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleGlobalBuilder}, Every: 6 * time.Hour,
-	},
 
 	{
 		Unit: "dns-stack-panel", Name: "管理面板", Group: GroupOps,
@@ -167,7 +133,7 @@ var modules = []Module{
 func All() []Module { return modules }
 
 func ForRole(role string) []Module {
-	if role != RoleCNResolver && role != RoleGlobalBuilder {
+	if role != RoleCNResolver && role != RoleOffshore {
 		role = RoleCNResolver
 	}
 	out := make([]Module, 0, len(modules))

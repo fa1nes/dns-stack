@@ -52,7 +52,7 @@ func TestMigrationBundleCarriesRulesAndManualLists(t *testing.T) {
 	}
 	written := map[string]string{
 		"manual-cn-zones.txt":       "akamaiedge.net\n",
-		"cn.txt":                    "# generated-at: 1\nqq.com\nbaidu.com\n",
+		"polluted-ip-cidr.txt":      "# generated-at: 1\n1.2.3.0/24\n5.6.7.0/24\n",
 		"chnroute/direct4.txt":      "116.0.0.0/8\n",
 		"chnroute/cn-authority.txt": "116.1.1.1/32\n",
 	}
@@ -73,7 +73,7 @@ func TestMigrationBundleCarriesRulesAndManualLists(t *testing.T) {
 
 	for name, content := range map[string]string{
 		"manual/manual-cn-zones.txt":      written["manual-cn-zones.txt"],
-		"rules/cn.txt":                    written["cn.txt"],
+		"state/polluted-ip-cidr.txt":      written["polluted-ip-cidr.txt"],
 		"state/chnroute/direct4.txt":      written["chnroute/direct4.txt"],
 		"state/chnroute/cn-authority.txt": written["chnroute/cn-authority.txt"],
 	} {
@@ -89,17 +89,17 @@ func TestMigrationBundleCarriesRulesAndManualLists(t *testing.T) {
 	for _, item := range embedded.Files {
 		byPath[item.Path] = item
 	}
-	entry, ok := byPath["rules/cn.txt"]
+	entry, ok := byPath["state/polluted-ip-cidr.txt"]
 	if !ok {
-		t.Fatal("manifest 未记录 rules/cn.txt")
+		t.Fatal("manifest 未记录 state/polluted-ip-cidr.txt")
 	}
-	sum := sha256.Sum256(files["rules/cn.txt"])
+	sum := sha256.Sum256(files["state/polluted-ip-cidr.txt"])
 	if entry.SHA256 != hex.EncodeToString(sum[:]) {
-		t.Fatalf("cn.txt 哈希不符: %s", entry.SHA256)
+		t.Fatalf("polluted-ip-cidr.txt 哈希不符: %s", entry.SHA256)
 	}
 
 	if entry.Lines != 2 {
-		t.Fatalf("cn.txt 正文行数应为 2，实际 %d", entry.Lines)
+		t.Fatalf("polluted-ip-cidr.txt 正文行数应为 2，实际 %d", entry.Lines)
 	}
 	if manifest.TotalBytes != embedded.TotalBytes {
 		t.Fatalf("返回值与包内 manifest 不一致")

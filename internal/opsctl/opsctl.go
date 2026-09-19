@@ -170,25 +170,6 @@ func (c *Ctl) CertRenew(ctx context.Context) error {
 	return c.Go(ctx, "maintenance", "--only", "renew-cert", "--force")
 }
 
-func (c *Ctl) Sync(ctx context.Context, force bool) error {
-	if force {
-		if !c.Confirm("即将跳过规则数量骤降保护；格式、版本、重载与回滚校验仍保留，确认继续？") {
-			c.Warnf("已取消")
-			return nil
-		}
-		return c.Go(ctx, "sync-rules", "--force")
-	}
-	return c.Go(ctx, "sync-rules")
-}
-
-func (c *Ctl) Rollback(ctx context.Context) error {
-	if !c.Confirm("即将回滚到上一版规则包，确认继续？") {
-		c.Warnf("已取消")
-		return nil
-	}
-	return c.Go(ctx, "sync-rules", "--rollback")
-}
-
 func (c *Ctl) RoutingStatus(ctx context.Context) error {
 	if err := c.requireRole(stack.RoleCNResolver); err != nil {
 		return err
@@ -202,104 +183,6 @@ func (c *Ctl) RoutingRefresh(ctx context.Context) error {
 	}
 	c.Infof("按依赖顺序重建分流数据(归属库 → 大陆网段 → 交叉校验 → anycast → 权威/ECS → 分片表)...")
 	return c.Go(ctx, "routing-data", "--force")
-}
-
-func (c *Ctl) Pull(ctx context.Context) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	c.Infof("正在从国内服务器拉取候选域名...")
-	if err := c.Go(ctx, "classify", "pull"); err != nil {
-		c.Warnf("拉取未完成，可能是国内服务器连接信息尚未配置")
-	}
-	return nil
-}
-
-func (c *Ctl) Classify(ctx context.Context, domain string) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	if domain != "" {
-		c.Infof("正在检测域名: %s", domain)
-		return c.Go(ctx, "classify", "classify", "--domain", domain)
-	}
-	c.Infof("正在对候选域名执行分类...")
-	return c.Go(ctx, "classify", "classify")
-}
-
-func (c *Ctl) VerifyRules(ctx context.Context, args []string) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	return c.Go(ctx, append([]string{"classify", "verify-rules"}, args...)...)
-}
-
-func (c *Ctl) BuildRules(ctx context.Context, force bool) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	c.Infof("正在生成四个公开规则文件...")
-	args := []string{"classify", "build-rules"}
-	if force {
-		if !c.Confirm("即将跳过规则数量骤降保护；域名/CIDR/冲突校验仍保留，确认继续？") {
-			c.Warnf("已取消")
-			return nil
-		}
-		args = append(args, "--force")
-	}
-	if err := c.Go(ctx, args...); err != nil {
-		return fmt.Errorf("规则生成失败，未发布新规则: %w", err)
-	}
-	c.Okf("规则文件已生成到 %s", c.state("publish"))
-	return nil
-}
-
-func (c *Ctl) Publish(ctx context.Context) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	if !c.Confirm("即将把规则文件推送到 GitHub 仓库，确认继续？") {
-		c.Warnf("已取消")
-		return nil
-	}
-	c.Infof("正在发布规则到 GitHub...")
-	if err := c.Go(ctx, "classify", "publish"); err != nil {
-		return err
-	}
-	c.Okf("发布完成")
-	return nil
-}
-
-func (c *Ctl) UpdateReferenceData(ctx context.Context) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	c.Infof("正在更新 Public Suffix List（中国 IP 仅作为递归观测附属数据）...")
-	if err := c.Go(ctx, "classify", "update-reference-data"); err != nil {
-		return err
-	}
-	c.Okf("参考数据更新完成")
-	return nil
-}
-
-func (c *Ctl) ClassifyAuthority(ctx context.Context, args []string) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	return c.Go(ctx, append([]string{"classify", "classify-authority"}, args...)...)
-}
-
-func (c *Ctl) RebuildRules(ctx context.Context) error {
-	if err := c.requireRole(stack.RoleGlobalBuilder); err != nil {
-		return err
-	}
-	c.Infof("执行一键规则流水线(拉取 → 分类 → 权威位置 → 生成；不自动发布 GitHub)...")
-	if err := c.Run(ctx, "flock", "-w", "2400", classifierLock,
-		c.GoBin, "classify", "pipeline", "--authority-every", "0"); err != nil {
-		return fmt.Errorf("规则流水线失败，未发布新规则: %w", err)
-	}
-	c.Okf("规则流水线完成，发布仍需单独执行: dns-stack publish")
-	return nil
 }
 
 func (c *Ctl) PanelPassword(ctx context.Context) error {

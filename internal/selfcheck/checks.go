@@ -16,7 +16,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/cdnhit"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
-	"github.com/dns-stack/dns-stack/internal/rulesync"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
@@ -96,8 +95,6 @@ func checkRoutingData(opt Options, report *Report, now time.Time) {
 		{"多源争议清单", state("chnroute", "geo-disputed.txt"), 72 * time.Hour, 0, false},
 		{"共享 anycast 清单", state("chnroute", "shared-anycast.txt"), 6 * time.Hour, 0, false},
 		{"ECS 分片表", state("ecs-ip-zone.txt"), 72 * time.Hour, 1000, true},
-		{"规则包 cn.txt", state("cn.txt"), 24 * time.Hour, 50, false},
-		{"规则包 gfw.txt", state("gfw.txt"), 24 * time.Hour, 50, false},
 	}
 	for _, item := range items {
 		rows := countRows(item.path)
@@ -256,7 +253,7 @@ func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
 		return nil
 	}
 	c := &checker{report: report, group: "CDN 直连规则集"}
-	path := rulesync.CDNPath(opt.StateDir)
+	path := cdnrules.Path(opt.StateDir)
 	set, err := cdnrules.Load(path)
 	if err != nil {
 		c.warn("规则集可用", "读不到 %s: %v（CDN 命中判据本轮整体弃权）", path, err)
@@ -281,7 +278,7 @@ func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
 	c.ok("规则集可用", "provider %d 个(%d 个有前缀证据，%d 个有大陆节点段)，前缀 %d 条",
 		len(set.Providers()), withNets, mainland, set.PrefixCount())
 	if age, ok := fileAge(path, now); ok && age > 72*time.Hour {
-		c.warn("规则集新鲜度", "已 %s 未更新，检查 cdn-rules Action 与 dns-stack-sync-rules", humanAge(age))
+		c.warn("规则集新鲜度", "已 %s 未更新，检查 cdn-rules Action 与 routing-data 的 cdn-rules 步骤", humanAge(age))
 	}
 	return set
 }

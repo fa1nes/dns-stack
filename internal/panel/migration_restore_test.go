@@ -150,7 +150,7 @@ func TestRestoreRejectsForeignManifest(t *testing.T) {
 
 func TestRestoreRejectsMissingManifest(t *testing.T) {
 	cfg := restoreCfg(t)
-	bundle := buildBundle(t, map[string][]byte{"rules/cn.txt": []byte("a.com\n")}, nil)
+	bundle := buildBundle(t, map[string][]byte{"state/polluted-ip-cidr.txt": []byte("a.com\n")}, nil)
 	if _, err := RestoreMigrationBundle(bytes.NewReader(bundle), cfg, RestoreOptions{}); err == nil {
 		t.Fatal("没有 manifest.json 必须拒绝")
 	}
@@ -169,10 +169,10 @@ func TestRestoreDryRunWritesNothing(t *testing.T) {
 	cfg := restoreCfg(t)
 	payload := []byte("a.com\n")
 	bundle := buildBundle(t,
-		map[string][]byte{"rules/cn.txt": payload},
+		map[string][]byte{"state/polluted-ip-cidr.txt": payload},
 		migrationManifest{
 			Kind: "dns-stack-migration", Version: 1,
-			Files: []migrationFile{{Path: "rules/cn.txt",
+			Files: []migrationFile{{Path: "state/polluted-ip-cidr.txt",
 				Bytes: int64(len(payload)), SHA256: sum(payload)}},
 		})
 	report, err := RestoreMigrationBundle(bytes.NewReader(bundle), cfg, RestoreOptions{DryRun: true})
@@ -182,35 +182,35 @@ func TestRestoreDryRunWritesNothing(t *testing.T) {
 	if len(report.Applied) != 1 || report.Applied[0].Action != "would-write" {
 		t.Fatalf("applied=%#v", report.Applied)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.StateDir, "cn.txt")); err == nil {
+	if _, err := os.Stat(filepath.Join(cfg.StateDir, "polluted-ip-cidr.txt")); err == nil {
 		t.Fatal("dry-run 竟然落盘了")
 	}
 }
 
 func TestRestoreBacksUpAndDetectsUnchanged(t *testing.T) {
 	cfg := restoreCfg(t)
-	target := filepath.Join(cfg.StateDir, "cn.txt")
+	target := filepath.Join(cfg.StateDir, "polluted-ip-cidr.txt")
 	if err := os.WriteFile(target, []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	payload := []byte("new\n")
 	manifest := migrationManifest{
 		Kind: "dns-stack-migration", Version: 1,
-		Files: []migrationFile{{Path: "rules/cn.txt",
+		Files: []migrationFile{{Path: "state/polluted-ip-cidr.txt",
 			Bytes: int64(len(payload)), SHA256: sum(payload)}},
 	}
-	bundle := buildBundle(t, map[string][]byte{"rules/cn.txt": payload}, manifest)
+	bundle := buildBundle(t, map[string][]byte{"state/polluted-ip-cidr.txt": payload}, manifest)
 	backup := filepath.Join(cfg.StateDir, "bk")
 	if _, err := RestoreMigrationBundle(bytes.NewReader(bundle), cfg,
 		RestoreOptions{BackupDir: backup}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := os.ReadFile(filepath.Join(backup, "rules", "cn.txt"))
+	saved, err := os.ReadFile(filepath.Join(backup, "state", "polluted-ip-cidr.txt"))
 	if err != nil || string(saved) != "old\n" {
 		t.Fatalf("原文件没被备份: %q %v", saved, err)
 	}
 
-	bundle2 := buildBundle(t, map[string][]byte{"rules/cn.txt": payload}, manifest)
+	bundle2 := buildBundle(t, map[string][]byte{"state/polluted-ip-cidr.txt": payload}, manifest)
 	report, err := RestoreMigrationBundle(bytes.NewReader(bundle2), cfg,
 		RestoreOptions{BackupDir: backup})
 	if err != nil {
@@ -225,10 +225,10 @@ func TestRestoreReportsExtraFilesInBundle(t *testing.T) {
 	cfg := restoreCfg(t)
 	payload := []byte("a.com\n")
 	bundle := buildBundle(t,
-		map[string][]byte{"rules/cn.txt": payload, "stowaway.txt": []byte("x")},
+		map[string][]byte{"state/polluted-ip-cidr.txt": payload, "stowaway.txt": []byte("x")},
 		migrationManifest{
 			Kind: "dns-stack-migration", Version: 1,
-			Files: []migrationFile{{Path: "rules/cn.txt",
+			Files: []migrationFile{{Path: "state/polluted-ip-cidr.txt",
 				Bytes: int64(len(payload)), SHA256: sum(payload)}},
 		})
 	report, err := RestoreMigrationBundle(bytes.NewReader(bundle), cfg, RestoreOptions{})

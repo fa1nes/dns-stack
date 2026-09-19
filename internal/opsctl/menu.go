@@ -23,15 +23,13 @@ func prompt(c *Ctl, question string) string {
 	return strings.TrimSpace(line)
 }
 
-func cnMenu() []entry {
+func menuEntries() []entry {
 	return []entry{
 		{"查看运行状态", func(c *Ctl, ctx context.Context) error { return c.Go(ctx, "status") }},
 		{"执行健康检查", func(c *Ctl, ctx context.Context) error { return c.Go(ctx, "selfcheck") }},
 		{"测试域名解析", func(c *Ctl, ctx context.Context) error {
 			return c.TestDomain(ctx, prompt(c, "请输入要测试的域名: "), prompt(c, "客户端子网(可留空): "))
 		}},
-		{"同步最新规则", func(c *Ctl, ctx context.Context) error { return c.Sync(ctx, false) }},
-		{"回滚上一版规则", (*Ctl).rollbackEntry},
 		{"重载 DNS 服务", (*Ctl).reloadEntry},
 		{"重启 DNS 服务", (*Ctl).restartEntry},
 		{"查看运行日志", func(c *Ctl, ctx context.Context) error { return c.Logs(ctx, "mosproxy") }},
@@ -56,37 +54,6 @@ func cnMenu() []entry {
 	}
 }
 
-func builderMenu() []entry {
-	return []entry{
-		{"查看运行状态", func(c *Ctl, ctx context.Context) error { return c.Go(ctx, "status") }},
-		{"执行健康检查", func(c *Ctl, ctx context.Context) error { return c.Go(ctx, "selfcheck") }},
-		{"拉取候选域名", (*Ctl).pullEntry},
-		{"立即执行分类", func(c *Ctl, ctx context.Context) error { return c.Classify(ctx, "") }},
-		{"查询指定域名分类", func(c *Ctl, ctx context.Context) error {
-			return c.Classify(ctx, prompt(c, "请输入要查询的域名: "))
-		}},
-		{"生成 CN/GFW 规则", func(c *Ctl, ctx context.Context) error { return c.BuildRules(ctx, false) }},
-		{"发布规则到 GitHub", (*Ctl).publishEntry},
-		{"更新参考数据", (*Ctl).updateReferenceEntry},
-		{"查看分类日志", func(c *Ctl, ctx context.Context) error { return c.Logs(ctx, "dns-stack-classify") }},
-		{"立即备份", func(c *Ctl, ctx context.Context) error { return c.Go(ctx, "backup") }},
-		{"导出迁移包", func(c *Ctl, ctx context.Context) error {
-			return c.Go(ctx, "export", "--mode", orAsk(c, "导出模式(config/state/full): ", "full"))
-		}},
-		{"导入迁移包", func(c *Ctl, ctx context.Context) error {
-			return c.Go(ctx, "import", prompt(c, "请输入迁移包路径: "))
-		}},
-		{"查看已有备份/导出包", func(c *Ctl, ctx context.Context) error { return c.ListPackages() }},
-		{"查看管理面板信息", func(c *Ctl, ctx context.Context) error {
-			fmt.Fprintln(c.Out, "面板地址: http://127.0.0.1:8080 (需通过 SSH 隧道或 WireGuard 访问)")
-			return nil
-		}},
-		{"停止旧服务器服务", (*Ctl).migrationFinishEntry},
-		{"一键重建规则(不发布)", (*Ctl).rebuildEntry},
-	}
-}
-
-func (c *Ctl) rollbackEntry(ctx context.Context) error        { return c.Rollback(ctx) }
 func (c *Ctl) reloadEntry(ctx context.Context) error          { return c.Reload(ctx) }
 func (c *Ctl) restartEntry(ctx context.Context) error         { return c.Restart(ctx) }
 func (c *Ctl) certCheckEntry(ctx context.Context) error       { return c.CertCheck(ctx) }
@@ -94,10 +61,6 @@ func (c *Ctl) certRenewEntry(ctx context.Context) error       { return c.CertRen
 func (c *Ctl) migrationFinishEntry(ctx context.Context) error { return c.MigrationFinish(ctx) }
 func (c *Ctl) routingStatusEntry(ctx context.Context) error   { return c.RoutingStatus(ctx) }
 func (c *Ctl) routingRefreshEntry(ctx context.Context) error  { return c.RoutingRefresh(ctx) }
-func (c *Ctl) pullEntry(ctx context.Context) error            { return c.Pull(ctx) }
-func (c *Ctl) publishEntry(ctx context.Context) error         { return c.Publish(ctx) }
-func (c *Ctl) updateReferenceEntry(ctx context.Context) error { return c.UpdateReferenceData(ctx) }
-func (c *Ctl) rebuildEntry(ctx context.Context) error         { return c.RebuildRules(ctx) }
 
 func orAsk(c *Ctl, question, fallback string) string {
 	if answer := prompt(c, question); answer != "" {
@@ -107,12 +70,10 @@ func orAsk(c *Ctl, question, fallback string) string {
 }
 
 func (c *Ctl) Menu(ctx context.Context) error {
-	role := c.Role()
-	entries := builderMenu()
-	title := "规则构建服务器"
-	if role == stack.RoleCNResolver {
-		entries = cnMenu()
-		title = "国内 DNS 服务器"
+	entries := menuEntries()
+	title := "国内 DNS 服务器"
+	if c.Role() != stack.RoleCNResolver {
+		title = "境外递归节点"
 	}
 	for {
 		fmt.Fprintln(c.Out, "========================================")
