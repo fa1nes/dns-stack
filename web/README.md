@@ -59,7 +59,7 @@ Cookie，SSE 日志流也会带凭据。若只在本机通过 SSH 隧道访问�
 | `POST /api/dns-test` | 解析对比测试 |
 | `GET /api/logs` `GET /api/logs/stream` | 日志 |
 | `GET /api/modules` | 模块清单与整机结论（分组、状态、上次/下次运行） |
-| `GET /api/services` `POST /api/action/{op}` | 服务状态与运维操作 |
+| `POST /api/action/{op}` | 运维操作（服务状态随 `/api/overview`、`/api/modules` 一起返回） |
 | `POST /api/login` `POST /api/logout` | 认证 |
 
 ### `/api/bootstrap` 契约

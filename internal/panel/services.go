@@ -28,10 +28,6 @@ type svcCacheEntry struct {
 	item map[string]any
 }
 
-func (s *Server) services(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"services": s.serviceStatus(r, s.watchedUnits())})
-}
-
 func (s *Server) serviceStatus(r *http.Request, units []string) []any {
 	now := time.Now()
 	s.svcMu.Lock()

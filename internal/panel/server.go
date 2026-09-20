@@ -139,7 +139,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/domain/", s.domainDetail)
 	mux.HandleFunc("/api/collected", s.collected)
 	mux.HandleFunc("/api/audit", s.audit)
-	mux.HandleFunc("/api/services", s.services)
 	mux.HandleFunc("/api/modules", s.modules)
 	mux.HandleFunc("/api/ops", s.opsList)
 	mux.HandleFunc("/api/auth/config", s.authConfig)
@@ -501,7 +500,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	rec, configured := s.loadAuth()
-	out := map[string]any{"auth_enabled": configured, "totp_enabled": configured && rec.TOTP["enabled"] == true}
+	out := map[string]any{
+		"auth_enabled":      configured,
+		"totp_enabled":      configured && rec.TOTP["enabled"] == true,
+		"oauth_enabled":     configured && oauthReady(rec),
+		"password_disabled": configured && rec.PasswordDisabled,
+	}
 	if !configured || !validSession(r, rec) {
 		writeJSON(w, 200, out)
 		return

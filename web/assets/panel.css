@@ -739,6 +739,23 @@ pre.block {
   padding: 9px; font-size: var(--fs-base); font-weight: 500;
 }
 
+#totpField { margin-top: 14px; }
+#totpField input {
+  width: 100%; padding: 9px 11px;
+  font-family: var(--mono); font-size: var(--fs-base); letter-spacing: 5px;
+  text-align: center;
+}
+
+.login-oauth {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 10px; padding: 9px; min-height: 38px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text);
+  font-size: var(--fs-base); font-weight: 500; text-decoration: none;
+}
+.login-oauth:hover { border-color: var(--accent); color: var(--accent); }
+.login-oauth svg { width: 16px; height: 16px; flex: none; }
+
 .login-msg {
   display: none; margin-top: 12px; padding: 8px 11px; border-radius: 6px;
   font-size: var(--fs-sm); line-height: 1.55;
