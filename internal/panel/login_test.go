@@ -39,6 +39,28 @@ func TestLoginPageCollectsEveryFactorTheBackendCanDemand(t *testing.T) {
 	}
 }
 
+func TestTOTPSetupStaysUnlockedOnlyWhileTheLoginPageCanCollectCodes(t *testing.T) {
+	page := loginPage(t)
+	markup, err := os.ReadFile("../../web/index.html")
+	if err != nil {
+		t.Skipf("读不到 index.html: %v", err)
+	}
+	collectable := strings.Contains(page, `id="totp"`)
+	var locked bool
+	for _, line := range strings.Split(string(markup), "\n") {
+		if strings.Contains(line, `id="btnTotpSetup"`) && strings.Contains(line, "disabled") {
+			locked = true
+		}
+	}
+	if collectable && locked {
+		t.Error("登录页已经能收验证码了，「启用二次认证」却还是禁用的——" +
+			"当初禁用它就是因为登录页收不了，原因没了闸门要一起撤")
+	}
+	if !collectable && !locked {
+		t.Error("登录页收不了验证码，却允许启用二次认证——点下去就把自己锁在门外了")
+	}
+}
+
 func writeAuthRecord(t *testing.T, path string, rec map[string]any) {
 	t.Helper()
 	body, err := json.Marshal(rec)
@@ -101,5 +123,10 @@ func TestBootstrapKeepsQuietWhenNoAuthIsConfigured(t *testing.T) {
 		if got, _ := out[key].(bool); got {
 			t.Errorf("还没设置密码时 bootstrap.%s 不应为真", key)
 		}
+	}
+	if _, ok := out["role"]; !ok {
+		t.Error("没设密码的面板是开放的，bootstrap 却不返回 role——" +
+			"panel.js 靠 PANEL_ROLE 做分支，拿不到值会当成「不是这个角色」，" +
+			"整块功能凭空消失还不报错")
 	}
 }

@@ -1145,8 +1145,8 @@ const queryRow = (r, isNew) => html`<tr class="clickable" data-domain="${r.domai
     <td>${routeBadge(r)}</td>
     <td class="mono dim">${r.resp_by || '—'}</td>
     <td class="mono">${latencyCell(r)}</td>
-    <td>${r.cache_hit ? raw('<span class="badge cache">是</span>')
-                       : raw('<span style="color:var(--text-dim)">否</span>')}</td>
+    <td class="cache-cell">${r.cache_hit ? raw('<span class="yes">是</span>')
+                                          : raw('<span class="no">否</span>')}</td>
     <td>${r.id === null || r.id === undefined ? ''
         : html`<button class="row-del" data-qid="${r.id}" title="删除这条记录">删除</button>`}</td>
   </tr>`;
@@ -2090,9 +2090,7 @@ function renderPosture() {
 
   const items = [
     ['密码登录', a ? (a.password_disabled ? ['已关闭', 'idle'] : ['启用中', 'ok']) : ['—', 'idle']],
-    ['二次认证', a ? (a.totp_enabled
-        ? ['已启用', TOTP_ENABLE_ALLOWED ? 'ok' : 'err']
-        : [TOTP_ENABLE_ALLOWED ? '未启用' : '不可用', 'idle']) : ['—', 'idle']],
+    ['二次认证', a ? (a.totp_enabled ? ['已启用', 'ok'] : ['未启用', 'idle']) : ['—', 'idle']],
     ['GitHub 登录', a ? (o.verified_once ? ['已验证', 'ok']
         : o.ready ? ['待验证', 'warn'] : ['未配置', 'idle']) : ['—', 'idle']],
     ['传输加密', https ? ['HTTPS', 'ok'] : local ? ['本机直连', 'ok'] : ['明文', 'err']],
@@ -2169,28 +2167,17 @@ async function loadAuthConfig() {
   }
 }
 
-const TOTP_ENABLE_ALLOWED = false;
-
 function renderTotp(enabled) {
   setHtml($('#totpBadge'), enabled
-    ? (TOTP_ENABLE_ALLOWED ? html`<span class="badge ok">已启用</span>`
-                           : html`<span class="badge err">已启用·登录受阻</span>`)
-    : html`<span class="badge unknown">${TOTP_ENABLE_ALLOWED ? '未启用' : '不可用'}</span>`);
+    ? html`<span class="badge ok">已启用</span>`
+    : html`<span class="badge unknown">未启用</span>`);
   const setup = $('#btnTotpSetup');
   setup.hidden = enabled;
-  setup.disabled = !TOTP_ENABLE_ALLOWED;
-  setup.title = TOTP_ENABLE_ALLOWED ? '' : '登录页当前不提供验证码输入入口，启用会导致密码登录永久失败';
-  $('#btnTotpDisable').hidden = !enabled;   // 已启用时必须能停用——这是逃生口
+  $('#btnTotpDisable').hidden = !enabled;
   $('#totpSetup').hidden = true;
 }
 
 async function totpSetup() {
-  if (!TOTP_ENABLE_ALLOWED) {
-    toast('二次认证不可启用',
-      '登录页当前不渲染验证码输入框，启用后密码登录会永久失败。'
-      + '需要启用请先恢复登录页的验证码输入框。', 'err');
-    return;
-  }
   try {
     const d = await api('/api/auth/totp/setup', { method: 'POST' });
     $('#totpSecret').value = d.secret;
@@ -2495,7 +2482,7 @@ async function loadAudit() {
       <td class="mono dim">${fmtTime(x.ts)}</td>
       <td class="mono">${x.operation}</td>
       <td><span class="badge ${x.ok ? 'ok' : 'err'}">${x.ok ? '成功' : '失败'}</span></td>
-      <td class="mono wrap dim">${x.args || '—'}</td>
+      <td class="mono dim audit-args" title="${x.args || ''}">${x.args || '—'}</td>
       <td class="wrap mono audit-msg">${(x.message || '').slice(0, 200)}</td>
       <td>${x.id === null || x.id === undefined ? ''
           : html`<button class="row-del" data-aid="${x.id}" title="删除这条审计记录">删除</button>`}</td>

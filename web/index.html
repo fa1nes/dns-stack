@@ -377,14 +377,14 @@
                 </div>
               </div>
               <div class="sec-act" id="totpActions">
-                <button class="primary sm" id="btnTotpSetup" disabled>启用二次认证</button>
+                <button class="primary sm" id="btnTotpSetup">启用二次认证</button>
                 <button class="danger sm" id="btnTotpDisable" hidden>停用二次认证</button>
               </div>
-              <div class="sec-note is-warn" id="totpHint">
-                <b>启用入口已锁死。</b>登录页目前不渲染动态验证码输入框。
+              <div class="sec-note" id="totpHint">
+                启用后登录页会多出一个 6 位验证码输入框。
               </div>
               <div class="sec-note">
-                万一已启用且登不进来：在服务器执行
+                万一验证器丢了登不进来：在服务器执行
                 <code>sudo dns-stack panel-2fa-reset</code> 关闭。
               </div>
             </div>
@@ -612,8 +612,8 @@
             <button class="danger sm" data-op="clear_audit">清空审计记录</button>
           </div>
           <div class="card flush"><div class="table-wrap card-rows"><table class="card-rows">
-            <thead><tr><th style="width:150px">时间</th><th style="width:150px">操作</th>
-              <th style="width:70px">结果</th><th style="width:120px">参数</th><th>输出摘要</th>
+            <thead><tr><th style="width:150px">时间</th><th style="width:170px">操作</th>
+              <th style="width:70px">结果</th><th style="width:170px">参数</th><th>输出摘要</th>
               <th style="width:52px"></th></tr></thead>
             <tbody id="auditBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
           </table></div></div>
