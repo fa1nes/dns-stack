@@ -80,11 +80,13 @@ func LoadConfig(stateDir, configFile string) Config {
 	return cfg
 }
 
-func pick(value, fallback string) string {
-	if strings.TrimSpace(value) != "" {
-		return strings.TrimSpace(value)
+func pick(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
 	}
-	return fallback
+	return ""
 }
 
 func (c Config) Value(key string) string { return c.values[key] }

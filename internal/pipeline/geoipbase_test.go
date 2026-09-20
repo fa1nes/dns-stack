@@ -52,3 +52,30 @@ func TestConfigKeysCoverEveryKeyTheStepsRead(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryGeoDBPrefersOurOwnMirror(t *testing.T) {
+	cfg := configWith(t, "DNS_STACK_BINARY_REPO=owner/dns-stack\nGEOIP_ENABLE_CITY=1\n")
+	base := geoipReleaseBase(cfg)
+	if base == "" {
+		t.Fatal("兜底仓库算不出来")
+	}
+	for _, name := range []string{
+		"GeoLite2-ASN.mmdb", "GeoLite2-City.mmdb", "qqwry.ipdb",
+		"dbip-asn.mmdb", "dbip-city.mmdb",
+	} {
+		if got := suffixURL(base, name); !strings.HasPrefix(got, base) {
+			t.Errorf("%s 没走自家镜像: %s", name, got)
+		}
+	}
+}
+
+func TestNoGeoDBDefaultsToRawGithubusercontent(t *testing.T) {
+	body, err := os.ReadFile("steps.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "raw.githubusercontent.com") {
+		t.Fatal("归属库默认源不该用 raw.githubusercontent.com——" +
+			"它在国内会超时，GeoLite2-City 就是这样 48 天没更新的")
+	}
+}

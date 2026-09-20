@@ -109,19 +109,22 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 	specs := []fetchSpec{
 		{
 			Kind: "asn", MinBytes: 3_000_000,
-			URL:  pick(cfg.Value("GEOIP_ASN_URL"), "https://cdn.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-ASN.mmdb"),
+			URL: pick(cfg.Value("GEOIP_ASN_URL"), suffixURL(base, "GeoLite2-ASN.mmdb"),
+				"https://cdn.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-ASN.mmdb"),
 			Dest: filepath.Join(dir, "GeoLite2-ASN.mmdb"),
 		},
 		{
 			Kind: "cnip", MinBytes: 20_000_000,
-			URL:  pick(cfg.Value("GEOIP_CNIP_URL"), "https://github.com/nmgliangwei/qqwry.ipdb/releases/latest/download/qqwry.ipdb"),
+			URL: pick(cfg.Value("GEOIP_CNIP_URL"), suffixURL(base, "qqwry.ipdb"),
+				"https://github.com/nmgliangwei/qqwry.ipdb/releases/latest/download/qqwry.ipdb"),
 			Dest: filepath.Join(dir, "qqwry.ipdb"),
 		},
 	}
 	if cfg.Value("GEOIP_ENABLE_CITY") == "1" {
 		specs = append(specs, fetchSpec{
 			Kind: "city", MinBytes: 20_000_000,
-			URL:  pick(cfg.Value("GEOIP_CITY_URL"), "https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-City.mmdb"),
+			URL: pick(cfg.Value("GEOIP_CITY_URL"), suffixURL(base, "GeoLite2-City.mmdb"),
+				"https://cdn.jsdelivr.net/gh/P3TERX/GeoLite.mmdb@download/GeoLite2-City.mmdb"),
 			Dest: filepath.Join(dir, "GeoLite2-City.mmdb"),
 		})
 	}
