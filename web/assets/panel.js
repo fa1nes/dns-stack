@@ -105,6 +105,13 @@ const _GET_TTL = 2500;
 
 function invalidateCache() { _getCache.clear(); }
 
+const _loadSeq = {};
+
+function latestOnly(key) {
+  const mine = (_loadSeq[key] = (_loadSeq[key] || 0) + 1);
+  return () => mine === _loadSeq[key];
+}
+
 async function apiCached(path, ttl) {
   const hit = _getCache.get(path);
   const now = Date.now();
@@ -1070,9 +1077,13 @@ async function loadIpLookup() {
   const box = $('#ipResult');
   const value = $('#ipQuery').value.trim();
   setHtml(box, stateHtml('查询中…'));
+  const fresh = latestOnly('ip-lookup');
   try {
-    renderIpLookup(await api('/api/ip-lookup' + (value ? '?ip=' + encodeURIComponent(value) : '')));
+    const d = await api('/api/ip-lookup' + (value ? '?ip=' + encodeURIComponent(value) : ''));
+    if (!fresh()) return;
+    renderIpLookup(d);
   } catch (e) {
+    if (!fresh()) return;
     setHtml(box, errState(e));
   }
 }
@@ -1251,8 +1262,10 @@ async function loadQueries(page) {
   const sinceSec = Number($('#fSince').value || 0);
   if (sinceSec) params.set('since', String(Math.floor(Date.now() / 1000) - sinceSec));
 
+  const fresh = latestOnly('queries');
   try {
     const d = await api('/api/queries?' + params.toString());
+    if (!fresh()) return;
     state.queryPage = d.page;
     state.queryPages = d.pages || 1;
     if (!d.items.length) {
@@ -1267,6 +1280,7 @@ async function loadQueries(page) {
     $('#btnPrev').disabled = d.page <= 1;
     $('#btnNext').disabled = d.page >= (d.pages || 1);
   } catch (e) {
+    if (!fresh()) return;
     setHtml(body, rowSpan(9, errState(e)));
     $('#liveCount').textContent = '—';
   }
@@ -1443,6 +1457,14 @@ async function deleteDomain(domain) {
   } catch (e) { toast('删除失败', e.message, 'err'); }
 }
 
+const DOM_COUNT_LABEL = {
+  new: (n) => '共 ' + n + ' 个域名',
+  recent: (n) => '共 ' + n + ' 个域名',
+  count: (n) => '共 ' + n + ' 个域名',
+  fail: (n) => n + ' 个域名解析失败过',
+  slow: (n) => n + ' 个域名有耗时样本',
+};
+
 async function loadDomains(page) {
   state.domPage = page || 1;
   loadDomainSummary();
@@ -1458,10 +1480,12 @@ async function loadDomains(page) {
   if (s) params.set('search', s);
   if (r) params.set('route', r);
 
+  const fresh = latestOnly('domains');
   try {
     const d = await api('/api/domains?' + params.toString());
+    if (!fresh()) return;
     state.domPages = d.pages || 1;
-    $('#domCount').textContent = '共 ' + fmtNum(d.total || 0) + ' 个域名';
+    $('#domCount').textContent = DOM_COUNT_LABEL[state.domMetric](fmtNum(d.total || 0));
     $('#domPageInfo').textContent = (d.page || 1) + ' / ' + (d.pages || 1);
     $('#btnDomPrev').disabled = (d.page || 1) <= 1;
     $('#btnDomNext').disabled = (d.page || 1) >= (d.pages || 1);
@@ -1499,6 +1523,7 @@ async function loadDomains(page) {
     </tr>`;
     })}`);
   } catch (e) {
+    if (!fresh()) return;
     setHtml(body, rowSpan(6, errState(e)));
     $('#domCount').textContent = '—';
   }
@@ -1518,8 +1543,10 @@ function renderDomainHead(metric) {
 }
 
 async function loadDomainSummary() {
+  const fresh = latestOnly('domain-summary');
   try {
     const d = await api('/api/domains/summary');
+    if (!fresh()) return;
     const byRoute = {};
     (d.by_route || []).forEach((x) => { byRoute[x.route] = x.count; });
     const byExit = {};
@@ -1541,6 +1568,7 @@ async function loadDomainSummary() {
     barList(d.by_qtype, '#domQtype');
     barList(d.by_rcode, '#domRcode');
   } catch (e) {
+    if (!fresh()) return;
     setHtml($('#domSummary'), errState(e));
   }
 }
@@ -1644,11 +1672,13 @@ async function loadCdnHit(mode) {
   setHtml(box, fresh
     ? html`<div class="state"><span class="spinner"></span> 正在清缓存并重查，要走完整递归，请稍候…</div>`
     : LOADING);
+  const current = latestOnly('cdn-hit');
   try {
     const subnet = $('#cdnSubnet').value;
     const q = '?subnet=' + encodeURIComponent(subnet)
       + (mode === 'refresh' ? '&refresh=1' : '') + (fresh ? '&fresh=1' : '');
     const d = await api('/api/cdn-hit' + q);
+    if (!current()) return;
     const rows = (d.probes || []).map((p) => {
       const style = CDN_VERDICT[p.verdict] || CDN_VERDICT.unknown;
       return html`<tr>
@@ -1699,6 +1729,7 @@ async function loadCdnHit(mode) {
       </div>
     </div>`);
   } catch (e) {
+    if (!current()) return;
     setHtml(box, errState(e));
   }
 }
@@ -1886,12 +1917,15 @@ async function loadLogs() {
   });
   const p = $('#logPriority').value;
   if (p) params.set('priority', p);
+  const fresh = latestOnly('logs');
   try {
     const d = await api('/api/logs?' + params.toString());
+    if (!fresh()) return;
     state.logLines = d.lines || [];
     renderLogs();
     view.scrollTop = view.scrollHeight;
   } catch (e) {
+    if (!fresh()) return;
     setHtml(view, stateHtml('日志加载失败：' + e.message, 'error'));
   }
 }

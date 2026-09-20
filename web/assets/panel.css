@@ -745,6 +745,7 @@ pre.block {
   font-family: var(--mono); font-size: var(--fs-base); letter-spacing: 5px;
   text-align: center;
 }
+#totpField input::placeholder { letter-spacing: normal; }
 
 .login-oauth {
   display: flex; align-items: center; justify-content: center; gap: 8px;
