@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,8 +15,6 @@ const (
 
 	eventRetentionDays = 7
 	eventMaxRows       = 2_000_000
-
-	candidateRequeueIntervalSec = 3600
 )
 
 var schemaStatements = []string{
@@ -33,7 +30,6 @@ var schemaStatements = []string{
 		pulled_by_foreign INTEGER NOT NULL DEFAULT 0,
 		pulled_at INTEGER
 	)`,
-	`CREATE INDEX IF NOT EXISTS idx_domains_pulled ON domains(pulled_by_foreign)`,
 	`CREATE INDEX IF NOT EXISTS idx_domains_last_seen ON domains(last_seen_at)`,
 	`CREATE TABLE IF NOT EXISTS query_events (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +70,10 @@ var eventExtraColumns = [][2]string{
 	{"client_subnet", "TEXT"},
 	{"ecs_zone", "TEXT"},
 	{"kind", "TEXT"},
+}
+
+var droppedIndexes = []string{
+	`DROP INDEX IF EXISTS idx_domains_pulled`,
 }
 
 var eventExtraIndexes = []string{
@@ -142,6 +142,11 @@ func migrate(db *sql.DB) error {
 	}
 
 	for _, ddl := range eventExtraIndexes {
+		if _, err := db.Exec(ddl); err != nil {
+			return err
+		}
+	}
+	for _, ddl := range droppedIndexes {
 		if _, err := db.Exec(ddl); err != nil {
 			return err
 		}
@@ -273,26 +278,21 @@ func RecordEvents(db *sql.DB, events []Event) error {
 
 	upsertDomain, err := tx.Prepare(`
 		INSERT INTO domains(domain, first_seen_at, last_seen_at, occurrence_count,
-		                    pulled_by_foreign, last_rcode, last_route, fail_count)
-		VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+		                    last_rcode, last_route, fail_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(domain) DO UPDATE SET
 			last_seen_at = max(domains.last_seen_at, excluded.last_seen_at),
 			occurrence_count = occurrence_count + excluded.occurrence_count,
 			last_rcode = excluded.last_rcode,
 			last_route = excluded.last_route,
-			fail_count = fail_count + excluded.fail_count,
-			pulled_by_foreign = CASE
-				WHEN domains.pulled_at IS NULL
-				  OR excluded.last_seen_at - domains.pulled_at >= ? THEN 0
-				ELSE domains.pulled_by_foreign END`)
+			fail_count = fail_count + excluded.fail_count`)
 	if err != nil {
 		return err
 	}
 	defer upsertDomain.Close()
 	for _, item := range aggregateDomains(events) {
 		if _, err := upsertDomain.Exec(item.domain, item.firstTS, item.lastTS,
-			item.count, item.rcode, item.route, item.fails,
-			candidateRequeueIntervalSec); err != nil {
+			item.count, item.rcode, item.route, item.fails); err != nil {
 			return err
 		}
 	}
@@ -334,96 +334,14 @@ func CheckpointTruncate(db *sql.DB) error {
 	return err
 }
 
-type Candidate struct {
-	Domain          string `json:"domain"`
-	FirstSeenAt     int64  `json:"first_seen_at"`
-	LastSeenAt      int64  `json:"last_seen_at"`
-	OccurrenceCount int64  `json:"occurrence_count"`
-}
-
-func PullBatch(db *sql.DB, limit int, now int64) ([]Candidate, error) {
-	if limit <= 0 {
-		limit = 2000
-	}
-	rows, err := db.Query(
-		"SELECT domain, first_seen_at, last_seen_at, occurrence_count FROM domains "+
-			"WHERE pulled_by_foreign = 0 ORDER BY last_seen_at ASC LIMIT ?", limit)
-	if err != nil {
-		return nil, err
-	}
-	var all []Candidate
-	for rows.Next() {
-		var item Candidate
-		if err := rows.Scan(&item.Domain, &item.FirstSeenAt, &item.LastSeenAt, &item.OccurrenceCount); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		all = append(all, item)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(all) == 0 {
-		return []Candidate{}, nil
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	statement, err := tx.Prepare("UPDATE domains SET pulled_by_foreign = 1, pulled_at = ? WHERE domain = ?")
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, err
-	}
-	for _, item := range all {
-		if _, err := statement.Exec(now, item.Domain); err != nil {
-			statement.Close()
-			_ = tx.Rollback()
-			return nil, err
-		}
-	}
-	statement.Close()
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
-	out := make([]Candidate, 0, len(all))
-	for _, item := range all {
-		if classifiableCandidate(item.Domain) {
-			out = append(out, item)
-		}
-	}
-	return out, nil
-}
-
-func classifiableCandidate(domain string) bool {
-	value := strings.ToLower(strings.TrimRight(domain, "."))
-	if !strings.Contains(value, ".") {
-		return false
-	}
-	for _, suffix := range []string{
-		".in-addr.arpa", ".ip6.arpa", ".local", ".localhost", ".invalid", ".test",
-	} {
-		if strings.HasSuffix(value, suffix) {
-			return false
-		}
-	}
-	return true
-}
-
 type Stats struct {
 	TotalDomains int64 `json:"total_domains"`
-	PendingPull  int64 `json:"pending_pull"`
 	QueryEvents  int64 `json:"query_events"`
 }
 
 func ReadStats(db *sql.DB) (Stats, error) {
 	var out Stats
 	if err := db.QueryRow("SELECT COUNT(*) FROM domains").Scan(&out.TotalDomains); err != nil {
-		return out, err
-	}
-	if err := db.QueryRow("SELECT COUNT(*) FROM domains WHERE pulled_by_foreign = 0").Scan(&out.PendingPull); err != nil {
 		return out, err
 	}
 	if err := db.QueryRow("SELECT COUNT(*) FROM query_events").Scan(&out.QueryEvents); err != nil {

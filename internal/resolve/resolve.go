@@ -293,13 +293,6 @@ type Outcome struct {
 	AAAA       []netip.Addr
 }
 
-func (o Outcome) FinalAddresses() []netip.Addr {
-	out := make([]netip.Addr, 0, len(o.A)+len(o.AAAA))
-	out = append(out, o.A...)
-	out = append(out, o.AAAA...)
-	return out
-}
-
 type addrSet struct {
 	mu   sync.Mutex
 	seen map[netip.Addr]struct{}

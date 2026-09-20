@@ -18,7 +18,10 @@ import (
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
-const cdnRulesMaxBytes = 32 << 20
+const (
+	cdnRulesMaxBytes = 32 << 20
+	geoDBStaleAfter  = 7 * 24 * time.Hour
+)
 
 func Steps() []Step {
 	return []Step{
@@ -87,16 +90,21 @@ func stepCDNRules(ctx context.Context, rt *Runtime) error {
 	return nil
 }
 
+func geoipReleaseBase(cfg Config) string {
+	if base := strings.TrimSpace(cfg.Value("GEOIP_RELEASE_BASE")); base != "" {
+		return base
+	}
+	repo := pick(cfg.Value("GEOIP_RELEASE_REPO"), cfg.Value("DNS_STACK_BINARY_REPO"))
+	if repo == "" {
+		return ""
+	}
+	return "https://github.com/" + repo + "/releases/download/geoip-latest"
+}
+
 func stepGeoIP(ctx context.Context, rt *Runtime) error {
 	cfg := rt.Config
 	dir := cfg.GeoDir()
-	base := strings.TrimSpace(cfg.Value("GEOIP_RELEASE_BASE"))
-	if base == "" {
-		repo := pick(cfg.Value("GEOIP_RELEASE_REPO"), cfg.Value("GITHUB_REPOSITORY"))
-		if repo != "" {
-			base = "https://github.com/" + repo + "/releases/download/geoip-latest"
-		}
-	}
+	base := geoipReleaseBase(cfg)
 
 	specs := []fetchSpec{
 		{
@@ -165,12 +173,19 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 	if !exists(filepath.Join(dir, "GeoLite2-ASN.mmdb")) && !exists(filepath.Join(dir, "qqwry.ipdb")) {
 		return fmt.Errorf("两个主库都下载失败且本地没有副本，归属展示将不可用")
 	}
-	var sources []string
+	var sources, stale []string
 	for _, item := range [][2]string{
 		{"qqwry.ipdb", "qqwry"}, {"GeoLite2-City.mmdb", "MaxMind"}, {"dbip-city.mmdb", "DB-IP"},
 	} {
-		if exists(filepath.Join(dir, item[0])) {
-			sources = append(sources, item[1])
+		path := filepath.Join(dir, item[0])
+		if !exists(path) {
+			continue
+		}
+		sources = append(sources, item[1])
+		if info, err := os.Stat(path); err == nil {
+			if age := time.Since(info.ModTime()); age > geoDBStaleAfter {
+				stale = append(stale, fmt.Sprintf("%s(%d天)", item[1], int(age.Hours()/24)))
+			}
 		}
 	}
 	if len(sources) < geoaudit.MinSources {
@@ -178,6 +193,10 @@ func stepGeoIP(ctx context.Context, rt *Runtime) error {
 			len(sources), geoaudit.MinSources)
 	} else {
 		rt.Infof("多源交叉可用源 %d 个：%s", len(sources), strings.Join(sources, " "))
+	}
+	if len(stale) > 0 {
+		rt.Warnf("其中 %d 个库已超过 %d 天没更新：%s——交叉判据仍在用它们投票，先查下载是否一直失败",
+			len(stale), int(geoDBStaleAfter.Hours()/24), strings.Join(stale, " "))
 	}
 	return nil
 }

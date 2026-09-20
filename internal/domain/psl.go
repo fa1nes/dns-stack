@@ -119,24 +119,6 @@ func (p *PSL) PublicSuffix(name string) string {
 	return best
 }
 
-func (p *PSL) RegistrableDomain(name string) string {
-	name = Normalize(name)
-	suffix := p.PublicSuffix(name)
-	if suffix == "" || suffix == name {
-		return ""
-	}
-	labels := strings.Split(name, ".")
-	suffixLabels := strings.Split(suffix, ".")
-	if len(labels) <= len(suffixLabels) {
-		return ""
-	}
-	result := strings.Join(labels[len(labels)-len(suffixLabels)-1:], ".")
-	if !strings.HasSuffix(result, "."+suffix) {
-		return ""
-	}
-	return result
-}
-
 func LoadPSL(paths []string) (*PSL, string) {
 	if paths == nil {
 		if configured := strings.TrimSpace(os.Getenv("PSL_FILE")); configured != "" {

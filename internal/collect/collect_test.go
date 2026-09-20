@@ -211,40 +211,6 @@ func TestRecordEventsNeverRollsBackLastSeen(t *testing.T) {
 	}
 }
 
-func TestPullBatchMarksAndFiltersCandidates(t *testing.T) {
-	db, _ := newTestDB(t)
-	events := []Event{
-		{TS: 100, Domain: "qq.com", Route: "cn"},
-		{TS: 100, Domain: "1.0.0.127.in-addr.arpa", Route: "cn"},
-		{TS: 100, Domain: "single", Route: "cn"},
-	}
-	if err := RecordEvents(db, events); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := PullBatch(db, 100, 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(rows) != 1 || rows[0].Domain != "qq.com" {
-		t.Fatalf("候选过滤错误: %+v", rows)
-	}
-	var pending int64
-	if err := db.QueryRow("SELECT COUNT(*) FROM domains WHERE pulled_by_foreign = 0").Scan(&pending); err != nil {
-		t.Fatal(err)
-	}
-	if pending != 0 {
-		t.Fatalf("仍有 %d 条未标记为已拉取", pending)
-	}
-	again, err := PullBatch(db, 100, 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(again) != 0 {
-		t.Fatalf("同一批被拉取了两次: %+v", again)
-	}
-}
-
 func TestPruneEventsHonoursRetentionWindow(t *testing.T) {
 	db, _ := newTestDB(t)
 	now := int64(10_000_000)
@@ -385,7 +351,7 @@ func TestConsumeStdinPersistsThroughRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.TotalDomains != 1 || stats.QueryEvents != 2 || stats.PendingPull != 1 {
+	if stats.TotalDomains != 1 || stats.QueryEvents != 2 {
 		t.Fatalf("落盘结果不符: %+v", stats)
 	}
 }
@@ -405,11 +371,11 @@ func TestCollapsePrefixesMergesSiblingsAndContained(t *testing.T) {
 
 func TestJSONOutputStaysCompact(t *testing.T) {
 
-	encoded, err := json.Marshal(Candidate{Domain: "qq.com", FirstSeenAt: 1, LastSeenAt: 2, OccurrenceCount: 3})
+	encoded, err := json.Marshal(Stats{TotalDomains: 1, QueryEvents: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"domain":"qq.com","first_seen_at":1,"last_seen_at":2,"occurrence_count":3}`
+	want := `{"total_domains":1,"query_events":2}`
 	if string(encoded) != want {
 		t.Fatalf("= %s, 期望 %s", encoded, want)
 	}

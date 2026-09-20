@@ -215,28 +215,6 @@ func TestCollapseDropsDomainsWithoutAnswers(t *testing.T) {
 	}
 }
 
-func TestLandingIsMainlandHasThreeStates(t *testing.T) {
-	client := resolvetest.Serve(t, map[string]resolvetest.Zone{
-		"cn.example": {Records: map[uint16][]resolvetest.Record{
-			dnswire.TypeA: rec(dnswire.TypeA, resolvetest.A("116.1.1.1"))}},
-		"off.example": {Records: map[uint16][]resolvetest.Record{
-			dnswire.TypeA: rec(dnswire.TypeA, resolvetest.A("1.2.3.4"))}},
-		"silent.example": {Silent: true},
-	})
-	ctx := context.Background()
-	m := prefixMainland{"116."}
-	if mainland, known := LandingIsMainland(ctx, client, m, "cn.example"); !mainland || !known {
-		t.Fatalf("大陆落点判定错误: mainland=%v known=%v", mainland, known)
-	}
-	if mainland, known := LandingIsMainland(ctx, client, m, "off.example"); mainland || !known {
-		t.Fatalf("境外落点判定错误: mainland=%v known=%v", mainland, known)
-	}
-
-	if mainland, known := LandingIsMainland(ctx, client, m, "silent.example"); mainland || known {
-		t.Fatalf("取不到答案时必须报未知: mainland=%v known=%v", mainland, known)
-	}
-}
-
 func TestClassifyManyReusesZoneVerdicts(t *testing.T) {
 	client := resolvetest.Serve(t, map[string]resolvetest.Zone{
 		"qq.com": {Records: map[uint16][]resolvetest.Record{

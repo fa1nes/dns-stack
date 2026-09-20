@@ -255,21 +255,6 @@ func ClassifyMany(
 	return out
 }
 
-func LandingIsMainland(
-	ctx context.Context, c *resolve.Client, m Mainland, name string,
-) (mainland bool, known bool) {
-	routable := FinalRecords(ctx, c, name)
-	if len(routable) == 0 {
-		return false, false
-	}
-	for _, addr := range routable {
-		if m != nil && m.IsMainland(addr) {
-			return true, true
-		}
-	}
-	return false, true
-}
-
 func CollapseByResolution(
 	ctx context.Context, c *resolve.Client, names []string, concurrency int,
 ) []string {
