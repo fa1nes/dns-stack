@@ -506,7 +506,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"oauth_enabled":     configured && oauthReady(rec),
 		"password_disabled": configured && rec.PasswordDisabled,
 	}
-	if !configured || !validSession(r, rec) {
+	if configured && !validSession(r, rec) {
 		writeJSON(w, 200, out)
 		return
 	}
