@@ -255,6 +255,43 @@ func TestPruneEventsHonoursRetentionWindow(t *testing.T) {
 	}
 }
 
+func TestRunPrunesAtStartupAndNotAnHourLater(t *testing.T) {
+	db, path := newTestDB(t)
+	now := time.Unix(10_000_000, 0)
+	stale := now.Unix() - (eventRetentionDays+1)*86400
+	if err := RecordEvents(db, []Event{
+		{TS: stale, Domain: "old.example", Route: "cn"},
+		{TS: now.Unix(), Domain: "fresh.example", Route: "cn"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	consumer := NewConsumer(path, t.TempDir(), &bytes.Buffer{})
+	consumer.now = func() time.Time { return now }
+	if err := consumer.Run(strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	for table, want := range map[string]int64{"query_events": 1, "domains": 1} {
+		var got int64
+		if err := reopened.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s 剩 %d 行，期望 %d；"+
+				"清理只挂在每小时的 ticker 上，重启后要等满一小时才第一次生效——"+
+				"部署完面板上的数字不会变，重启比一小时更频繁时则永远不清",
+				table, got, want)
+		}
+	}
+}
+
 func TestNXDomainIsNotAResolutionFailure(t *testing.T) {
 	for rcode, want := range map[int64]bool{0: false, 3: false, 2: true, 5: true, 4: true} {
 		if got := resolutionFailed(rcode); got != want {

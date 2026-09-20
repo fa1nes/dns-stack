@@ -361,6 +361,9 @@ func (c *Consumer) Run(input io.Reader) error {
 		}
 	}()
 
+	_, _ = PruneEvents(c.db, c.now().Unix())
+	_ = CheckpointTruncate(c.db)
+
 	lastFlush, lastCheckpoint, lastPrune := c.now(), c.now(), c.now()
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
