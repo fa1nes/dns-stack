@@ -26,6 +26,10 @@ func failure(message string) result {
 }
 
 func (h *Helper) run(args []string, timeout time.Duration, sanitize bool) result {
+	if h.onRun != nil {
+		h.onRun(args)
+		return result{"ok": true, "returncode": 0, "stdout": "", "stderr": ""}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)

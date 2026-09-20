@@ -59,6 +59,7 @@ type Helper struct {
 
 	ops    map[string]func(map[string]any) result
 	slots  chan struct{}
+	onRun  func(argv []string)
 	logMu  sync.Mutex
 	logOut *os.File
 }

@@ -106,8 +106,8 @@
   });
 
   const OPS = [
-    ['sync_rules', '同步四文件规则', false], ['rollback_rules', '回滚上一版规则', true],
     ['collect_polluted_ip', '采集污染 IP', false], ['rotate_doh_path', '轮换 DoH 私密路径', true],
+    ['prune_backups', '清理旧备份', true], ['drop_stale_logs', '清除僵尸日志', true],
     ['set_cache_ttl', '调整乐观缓存时长', false], ['reload_mosproxy', '重载 mosproxy 域名表', false],
     ['restart_mosproxy', '重启 mosproxy', true], ['restart_unbound', '重启 Unbound', true],
     ['healthcheck', '执行健康检查', false], ['cert_check', '检查证书', false],
@@ -452,10 +452,6 @@
     }
     if (path.startsWith('/api/action/')) {
       const op = path.slice('/api/action/'.length);
-      if (op === 'set_rule_sources') {
-        return { ok: true, operation: op,
-                 stdout: '规则源已更新，下次 sync-rules 运行时生效(预览模式)' };
-      }
       return { ok: true, operation: op, label: op, message: '（预览模式）未真正执行：' + op,
                stdout: '', stderr: '' };
     }

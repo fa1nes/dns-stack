@@ -844,7 +844,7 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 	}
 	if metric == "fail" {
-		where = append(where, "domain IN (SELECT domain FROM query_events WHERE rcode > 0 AND ts >= ?)")
+		where = append(where, "domain IN (SELECT domain FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?)")
 		args = append(args, s.now().Add(-24*time.Hour).Unix())
 	}
 	order := map[string]string{"count": "occurrence_count DESC", "recent": "last_seen_at DESC", "new": "first_seen_at DESC", "fail": "fail_count DESC, occurrence_count DESC"}[metric]

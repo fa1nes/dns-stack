@@ -249,7 +249,7 @@ func (s *Server) collectedInfo(w http.ResponseWriter, r *http.Request) {
 		}
 		out[key] = count
 	}
-	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS c FROM query_events WHERE ts >= ? AND rcode != 0 GROUP BY domain", since)
+	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS c FROM query_events WHERE ts >= ? AND rcode NOT IN (0,3) GROUP BY domain", since)
 	if err != nil {
 		out["error"] = err.Error()
 	} else {

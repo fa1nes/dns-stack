@@ -2001,7 +2001,7 @@ async function loadCollected() {
     const ip = d.ip || {};
 
     setHtml($('#collectStats'), html`${[
-      statCard(fmtNum(d.domains_total), '已采集域名', '近 24 小时活跃 ' + fmtNum(d.domains_active_24h)),
+      statCard(fmtNum(d.domains_total), '域名（近 7 天）', '近 24 小时活跃 ' + fmtNum(d.domains_active_24h)),
       statCard(fmtNum(d.queries_24h), '近 24 小时查询', '', 'accent'),
       statCard(fmtNum(ip.cn_zones), '直连域名', '权威在大陆，全程直连', 'ok'),
       statCard(fmtNum(ip.polluted), '污染 IP', fmtNum(ip.polluted_cidr) + ' 段',
@@ -2402,20 +2402,6 @@ async function loadBackups() {
 }
 
 function renderRoleExtra() {
-  if (window.PANEL_ROLE === 'global-builder') {
-    setHtml($('#opsRoleExtra'), raw(
-      '<div class="card"><h3>规则生成（规则构建角色）</h3>' +
-      '<div class="row">' +
-      '<button class="primary sm" data-op="rebuild_rules">一键重建规则</button>' +
-      '<button class="sm" data-op="pull_candidates">拉取候选域名</button>' +
-      '<button class="sm" data-op="classify_start">立即执行分类</button>' +
-      '<button class="sm" data-op="classify_authority">按权威位置分类</button>' +
-      '<button class="sm" data-op="build_rules">生成规则文件</button>' +
-      '<button class="sm" data-op="update_reference_data">更新 PSL 参考数据</button>' +
-      '<button class="danger sm" data-op="publish_github">发布到 GitHub</button>' +
-      '</div><div class="hint">一键重建只生成本地四文件，不会自动推送 GitHub。</div></div>'));
-    return;
-  }
   if (window.PANEL_ROLE === 'cn-resolver') {
     setHtml($('#opsRoleExtra'), raw(
       '<div class="card"><h3>递归分流数据</h3>' +
@@ -2514,8 +2500,8 @@ const CONFIRM_NOTE = {
   rotate_doh_path: '新路径生效后，所有客户端（sing-box / Surge / iOS 描述文件）'
     + '都必须换成新地址，未更新的客户端会立即解析失败。\n'
     + '轮换过程会重启 mosproxy 并自动校验，校验不过会自动回滚。',
-  set_rule_sources: '拉取地址写错会导致下次规则同步失败（sync-rules 每 5 分钟运行一次）。'
-    + '镜像留空表示不使用该镜像。',
+  prune_backups: '按保留策略删除超出份数的旧备份包，删掉就找不回来了。',
+  drop_stale_logs: '删除已不属于任何现存模块、且 14 天没人写过的日志文件。',
 };
 
 async function runOp(op, label, args, isDangerous) {
@@ -2532,8 +2518,7 @@ async function runOp(op, label, args, isDangerous) {
     else toast(label + ' 失败', (d.message || d.stderr || '').slice(0, 800), 'err');
 
     invalidateCache();
-    if (['sync_rules', 'rollback_rules', 'cert_check', 'cert_renew', 'build_rules',
-      'rebuild_rules', 'classify_authority', 'set_rule_sources'].indexOf(op) >= 0
+    if (['cert_check', 'cert_renew'].indexOf(op) >= 0
       && state.page === 'settings') loadRules();
     if (['restart_mosproxy', 'restart_unbound'].indexOf(op) >= 0) setTimeout(loadModules, 1500);
     if (['backup', 'export'].indexOf(op) >= 0) loadBackups();

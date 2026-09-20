@@ -549,7 +549,7 @@
             <summary>维护操作与历史</summary>
             <div class="row mt-12">
               <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
-              <button class="sm" data-op="set_arch_epoch">重设统计起点</button>
+              <button class="danger sm" data-op="set_arch_epoch">重设统计起点</button>
               <button class="danger sm" data-op="purge_legacy">清理旧架构数据</button>
             </div>
           </details>
@@ -565,6 +565,10 @@
                 <button class="danger sm" data-op="restart_mosproxy">重启 mosproxy</button>
                 <button class="danger sm" data-op="restart_unbound">重启 Unbound</button>
               </div>
+              <div class="row mt-8">
+                <button class="danger sm" data-op="vacuum_logs">清理系统日志</button>
+                <button class="danger sm" data-op="drop_stale_logs">清除僵尸日志</button>
+              </div>
               <div class="hint">所有操作通过受限 helper 白名单执行，标红按钮需二次确认。</div>
             </div>
             <div class="card">
@@ -574,6 +578,7 @@
                 <button class="sm" data-op="export" data-args='{"mode":"state"}'>导出（配置+数据）</button>
                 <button class="sm" data-op="export" data-args='{"mode":"full"}'>导出完整包</button>
                 <button class="sm" id="btnExportMigration">导出迁移数据</button>
+                <button class="danger sm" data-op="prune_backups">清理旧备份</button>
               </div>
               <div class="row">
                 <input type="file" id="migrationFile" accept=".gz,.tgz,application/gzip" class="sm">

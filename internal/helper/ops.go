@@ -123,7 +123,7 @@ func (h *Helper) opRestartUnbound(map[string]any) result {
 }
 
 func (h *Helper) opPurgeLegacy(map[string]any) result {
-	return h.run([]string{h.cli, "--yes", "purge-legacy"}, 60*time.Second, true)
+	return h.run([]string{h.cli, "purge-legacy", "--yes"}, 60*time.Second, true)
 }
 
 func (h *Helper) opSetArchEpoch(map[string]any) result {
@@ -138,11 +138,11 @@ func (h *Helper) opVacuumLogs(args map[string]any) result {
 	if !retentionPattern.MatchString(keep) {
 		return failure("保留期格式如 7d/2w/1m")
 	}
-	return h.run([]string{h.cli, "--yes", "vacuum-logs", keep}, 120*time.Second, true)
+	return h.run([]string{h.cli, "vacuum-logs", keep, "--yes"}, 120*time.Second, true)
 }
 
 func (h *Helper) opClearAudit(map[string]any) result {
-	return h.run([]string{h.cli, "--yes", "clear-audit"}, 60*time.Second, true)
+	return h.run([]string{h.cli, "clear-audit", "--yes"}, 60*time.Second, true)
 }
 
 func (h *Helper) opClearDomains(args map[string]any) result {
@@ -156,7 +156,7 @@ func (h *Helper) opClearDomains(args map[string]any) result {
 			return failure("参数需为 1-3650 或 all")
 		}
 	}
-	return h.run([]string{h.cli, "--yes", "clear-domains", value}, 60*time.Second, true)
+	return h.run([]string{h.cli, "clear-domains", value, "--yes"}, 60*time.Second, true)
 }
 
 func (h *Helper) opClearDomainsAll(map[string]any) result {

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	SchemaVersion   = 3
+	SchemaVersion   = 4
 	DefaultDBPath   = "/var/lib/dns-stack/collector.db"
 	DefaultStateDir = "/var/lib/dns-stack"
 
@@ -151,6 +151,14 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	var stored int
+	_ = db.QueryRow("SELECT value FROM schema_meta WHERE key = 'schema_version'").Scan(&stored)
+	if stored < 4 {
+		// v4 起 NXDOMAIN 不再计入 fail_count，旧口径累计的数字要清零重算
+		if _, err := db.Exec("UPDATE domains SET fail_count = 0"); err != nil {
+			return err
+		}
+	}
 	_, err := db.Exec(
 		"INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?) "+
 			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -200,6 +208,10 @@ type domainAggregate struct {
 	fails   int64
 }
 
+func resolutionFailed(rcode int64) bool {
+	return rcode != 0 && rcode != rcodeNXDomain
+}
+
 func aggregateDomains(events []Event) []domainAggregate {
 	index := map[string]*domainAggregate{}
 	order := make([]string, 0, len(events))
@@ -207,7 +219,7 @@ func aggregateDomains(events []Event) []domainAggregate {
 		item := index[event.Domain]
 		if item == nil {
 			fails := int64(0)
-			if event.RCode != 0 {
+			if resolutionFailed(event.RCode) {
 				fails = 1
 			}
 			index[event.Domain] = &domainAggregate{
@@ -218,7 +230,7 @@ func aggregateDomains(events []Event) []domainAggregate {
 			continue
 		}
 		item.count++
-		if event.RCode != 0 {
+		if resolutionFailed(event.RCode) {
 			item.fails++
 		}
 		if event.TS < item.firstTS {
@@ -306,6 +318,10 @@ func PruneEvents(db *sql.DB, now int64) (int64, error) {
 		return 0, err
 	}
 	deleted, _ := result.RowsAffected()
+
+	if _, err := db.Exec("DELETE FROM domains WHERE last_seen_at < ?", cutoff); err != nil {
+		return deleted, err
+	}
 
 	var total int64
 	if err := db.QueryRow("SELECT COUNT(*) FROM query_events").Scan(&total); err != nil {

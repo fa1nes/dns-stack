@@ -173,8 +173,9 @@ func TestRecordEventsAggregatesByDomain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if first != 100 || last != 300 || occurrences != 3 || fails != 1 {
-		t.Fatalf("聚合错误: first=%d last=%d count=%d fails=%d", first, last, occurrences, fails)
+	if first != 100 || last != 300 || occurrences != 3 || fails != 0 {
+		t.Fatalf("聚合错误: first=%d last=%d count=%d fails=%d；"+
+			"NXDOMAIN 是正确答案不是失败，不该计入 fail_count", first, last, occurrences, fails)
 	}
 	if rcode != 3 || route != "cache" {
 		t.Fatalf("last_rcode/route 未取时间最晚那条: rcode=%d route=%q", rcode, route)
@@ -240,8 +241,27 @@ func TestPruneEventsHonoursRetentionWindow(t *testing.T) {
 	if err := db.QueryRow("SELECT COUNT(*) FROM domains").Scan(&domains); err != nil {
 		t.Fatal(err)
 	}
-	if domains != 2 {
-		t.Fatalf("domains 被误删：剩 %d 条", domains)
+	if domains != 1 {
+		t.Fatalf("domains 剩 %d 条，期望 1；"+
+			"domains 必须与 query_events 用同一个留存窗口，否则域名页会列出"+
+			"一堆点进去看不到任何查询记录的条目，两个页面的计数也对不上", domains)
+	}
+	var name string
+	if err := db.QueryRow("SELECT domain FROM domains").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "fresh.example" {
+		t.Fatalf("留下的应该是新鲜那条，实际 %q", name)
+	}
+}
+
+func TestNXDomainIsNotAResolutionFailure(t *testing.T) {
+	for rcode, want := range map[int64]bool{0: false, 3: false, 2: true, 5: true, 4: true} {
+		if got := resolutionFailed(rcode); got != want {
+			t.Errorf("rcode=%d 判为失败=%v，期望 %v；"+
+				"只有 SERVFAIL/REFUSED 这类才是失败；NOERROR 与 NXDOMAIN 都是成功解析",
+				rcode, got, want)
+		}
 	}
 }
 
