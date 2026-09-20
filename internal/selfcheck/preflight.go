@@ -51,10 +51,10 @@ func checkBackupFreshness(opt Options, report *Report, now time.Time) {
 	}
 	age := now.Sub(newest)
 	if age > backupBudget {
-		c.warn("最近一次备份", "已是 %s 前(共 %d 个)——检查 dns-stack-maintenance.timer", humanAge(age), count)
+		c.warn("最近一次备份", "已是 %s(共 %d 个)——检查 dns-stack-maintenance.timer", humanAge(age), count)
 		return
 	}
-	c.ok("最近一次备份", "%s前，共 %d 个可回滚版本", humanAge(age), count)
+	c.ok("最近一次备份", "%s，共 %d 个可回滚版本", humanAge(age), count)
 }
 
 func checkEntrypoints(ctx context.Context, opt Options, report *Report) {
@@ -195,9 +195,9 @@ func checkGeoIPFreshness(opt Options, report *Report, now time.Time) {
 		return
 	}
 	if age > geoipBudget {
-		c.warn("ASN 归属库", "已 %s 未更新——检查 dns-stack-routing-data.timer", humanAge(age))
+		c.warn("ASN 归属库", "已 %s 没更新——检查 dns-stack-routing-data.timer", humanSpan(age))
 	} else {
-		c.ok("ASN 归属库", "%s前更新", humanAge(age))
+		c.ok("ASN 归属库", "%s更新", humanAge(age))
 	}
 	if _, ok := fileAge(filepath.Join(opt.StateDir, "geoip", "GeoLite2-City.mmdb"), now); ok {
 		c.ok("City 归属库", "省份标注可用")

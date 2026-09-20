@@ -133,10 +133,10 @@ func checkCollector(ctx context.Context, opt Options, report *Report, now time.T
 	if fresh == 0 {
 		c.warn("事件落库",
 			"近 %s 没有事件落库（可能只是无人查询）——确认 SELECT MAX(ts) FROM query_events",
-			humanAge(collectorWindow))
+			humanSpan(collectorWindow))
 		return
 	}
-	c.ok("事件落库", "近 %s 落库 %d 条", humanAge(collectorWindow), fresh)
+	c.ok("事件落库", "近 %s 落库 %d 条", humanSpan(collectorWindow), fresh)
 }
 
 func checkThrottling(ctx context.Context, opt Options, report *Report) {

@@ -143,18 +143,20 @@ func fileAge(path string, now time.Time) (time.Duration, bool) {
 	return now.Sub(info.ModTime()), true
 }
 
-func humanAge(d time.Duration) string {
+func humanSpan(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return "不到 1 分钟前"
+		return "不到 1 分钟"
 	case d < time.Hour:
-		return fmt.Sprintf("%d 分钟前", int(d.Minutes()))
+		return fmt.Sprintf("%d 分钟", int(d.Minutes()))
 	case d < 48*time.Hour:
-		return fmt.Sprintf("%d 小时前", int(d.Hours()))
+		return fmt.Sprintf("%d 小时", int(d.Hours()))
 	default:
-		return fmt.Sprintf("%d 天前", int(d.Hours()/24))
+		return fmt.Sprintf("%d 天", int(d.Hours()/24))
 	}
 }
+
+func humanAge(d time.Duration) string { return humanSpan(d) + "前" }
 
 func Render(report Report, out io.Writer) {
 	groups := map[string][]Result{}

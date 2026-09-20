@@ -112,8 +112,8 @@ func checkRoutingData(opt Options, report *Report, now time.Time) {
 		}
 		age, _ := fileAge(item.path, now)
 		if age > item.budget {
-			c.warn(item.name, "%d 条，但已 %s 未更新（预算 %s）",
-				rows, humanAge(age), humanAge(item.budget))
+			c.warn(item.name, "%d 条，但已 %s 没更新（预算 %s）",
+				rows, humanSpan(age), humanSpan(item.budget))
 			continue
 		}
 		c.ok(item.name, "%d 条，%s更新", rows, humanAge(age))
@@ -179,7 +179,7 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 	c.ok("ECS 白名单非空", "%d 条", len(prefixes))
 
 	if age, ok := fileAge(conf, now); ok && age > 2*time.Hour {
-		c.warn("ECS 白名单新鲜度", "已 %s 未更新", humanAge(age))
+		c.warn("ECS 白名单新鲜度", "已 %s 没更新", humanSpan(age))
 	}
 
 	steeredPath := filepath.Join(opt.StateDir, "chnroute", "cdn-steered-zones.txt")
@@ -278,7 +278,7 @@ func checkCDNRuleset(opt Options, report *Report, now time.Time) *cdnrules.Set {
 	c.ok("规则集可用", "provider %d 个(%d 个有前缀证据，%d 个有大陆节点段)，前缀 %d 条",
 		len(set.Providers()), withNets, mainland, set.PrefixCount())
 	if age, ok := fileAge(path, now); ok && age > 72*time.Hour {
-		c.warn("规则集新鲜度", "已 %s 未更新，检查 cdn-rules Action 与 routing-data 的 cdn-rules 步骤", humanAge(age))
+		c.warn("规则集新鲜度", "已 %s 没更新，检查 cdn-rules Action 与 routing-data 的 cdn-rules 步骤", humanSpan(age))
 	}
 	return set
 }
