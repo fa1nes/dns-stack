@@ -1148,10 +1148,10 @@ async function deleteQuery(id, btn) {
     });
     if (d && d.ok === false) { toast('删除失败', d.message || '', 'err'); return; }
     const tr = btn && btn.closest('tr');
-    const body = $('#liveBody');
     if (tr) tr.remove();
-    if (body && !body.querySelector('tr')) setHtml(body, rowSpan(9, EMPTY('暂无记录')));
     toast('已删除该条记录', '', 'ok');
+    invalidateCache();
+    loadQueries(state.queryPage);
   } catch (e) { toast('删除失败', e.message, 'err'); }
 }
 
@@ -2479,10 +2479,9 @@ async function deleteAudit(id, btn) {
     });
     if (d && d.ok === false) { toast('删除失败', d.message || '', 'err'); return; }
     const tr = btn && btn.closest('tr');
-    const body = $('#auditBody');
     if (tr) tr.remove();
-    if (body && !body.querySelector('tr')) setHtml(body, rowSpan(6, EMPTY('暂无审计记录')));
     toast('已删除该条记录', '', 'ok');
+    loadAudit();
   } catch (e) { toast('删除失败', e.message, 'err'); }
 }
 
@@ -2521,7 +2520,7 @@ async function runOp(op, label, args, isDangerous) {
     if (['cert_check', 'cert_renew'].indexOf(op) >= 0
       && state.page === 'settings') loadRules();
     if (['restart_mosproxy', 'restart_unbound'].indexOf(op) >= 0) setTimeout(loadModules, 1500);
-    if (['backup', 'export'].indexOf(op) >= 0) loadBackups();
+    if (['backup', 'export', 'prune_backups'].indexOf(op) >= 0) loadBackups();
     if (op === 'rotate_doh_path') { loadDohInfo(); setTimeout(loadModules, 1500); }
     if (op === 'clear_audit') loadAudit();
     if (['clear_domains', 'clear_domains_all', 'purge_legacy'].indexOf(op) >= 0) {

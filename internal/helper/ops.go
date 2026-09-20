@@ -793,6 +793,15 @@ func rejectResult(message string) result {
 	return result{rejectionKey: message}
 }
 
+func OpNames() []string {
+	names := []string{}
+	for name := range (&Helper{}).operations() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (h *Helper) operations() map[string]func(map[string]any) result {
 	return map[string]func(map[string]any) result{
 		"network_exits":       h.opNetworkExits,

@@ -29,9 +29,11 @@ func TestEveryOperationHasAButtonOrADedicatedControl(t *testing.T) {
 	for _, m := range opButtonRe.FindAllStringSubmatch(markup, -1) {
 		wired[m[1]] = true
 	}
-	// 这几个由专属控件驱动（下拉框 + 应用按钮 / 文件选择 / 数据集页），不是 data-op 按钮
+	// 这几个由专属控件驱动（下拉框 + 应用按钮 / 文件选择 / 数据集页 / 表格行内的删除按钮），
+	// 不是 data-op 按钮
 	for _, op := range []string{"set_cache_ttl", "set_min_ttl", "flush_cache",
-		"import", "refresh_routing"} {
+		"import", "refresh_routing",
+		"delete_query", "delete_domain", "delete_audit"} {
 		wired[op] = true
 	}
 	for _, op := range operationOrder {

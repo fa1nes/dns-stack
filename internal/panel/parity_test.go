@@ -158,6 +158,27 @@ func TestDedicatedOperationsStayOutOfTheGenericActionPath(t *testing.T) {
 	}
 }
 
+func TestEveryOperationHasSomethingThatExecutesIt(t *testing.T) {
+	served := map[string]bool{}
+	for _, name := range helper.OpNames() {
+		served[name] = true
+	}
+	for op := range localOps {
+		served[op] = true
+	}
+	for op := range operationSpecs {
+		if !served[op] {
+			t.Errorf("%s 在 operationSpecs 里，/api/action/%s 因此会被放行，但 helper 和面板本地"+
+				"都没有实现它——按钮点下去只会拿到「未知操作」", op, op)
+		}
+	}
+	for op := range localOps {
+		if _, listed := operationSpecs[op]; !listed {
+			t.Errorf("%s 有本地实现却不在 operationSpecs 里，/api/action/ 会先一步回「不支持的操作」", op)
+		}
+	}
+}
+
 func TestEveryListedOperationHasASpec(t *testing.T) {
 	for _, op := range operationOrder {
 		if _, ok := operationSpecs[op]; !ok {

@@ -37,6 +37,7 @@ var operationOrder = []string{
 	"clear_audit", "vacuum_logs", "clear_domains", "clear_domains_all",
 	"set_arch_epoch", "export", "import", "refresh_routing",
 	"prune_backups", "drop_stale_logs",
+	"delete_query", "delete_domain", "delete_audit",
 }
 
 var operationSpecs = map[string]operationSpec{
@@ -63,6 +64,9 @@ var operationSpecs = map[string]operationSpec{
 	"refresh_routing":     {Label: "刷新递归分流数据", Timeout: 2220, Role: "cn-resolver"},
 	"prune_backups":       {Label: "清理旧备份", Dangerous: true, Timeout: 60},
 	"drop_stale_logs":     {Label: "清除僵尸日志", Dangerous: true, Timeout: 60},
+	"delete_query":        {Label: "删除一条查询记录"},
+	"delete_domain":       {Label: "删除一个域名的统计"},
+	"delete_audit":        {Label: "删除一条审计记录"},
 }
 
 type authFailure struct {
@@ -162,6 +166,12 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request) {
 	}
 	if spec.Dangerous && !boolValue(args["confirm"]) {
 		writeJSON(w, http.StatusPreconditionRequired, map[string]any{"ok": false, "need_confirm": true, "message": "「" + spec.Label + "」是危险操作，请确认后再执行"})
+		return
+	}
+	if handler, local := localOps[op]; local {
+		done, message := handler(s, args)
+		s.writeAudit(op, args, done, message)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": done, "operation": op, "label": spec.Label, "message": message})
 		return
 	}
 	ctx := r.Context()
