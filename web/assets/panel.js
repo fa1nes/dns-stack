@@ -2361,14 +2361,19 @@ function renderSysBar(d) {
   if (!bar) return;
   const st = MOD_STATE[d.verdict] || MOD_STATE.unknown;
   const c = d.counts || {};
+  const issues = d.attention || [];
   const detail = (d.verdict === 'ok')
     ? html`<span class="dim">${d.total} 个模块协同工作，全部就绪</span>`
-    : html`<ul class="sys-issues">${(d.attention || []).slice(0, 4).map((x) => html`<li>${x}</li>`)}</ul>`;
+    : issues.length
+      ? html`<ul class="sys-issues">${issues.slice(0, 4).map((x) => html`<li>${x}</li>`)}</ul>`
+      : html`<span class="dim">${c.unknown || 0} 个模块查不到状态，其余正常——
+        多半是 helper 没应答，用 systemctl is-active dns-stack-helper 确认</span>`;
   setHtml(bar, html`<div class="sys-card ${d.verdict}">
     <div class="sys-head">
       <span class="dot ${st.dot}"></span>
       <b class="sys-headline">${d.headline}</b>
-      <span class="sys-counts mono dim">正常 ${c.ok || 0} · 关注 ${c.warn || 0} · 中断 ${c.down || 0}</span>
+      <span class="sys-counts mono dim">正常 ${c.ok || 0} · 关注 ${c.warn || 0} · 中断 ${c.down || 0}${
+        c.unknown ? ' · 查不到 ' + c.unknown : ''}</span>
       <button class="ghost sm" data-page-jump="settings" data-tab="services">查看模块</button>
     </div>
     <div class="sys-body">${detail}</div>

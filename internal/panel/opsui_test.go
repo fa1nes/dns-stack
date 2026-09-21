@@ -52,6 +52,30 @@ func TestEveryButtonPointsAtARegisteredOperation(t *testing.T) {
 	}
 }
 
+func TestModuleCountsLineShowsEveryState(t *testing.T) {
+	markup := panelMarkup(t)
+	line := ""
+	for _, candidate := range strings.Split(markup, "\n") {
+		if strings.Contains(candidate, "sys-counts") {
+			line = candidate
+			break
+		}
+	}
+	if line == "" {
+		t.Skip("panel.js 里找不到模块计数行")
+	}
+	window := markup[strings.Index(markup, line):]
+	if len(window) > 400 {
+		window = window[:400]
+	}
+	for _, state := range []string{"ok", "warn", "down", "unknown"} {
+		if !strings.Contains(window, "c."+state) {
+			t.Errorf("模块计数行没有渲染 counts.%s——"+
+				"少一类就会出现「10 个模块」却只数出 9 个的自相矛盾", state)
+		}
+	}
+}
+
 func TestDangerousOperationsRenderAsDangerButtons(t *testing.T) {
 	markup := panelMarkup(t)
 	for _, line := range strings.Split(markup, "\n") {
