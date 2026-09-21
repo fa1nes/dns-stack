@@ -1700,11 +1700,12 @@ async function loadCdnHit(mode) {
         <tbody>${rows.length ? rows : rowSpan(5, '暂无数据')}</tbody>
       </table></div>
       <div class="hint mt-8">
-        <b>命中大陆节点</b> 答案落在 direct4 里 ·
+        <b>命中大陆节点</b> 答案落在 CDN 规则集的大陆段或 direct4 里 ·
         <b>无回显，判不出</b> 可能是缓存，清缓存重查即可判定 ·
         <b>ECS 没送达</b> 缓存已清仍不回显，查白名单 ·
         <b>不按位置调度</b> 权威回 scope=0 ·
-        <b>大陆无节点</b> 权威挑过了仍给境外
+        <b>大陆无节点</b> 权威挑过了仍给境外 ·
+        <b>未解析出</b> 这一轮没拿到地址
       </div>
     </div>`);
   } catch (e) {

@@ -251,7 +251,7 @@
               <button class="primary sm" id="btnCdnHit">重新探测</button>
               <button class="sm" id="btnCdnFresh" title="先清掉这些域名及其 CNAME 链的缓存再查，判据才不会被缓存骗过">清缓存重查</button>
             </div>
-            <div class="hint">以真实中国网段发查询，再比对 CDN 直连规则集。
+            <div class="hint">以真实中国网段发查询，答案落在 CDN 规则集的大陆段或 direct4 里即算就近命中。
               「清缓存重查」会先清掉缓存，让「无 ECS 回显」变成可判定的结论，10 分钟限一次。</div>
           </div>
           <div id="cdnHitResult"></div>
@@ -282,7 +282,7 @@
                      enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
               <button class="primary" id="btnIpLookup">查询</button>
             </div>
-            <div class="hint">四个来源各自独立查询。只有 ASN 与国家码可机器比对，其余按各源原样并列。</div>
+            <div class="hint">每个归属库各自独立查询，互不参考。只有 ASN 与国家码可机器比对，其余按各源原样并列。</div>
           </div>
           <div id="ipResult"></div>
         </div>
