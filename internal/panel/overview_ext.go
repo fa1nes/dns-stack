@@ -38,7 +38,12 @@ func (s *Server) archEpoch() int64 {
 
 const latencySampleCap = 10000
 
-const failWindowSec = 86400
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 const (
 	resolveCap      = 60
@@ -185,12 +190,12 @@ func domainSummaryExtras(db *sql.DB, out map[string]any, now, since int64) {
 	out["by_exit"] = byExit
 
 	var new24, active1h, failing, failedEver int
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE first_seen_at >= ?", now-86400).Scan(&new24)
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", now-3600).Scan(&active1h)
+	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE first_seen_at >= ?", since).Scan(&new24)
+	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", max64(now-3600, since)).Scan(&active1h)
 
 	_ = db.QueryRow(
-		"SELECT COUNT(DISTINCT domain) FROM query_events WHERE rcode > 0 AND ts >= ?",
-		now-failWindowSec).Scan(&failing)
+		"SELECT COUNT(DISTINCT domain) FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?",
+		since).Scan(&failing)
 
 	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE COALESCE(fail_count,0) > 0").Scan(&failedEver)
 	out["new_24h"] = new24
@@ -201,7 +206,7 @@ func domainSummaryExtras(db *sql.DB, out map[string]any, now, since int64) {
 	byQtype := []map[string]any{}
 	if rows, err := db.Query(
 		"SELECT qtype, COUNT(*) FROM query_events WHERE ts >= ? "+
-			"GROUP BY qtype ORDER BY 2 DESC LIMIT 10", now-86400); err == nil {
+			"GROUP BY qtype ORDER BY 2 DESC LIMIT 10", since); err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var qtype int64
@@ -217,7 +222,7 @@ func domainSummaryExtras(db *sql.DB, out map[string]any, now, since int64) {
 	byRcode := []map[string]any{}
 	if rows, err := db.Query(
 		"SELECT rcode, COUNT(*) FROM query_events WHERE ts >= ? "+
-			"GROUP BY rcode ORDER BY 2 DESC LIMIT 10", now-86400); err == nil {
+			"GROUP BY rcode ORDER BY 2 DESC LIMIT 10", since); err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var rcode int64
