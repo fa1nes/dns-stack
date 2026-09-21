@@ -1438,6 +1438,30 @@ async function deleteDomain(domain) {
   } catch (e) { toast('删除失败', e.message, 'err'); }
 }
 
+const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fRespBy', '#fSince'];
+
+function setFilterMore(open) {
+  const box = $('#filterMore');
+  const btn = $('#btnFilterMore');
+  if (!box || !btn) return;
+  box.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('active', open);
+}
+
+function syncFilterCount(settle) {
+  const active = EXTRA_FILTERS.filter((s) => {
+    const el = $(s);
+    return el && el.value && el.value !== '0';
+  }).length;
+  const badge = $('#filterCount');
+  if (badge) {
+    badge.textContent = String(active);
+    badge.hidden = active === 0;
+  }
+  if (settle || active > 0) setFilterMore(active > 0);
+}
+
 const DOM_COUNT_LABEL = {
   new: (n) => '共 ' + n + ' 个域名',
   recent: (n) => '共 ' + n + ' 个域名',
@@ -2637,11 +2661,16 @@ function bindEvents() {
   $('#btnReset').addEventListener('click', () => {
     ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#fRespBy'].forEach((s) => { $(s).value = ''; });
     $('#fSince').value = '0';
+    syncFilterCount();
     loadQueries(1);
   });
-  ['#fQtype', '#fRoute', '#fRcode', '#fRespBy', '#fSince'].forEach((s) => {
-    const el = $(s); if (el) el.addEventListener('change', () => loadQueries(1));
+  EXTRA_FILTERS.forEach((s) => {
+    const el = $(s);
+    if (el) el.addEventListener('change', () => { syncFilterCount(); loadQueries(1); });
   });
+  const more = $('#btnFilterMore');
+  if (more) more.addEventListener('click', () => setFilterMore($('#filterMore').hidden));
+  syncFilterCount(true);
   $('#btnPrev').addEventListener('click', () => {
     if (state.queryPage > 1) loadQueries(state.queryPage - 1);
   });
