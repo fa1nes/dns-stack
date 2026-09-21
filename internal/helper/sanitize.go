@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/config"
 )
 
 var (
@@ -44,22 +46,11 @@ func (c *dohTokenCache) get(configPath string) []string {
 	if info.ModTime().Equal(c.mtime) {
 		return c.tokens
 	}
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return c.tokens
-	}
 	var tokens []string
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "DOH_PATH=") {
-			continue
+	for _, segment := range strings.Split(strings.Trim(config.Value(configPath, "DOH_PATH"), "/"), "/") {
+		if len(segment) >= dohTokenMinLen {
+			tokens = append(tokens, segment)
 		}
-		value := strings.TrimSpace(strings.SplitN(line, "=", 2)[1])
-		for _, segment := range strings.Split(strings.Trim(value, "/"), "/") {
-			if len(segment) >= dohTokenMinLen {
-				tokens = append(tokens, segment)
-			}
-		}
-		break
 	}
 	c.mtime, c.tokens = info.ModTime(), tokens
 	return tokens

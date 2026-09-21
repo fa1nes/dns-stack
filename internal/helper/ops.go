@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/config"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
@@ -91,16 +92,7 @@ func stringArg(args map[string]any, key string) string {
 }
 
 func (h *Helper) configValue(key string) string {
-	data, err := os.ReadFile(h.configPath)
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, key+"=") {
-			return strings.Trim(strings.TrimSpace(strings.SplitN(line, "=", 2)[1]), `"'`)
-		}
-	}
-	return ""
+	return config.Value(h.configPath, key)
 }
 
 func (h *Helper) role() string {
@@ -770,15 +762,8 @@ func (h *Helper) opNetworkExits(args map[string]any) result {
 		}
 	}
 
-	if data, err := os.ReadFile(h.configPath); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "PUBLIC_IPV4=") {
-				if value := strings.TrimSpace(strings.SplitN(line, "=", 2)[1]); value != "" {
-					out["public_ipv4"] = value
-				}
-				break
-			}
-		}
+	if value := h.configValue("PUBLIC_IPV4"); value != "" {
+		out["public_ipv4"] = value
 	}
 	return out
 }

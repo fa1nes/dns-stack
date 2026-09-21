@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dns-stack/dns-stack/internal/config"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"io"
 	"io/fs"
@@ -531,23 +532,7 @@ func (s *Server) role() string {
 }
 
 func (s *Server) readConfig() map[string]string {
-	out := map[string]string{}
-	b, err := os.ReadFile(s.cfg.ConfigPath)
-	if err != nil {
-		return out
-	}
-	keys := map[string]bool{"ROLE": true, "PUBLIC_IPV4": true, "DOH_PORT": true, "DOH_PATH": true, "UNBOUND_ADDR": true, "UNBOUND_PORT": true, "PANEL_LISTEN": true, "PANEL_PORT": true, "PANEL_CORS_ORIGINS": true, "GITHUB_RAW_BASE": true, "GITHUB_MIRROR_1": true, "GITHUB_MIRROR_2": true, "GITHUB_REPOSITORY": true, "GITHUB_BRANCH": true}
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(line, "=")
-		if ok && keys[strings.TrimSpace(k)] {
-			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
-	return out
+	return config.Read(s.cfg.ConfigPath)
 }
 
 func (s *Server) dbPath() string {
@@ -953,18 +938,6 @@ func (s *Server) domainSummary(w http.ResponseWriter, r *http.Request) {
 		since = epoch
 	}
 	out := map[string]any{}
-	rows, _ := db.Query("SELECT COALESCE(route,'unknown') AS r, COUNT(DISTINCT domain) AS c FROM query_events WHERE ts >= ? GROUP BY r ORDER BY c DESC, r ASC", since)
-	var routes []map[string]any
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var v string
-			var c int
-			_ = rows.Scan(&v, &c)
-			routes = append(routes, map[string]any{"route": v, "route_name": routeName(v), "count": c})
-		}
-	}
-	out["by_route"] = routes
 	domainSummaryExtras(db, out, now, since)
 	writeJSON(w, 200, out)
 }
@@ -1634,17 +1607,7 @@ func parseDig(text string) map[string]any {
 	return out
 }
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
-	info := s.rulesInfo()
-	cfg := s.readConfig()
-
-	info["sources"] = map[string]string{
-		"github_raw_base":   cfg["GITHUB_RAW_BASE"],
-		"github_mirror_1":   cfg["GITHUB_MIRROR_1"],
-		"github_mirror_2":   cfg["GITHUB_MIRROR_2"],
-		"github_repository": cfg["GITHUB_REPOSITORY"],
-		"github_branch":     cfg["GITHUB_BRANCH"],
-	}
-	writeJSON(w, 200, info)
+	writeJSON(w, 200, s.rulesInfo())
 }
 
 func helperData(resp map[string]any) map[string]any {
