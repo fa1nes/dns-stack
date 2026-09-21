@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1789896387
+# generated-at: 1789985484
 # providers: 20
 # domains: 78
-# prefixes: 9737
+# prefixes: 9739
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -642,8 +642,8 @@ N	alibaba	off	31.56.124.0/24
 N	alibaba	off	38.84.220.0/24
 N	alibaba	off	39.125.80.0/24
 N	alibaba	off	43.90.0.0/15
-N	alibaba	off	43.92.0.0/16
-N	alibaba	off	43.93.0.0/17
+N	alibaba	off	43.92.0.0/15
+N	alibaba	off	43.94.0.0/18
 N	alibaba	off	43.96.0.0/24
 N	alibaba	off	43.96.3.0/24
 N	alibaba	off	43.96.4.0/22
@@ -1305,7 +1305,6 @@ N	amazon	off	5.180.188.0/23
 N	amazon	off	5.180.191.0/24
 N	amazon	off	5.181.200.0/24
 N	amazon	off	5.183.207.0/24
-N	amazon	off	5.231.121.0/24
 N	amazon	off	5.253.66.0/24
 N	amazon	off	13.24.0.0/13
 N	amazon	off	13.32.0.0/11
@@ -2756,7 +2755,6 @@ N	amazon	off	82.115.214.0/24
 N	amazon	off	82.139.229.0/24
 N	amazon	off	82.139.239.0/24
 N	amazon	off	82.153.117.0/24
-N	amazon	off	82.153.127.0/24
 N	amazon	off	82.153.208.0/22
 N	amazon	off	82.163.19.0/24
 N	amazon	off	82.176.0.0/16
@@ -3631,6 +3629,7 @@ N	amazon	off	140.244.0.0/16
 N	amazon	off	141.11.12.0/22
 N	amazon	off	141.11.112.0/24
 N	amazon	off	141.11.115.0/24
+N	amazon	off	141.11.136.0/24
 N	amazon	off	141.109.162.0/24
 N	amazon	off	141.109.249.0/24
 N	amazon	off	141.109.250.0/24
@@ -4892,6 +4891,7 @@ N	amazon	off	185.235.199.0/24
 N	amazon	off	185.235.236.0/23
 N	amazon	off	185.236.142.0/24
 N	amazon	off	185.237.4.0/22
+N	amazon	off	185.239.173.0/24
 N	amazon	off	185.241.8.0/24
 N	amazon	off	185.251.116.0/22
 N	amazon	off	185.253.9.0/24
@@ -5209,6 +5209,7 @@ N	amazon	off	195.182.198.0/24
 N	amazon	off	195.184.249.0/24
 N	amazon	off	195.191.165.0/24
 N	amazon	off	195.200.230.0/23
+N	amazon	off	195.211.55.0/24
 N	amazon	off	195.234.34.0/24
 N	amazon	off	195.234.155.0/24
 N	amazon	off	195.244.28.0/23
@@ -9667,6 +9668,7 @@ N	tencent	cn	146.56.192.0/18
 N	tencent	cn	148.70.0.0/16
 N	tencent	cn	149.41.0.0/18
 N	tencent	cn	149.41.128.0/18
+N	tencent	cn	149.41.224.0/19
 N	tencent	cn	150.158.0.0/16
 N	tencent	cn	152.136.0.0/16
 N	tencent	cn	154.8.128.0/17
