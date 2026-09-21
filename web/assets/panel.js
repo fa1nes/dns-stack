@@ -1399,19 +1399,6 @@ async function showDomain(domain) {
       });
     }
 
-    if (d.classification) {
-      const c = d.classification;
-      const cls = c.status === 'cn' ? 'cn' : (c.status === 'gfw' ? 'foreign' : 'unknown');
-      parts.push(html`<h4>分类器判定（规则构建节点）</h4>`);
-      parts.push(kvList([
-        ['当前分类', html`<span class="badge ${cls}">${c.status}</span>`],
-        ['判定依据', c.last_result || '—'],
-        ['最终 IP', (c.final_ips || []).join(', ') || '—'],
-        ['CNAME 链', (c.cname_chain || []).join(' → ') || '无'],
-        ['人工覆盖', c.manual_override || '无'],
-      ]));
-    }
-
     if (d.recent && d.recent.length) {
       parts.push(html`<h4>最近 ${d.recent.length} 次请求</h4>`);
       parts.push(html`<div class="table-wrap"><table>
@@ -1541,8 +1528,6 @@ async function loadDomainSummary() {
   try {
     const d = await api('/api/domains/summary');
     if (!fresh()) return;
-    const byRoute = {};
-    (d.by_route || []).forEach((x) => { byRoute[x.route] = x.count; });
     const byExit = {};
     (d.by_exit || []).forEach((x) => { byExit[x.path] = x.count; });
     const exitCount = (k) => byExit[k] || 0;

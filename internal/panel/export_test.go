@@ -124,30 +124,13 @@ func TestExportBadParams(t *testing.T) {
 		{"/api/export", `{"error":"不支持的 dataset 参数"}`},
 		{"/api/export?dataset=nope", `{"error":"不支持的 dataset 参数"}`},
 		{"/api/export?dataset=queries&format=xml", `{"error":"不支持的 format 参数"}`},
-		{"/api/export?dataset=rules&format=csv", `{"error":"不支持的 format 参数"}`},
+		{"/api/export?dataset=cn_zones&format=csv", `{"error":"不支持的 format 参数"}`},
+		{"/api/export?dataset=rules&format=json", `{"error":"不支持的 dataset 参数"}`},
 	} {
 		response := exportRequest(t, server, tc.target)
 		checkedEqual(t, "status "+tc.target, response.Code, 400)
 		checkedEqual(t, "body "+tc.target, strings.TrimSpace(response.Body.String()), tc.body)
 	}
-}
-
-func TestExportRulesJSON(t *testing.T) {
-	server := newExportServer(t)
-	if err := os.WriteFile(filepath.Join(server.cfg.StateDir, "polluted-ip.txt"),
-		[]byte("1.2.3.4\n# 注释\n\n5.6.7.8\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	response := exportRequest(t, server, "/api/export?dataset=rules&format=json")
-	checkedEqual(t, "status", response.Code, 200)
-	checkedEqual(t, "content type", response.Header().Get("Content-Type"), "application/json; charset=utf-8")
-	checkedEqual(t, "disposition", response.Header().Get("Content-Disposition"), `attachment; filename="dns-stack-rules.json"`)
-	var info map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &info); err != nil {
-		t.Fatal(err)
-	}
-	checkedEqual(t, "polluted ip count", info["polluted_ip_count"], 2)
-	checkedEqual(t, "cdn providers", info["cdn_providers"], 0)
 }
 
 func TestExportListDatasets(t *testing.T) {

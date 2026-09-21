@@ -101,9 +101,6 @@ func moduleItem(s *Server, m stack.Module, st stack.Status, state, note string) 
 		"last_run": nilIfZero(st.LastRun), "next_run": nilIfZero(st.NextRun),
 		"memory": nilIfZero(st.Memory), "restarts": st.Restarts,
 	}
-	if m.Every > 0 {
-		item["every_seconds"] = int64(m.Every.Seconds())
-	}
 	if m.Artifact != "" {
 		item["artifact"] = s.artifactInfo(m.Artifact)
 	}

@@ -37,18 +37,13 @@ func dataLines(path string) []string {
 func (s *Server) statePath(path string) string { return filepath.Join(s.cfg.StateDir, path) }
 
 func (s *Server) rulesInfo() map[string]any {
-	info := map[string]any{"polluted_ip_updated_at": nil, "cdn_generated_at": nil}
+	info := map[string]any{"cdn_generated_at": nil}
 	paths := map[string]string{
-		"manual_cn": "manual-cn.txt", "manual_gfw": "manual-gfw.txt",
-		"polluted_cidr": "polluted-ip-cidr.txt", "polluted_ip": "polluted-ip.txt",
-		"direct4": "chnroute/direct4.txt", "cn_authority": "chnroute/cn-authority.txt",
-		"cn_zones_matched": "chnroute/cn-zones-matched.txt", "manual_cn_zones": "manual-cn-zones.txt",
+		"manual_gfw":    "manual-gfw.txt",
+		"polluted_cidr": "polluted-ip-cidr.txt",
 	}
 	for key, path := range paths {
 		info[key+"_count"] = countLines(s.statePath(path))
-	}
-	if stat, err := os.Stat(s.statePath("polluted-ip.txt")); err == nil {
-		info["polluted_ip_updated_at"] = stat.ModTime().Unix()
 	}
 	info["cdn_providers"], info["cdn_prefixes"], info["cdn_mainland"] = 0, 0, 0
 	if set, err := cdnrules.Load(cdnrules.Path(s.cfg.StateDir)); err == nil {
@@ -81,7 +76,7 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	}[dataset]
 
 	switch dataset {
-	case "queries", "domains", "rules", "cn_zones", "polluted":
+	case "queries", "domains", "cn_zones", "polluted":
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 dataset 参数"})
 		return
@@ -89,16 +84,12 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case format == "json":
 	case format == "txt" && listSource != "":
-	case format == "csv" && dataset != "rules" && listSource == "":
+	case format == "csv" && listSource == "":
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "不支持的 format 参数"})
 		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\"dns-stack-"+dataset+"."+format+"\"")
-	if dataset == "rules" {
-		writeExportJSON(w, s.rulesInfo())
-		return
-	}
 	if listSource != "" {
 		lines := dataLines(s.statePath(listSource))
 		if format == "txt" {

@@ -95,9 +95,8 @@ func (s *Server) accessList(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out["acl"] = renderPrefixes(prefixes)
 	}
-	installed, table := s.aclInstalled(r)
+	installed, _ := s.aclInstalled(r)
 	out["acl_installed"] = installed
-	out["acl_table"] = table
 	out["client_loopback"] = clientIsLoopback(r)
 	out["client_covered"] = len(prefixes) > 0 && cidrutil.NewSet(prefixes).Contains(parseClient(r))
 	writeJSON(w, http.StatusOK, out)
