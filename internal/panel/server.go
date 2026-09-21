@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"io"
@@ -1220,7 +1221,7 @@ func helperCall(ctx context.Context, op string, args map[string]any) (map[string
 	dialer := net.Dialer{Timeout: 5 * time.Second}
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("连不上管理助手 %s：%w——用 systemctl is-active dns-stack-helper 确认它在跑", socket, err)
 	}
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
@@ -1239,6 +1240,9 @@ func helperCall(ctx context.Context, op string, args map[string]any) (map[string
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("管理助手没有应答就断开了连接——查 journalctl -u dns-stack-helper")
 		}
 		return nil, err
 	}
