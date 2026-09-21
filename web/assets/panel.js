@@ -333,16 +333,10 @@ function initSession() {
   const txt = $('#accessText');
   if (dot && txt) {
     const local = ['localhost', '127.0.0.1', '[::1]', '::1'].indexOf(location.hostname) >= 0;
-    if (location.protocol === 'https:') {
-      dot.className = 'dot ok';
-      txt.textContent = 'HTTPS 已加密 · ' + location.host;
-    } else if (local) {
-      dot.className = 'dot ok';
-      txt.textContent = '本机访问 · ' + location.host;
-    } else {
-      dot.className = 'dot err';
-      txt.textContent = '明文连接 · ' + location.host;
-    }
+    const state = location.protocol === 'https:' ? ['dot ok', 'HTTPS 已加密']
+      : local ? ['dot ok', '本机访问'] : ['dot err', '明文连接'];
+    dot.className = state[0];
+    setHtml(txt, html`${state[1]}<span class="access-host mono">${location.host}</span>`);
   }
 
   const logout = async () => {

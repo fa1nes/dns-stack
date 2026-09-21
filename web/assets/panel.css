@@ -529,7 +529,9 @@ code {
   border-bottom: 1px solid var(--border);
 }
 .pager.padded { padding: 10px 14px; }
-.access-line { margin-top: 8px; display: flex; align-items: center; gap: 5px; }
+.access-line { margin-top: 8px; display: flex; align-items: flex-start; gap: 5px; }
+.access-line .dot { margin-top: 6px; }
+.access-host { display: block; color: var(--text-dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 
 .sec-label {
   margin: 6px 0 12px; font-size: var(--fs-sm); font-weight: 600;
