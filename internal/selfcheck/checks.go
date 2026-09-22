@@ -120,6 +120,27 @@ func checkRoutingData(opt Options, report *Report, now time.Time) {
 	}
 }
 
+const subnetForwardConf = "/etc/unbound/unbound.conf.d/dns-stack.conf"
+
+func checkSubnetAlwaysForward(c *checker) {
+	body, err := os.ReadFile(subnetForwardConf)
+	if err != nil {
+		c.skip("带 ECS 的答案不被覆盖", "读不到 %s: %v", subnetForwardConf, err)
+		return
+	}
+	value := ""
+	for _, line := range strings.Split(string(body), "\n") {
+		if key, rest, ok := strings.Cut(strings.TrimSpace(line), "client-subnet-always-forward:"); ok && key == "" {
+			value = strings.TrimSpace(rest)
+		}
+	}
+	c.assert(value == "yes", "带 ECS 的答案不被覆盖",
+		"client-subnet-always-forward: yes",
+		"client-subnet-always-forward 是 "+value+"——带 ECS 的查询会去读全局缓存，"+
+			"而 prefetch 与本机自查都不带 ECS，它们拿到的境外节点会盖住按子网查到的大陆节点。"+
+			"2026-09-22 实测：本来能拿到大陆节点的域名里 24% 会被这样打成境外，改成 yes 后为 0%")
+}
+
 func loadECSWhitelist(path string) ([]netip.Prefix, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -181,6 +202,8 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 	if age, ok := fileAge(conf, now); ok && age > 2*time.Hour {
 		c.warn("ECS 白名单新鲜度", "已 %s 没更新", humanSpan(age))
 	}
+
+	checkSubnetAlwaysForward(c)
 
 	steeredPath := filepath.Join(opt.StateDir, "chnroute", "cdn-steered-zones.txt")
 	var steered []string
