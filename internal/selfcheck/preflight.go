@@ -3,17 +3,20 @@ package selfcheck
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
@@ -55,6 +58,47 @@ func checkBackupFreshness(opt Options, report *Report, now time.Time) {
 		return
 	}
 	c.ok("最近一次备份", "%s，共 %d 个可回滚版本", humanAge(age), count)
+	checkAcmeReloadCmd(c, opt)
+}
+
+var acmeReloadRe = regexp.MustCompile(`Le_ReloadCmd='__ACME_BASE64__START_([A-Za-z0-9+/=]+)__ACME_BASE64__END_'`)
+
+func checkAcmeReloadCmd(c *checker, opt Options) {
+	if opt.Role != stack.RoleCNResolver {
+		return
+	}
+	matches, _ := filepath.Glob(pipeline.AcmeHome + "/*_ecc/*.conf")
+	if len(matches) == 0 {
+		c.skip("续签后的重载命令可用", "acme.sh 还没有签发过证书")
+		return
+	}
+	body, err := os.ReadFile(matches[0])
+	if err != nil {
+		c.skip("续签后的重载命令可用", "读不到 %s: %v", matches[0], err)
+		return
+	}
+	found := acmeReloadRe.FindStringSubmatch(string(body))
+	if found == nil {
+		c.warn("续签后的重载命令可用", "acme.sh 没有登记 reloadcmd——续签后 mosproxy 不会换上新证书")
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(found[1])
+	if err != nil {
+		c.skip("续签后的重载命令可用", "reloadcmd 解不开")
+		return
+	}
+	command := strings.Fields(string(decoded))
+	if len(command) == 0 {
+		c.warn("续签后的重载命令可用", "reloadcmd 是空的")
+		return
+	}
+	_, statErr := os.Stat(command[0])
+	c.assert(statErr == nil, "续签后的重载命令可用",
+		"acme.sh 会执行 "+command[0],
+		"acme.sh 登记的 reloadcmd 指向 "+command[0]+"，而这个文件不存在——"+
+			"acme.sh 把首次签发时的命令持久化了，脚本改名或搬家之后它不会自己更新。"+
+			"后果是证书其实换好了、reload 钩子却失败：mosproxy 继续用旧证书，"+
+			"维护单元每次都判失败")
 }
 
 func checkEntrypoints(ctx context.Context, opt Options, report *Report) {

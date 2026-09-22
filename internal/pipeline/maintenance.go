@@ -155,11 +155,6 @@ func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	renew := exec.CommandContext(ctx, acme, "--home", AcmeHome, "--renew", "-d", publicIP, "--ecc", "--force")
-	renew.Stdout, renew.Stderr = rt.Out, rt.Out
-	if err := renew.Run(); err != nil {
-		return fmt.Errorf("续签失败，继续使用旧证书: %w", err)
-	}
 	self, err := os.Executable()
 	if err != nil {
 		self = "/opt/dns-stack/bin/dns-stack-go"
@@ -169,7 +164,13 @@ func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
 		"--reloadcmd", self+" maintenance --reload-mosproxy", "--ecc")
 	install.Stdout, install.Stderr = rt.Out, rt.Out
 	if err := install.Run(); err != nil {
-		return fmt.Errorf("安装新证书失败: %w", err)
+		return fmt.Errorf("登记证书安装方式失败: %w", err)
+	}
+
+	renew := exec.CommandContext(ctx, acme, "--home", AcmeHome, "--renew", "-d", publicIP, "--ecc", "--force")
+	renew.Stdout, renew.Stderr = rt.Out, rt.Out
+	if err := renew.Run(); err != nil {
+		return fmt.Errorf("续签失败，继续使用旧证书: %w", err)
 	}
 	rt.Infof("续签成功")
 	return SyncPanelCert(ctx, rt)
