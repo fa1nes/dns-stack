@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -268,10 +269,24 @@ func (s *Server) detailInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+func routingReason(zone string, authorities int, domestic bool) string {
+	switch {
+	case domestic:
+		return ""
+	case zone == "":
+		return "认不出这个名字的注册域，没有查过任何权威——下面的判定只反映实际解析结果"
+	case authorities == 0:
+		return zone + " 的权威这次没问到（超时或拿不到地址），不代表它没有大陆权威"
+	default:
+		return "查过 " + zone + " 的 " + strconv.Itoa(authorities) +
+			" 个权威地址，都不在 direct4 或国内权威表里，每一跳按权威 IP 归属走隧道"
+	}
+}
+
 func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive bool) (map[string]any, map[string]any) {
 	direct := loadedPrefixes(s.statePath("chnroute/direct4.txt"))
 	authority := loadedPrefixes(s.statePath("chnroute/cn-authority.txt"))
-	routing := map[string]any{"manual_rule": nil, "direction": "adaptive", "zone": nil, "reason": "各级权威尚未观测到大陆 IP，按每跳权威的 IP 归属分流"}
+	routing := map[string]any{"manual_rule": nil, "direction": "adaptive", "zone": nil}
 	for _, file := range []string{"manual-exclude.txt", "manual-gfw.txt"} {
 		for _, rule := range dataLines(s.statePath(file)) {
 			rule = strings.ToLower(rule)
@@ -322,7 +337,7 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 						exit = "direct"
 					}
 					authorities = append(authorities, map[string]any{"ns": ns, "ip": ip, "in_cn": inCN, "in_cn_authority": inAuthority, "geo": s.geoLookup(ip), "exit": exit})
-					hasDomesticAuthority = hasDomesticAuthority || inCN
+					hasDomesticAuthority = hasDomesticAuthority || inCN || inAuthority
 				}
 			}
 			if len(authorities) >= 16 {
@@ -331,6 +346,9 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 		}
 	}
 	routing["authorities"] = authorities
+	if reason := routingReason(zone, len(authorities), hasDomesticAuthority); reason != "" {
+		routing["reason"] = reason
+	}
 	routing["exits"] = s.exitAddresses(ctx)
 	routing["geoip_status"] = s.geoipStatus()
 
@@ -358,7 +376,7 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 	}
 	if hasDomesticAuthority {
 		routing["direction"], routing["zone"] = "direct", zone
-		routing["reason"] = zone + " 的实时权威含 direct4 地址"
+		routing["reason"] = zone + " 的实时权威里有落在 direct4 或国内权威表的地址，这一跳直连"
 	}
 	if routing["manual_rule"] == "manual-gfw.txt" {
 		routing["direction"], routing["zone"], routing["reason"] = "hongkong", nil, "人工规则强制走香港递归器"
