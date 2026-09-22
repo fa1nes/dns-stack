@@ -269,7 +269,7 @@ func (s *Server) detailInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
-func routingReason(zone string, authorities int, domestic bool) string {
+func routingReason(zone string, authorities, viaAuthorityTable int, domestic bool) string {
 	switch {
 	case domestic:
 		return ""
@@ -277,6 +277,10 @@ func routingReason(zone string, authorities int, domestic bool) string {
 		return "认不出这个名字的注册域，没有查过任何权威——下面的判定只反映实际解析结果"
 	case authorities == 0:
 		return zone + " 的权威这次没问到（超时或拿不到地址），不代表它没有大陆权威"
+	case viaAuthorityTable > 0:
+		return "查过 " + zone + " 的 " + strconv.Itoa(authorities) + " 个权威地址，没有一个落在 direct4 里；" +
+			"其中 " + strconv.Itoa(viaAuthorityTable) + " 个在国内权威表里，这几跳仍走直连——" +
+			"但那张表是派生出来的、可能已经过期，不作为「这是国内域名」的证据"
 	default:
 		return "查过 " + zone + " 的 " + strconv.Itoa(authorities) +
 			" 个权威地址，都不在 direct4 或国内权威表里，每一跳按权威 IP 归属走隧道"
@@ -315,6 +319,7 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 	routing["zone_queried"] = zone
 	authorities := []map[string]any{}
 	hasDomesticAuthority := false
+	viaAuthorityTable := 0
 	if zone != "" {
 		nsReply := dnsProbe(ctx, zone, "NS", "local-unbound", "")
 		records, _ := nsReply["records"].([]map[string]any)
@@ -337,7 +342,10 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 						exit = "direct"
 					}
 					authorities = append(authorities, map[string]any{"ns": ns, "ip": ip, "in_cn": inCN, "in_cn_authority": inAuthority, "geo": s.geoLookup(ip), "exit": exit})
-					hasDomesticAuthority = hasDomesticAuthority || inCN || inAuthority
+					hasDomesticAuthority = hasDomesticAuthority || inCN
+					if inAuthority && !inCN {
+						viaAuthorityTable++
+					}
 				}
 			}
 			if len(authorities) >= 16 {
@@ -346,7 +354,7 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 		}
 	}
 	routing["authorities"] = authorities
-	if reason := routingReason(zone, len(authorities), hasDomesticAuthority); reason != "" {
+	if reason := routingReason(zone, len(authorities), viaAuthorityTable, hasDomesticAuthority); reason != "" {
 		routing["reason"] = reason
 	}
 	routing["exits"] = s.exitAddresses(ctx)
