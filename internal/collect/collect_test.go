@@ -67,76 +67,40 @@ func TestClassifyRoute(t *testing.T) {
 }
 
 func TestClassifyExitPath(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cn-zones-matched.txt")
-	if err := os.WriteFile(path, []byte("# 注释\nqq.com\n"), 0o600); err != nil {
-		t.Fatal(err)
+	cases := map[string]string{
+		"cn":      "recursive",
+		"cache":   "cache",
+		"foreign": "hongkong",
+		"reject":  "reject",
+		"failed":  "failed",
+		"unknown": "unknown",
 	}
-	zones := NewZoneSet(path)
-	cases := []struct {
-		domain, route, want string
-	}{
-		{"www.qq.com", "cn", "direct"},
-		{"qq.com", "cn", "direct"},
-		{"github.com", "cn", "tunnel"},
-		{"www.qq.com", "cache", "direct"},
-		{"github.com", "cache", "tunnel"},
-		{"github.com", "foreign", "hongkong"},
-		{"github.com", "reject", "reject"},
-		{"github.com", "unknown", "unknown"},
-	}
-	for _, item := range cases {
-		if got := ClassifyExitPath(zones, item.domain, item.route); got != item.want {
-			t.Errorf("ClassifyExitPath(%s,%s) = %q, 期望 %q",
-				item.domain, item.route, got, item.want)
+	for route, want := range cases {
+		if got := ClassifyExitPath(route); got != want {
+			t.Errorf("ClassifyExitPath(%q) = %q, 期望 %q", route, got, want)
 		}
-	}
-
-	for _, name := range []string{"www.qq.com", "github.com", "a.b.example"} {
-		live := ClassifyExitPath(zones, name, "cn")
-		cached := ClassifyExitPath(zones, name, "cache")
-		if live != cached {
-			t.Errorf("%s 的出口不该因为命中缓存而改变: 直查 %q vs 缓存 %q", name, live, cached)
-		}
-	}
-	if ClassifyExitPath(zones, "github.com", "cache") == "cache" {
-		t.Error("缓存命中必须落到真实出口，否则占七成的流量在出口分布里整个消失")
-	}
-
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	if got := ClassifyExitPath(NewZoneSet(path), "www.qq.com", "cn"); got != "tunnel" {
-		t.Errorf("清单缺失时 = %q，期望 tunnel", got)
-	}
-	if got := ClassifyExitPath(NewZoneSet(path), "www.qq.com", "cache"); got != "tunnel" {
-		t.Errorf("清单缺失时缓存命中也应保守判为 tunnel，得到 %q", got)
 	}
 }
 
-func TestZoneSetReloadsOnMtimeChange(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "zones.txt")
-	if err := os.WriteFile(path, []byte("qq.com\n"), 0o600); err != nil {
+func TestExitPathDoesNotDependOnAnythingButTheRoute(t *testing.T) {
+	body, err := os.ReadFile("consume.go")
+	if err != nil {
 		t.Fatal(err)
 	}
-	zones := NewZoneSet(path)
-	if !zones.Covers("qq.com") {
-		t.Fatal("首次读取失败")
+	text := string(body)
+	start := strings.Index(text, "func ClassifyExitPath(")
+	if start < 0 {
+		t.Fatal("找不到 ClassifyExitPath")
 	}
-
-	later := time.Now().Add(2 * time.Second)
-	if err := os.WriteFile(path, []byte("baidu.com\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, later, later); err != nil {
-		t.Fatal(err)
-	}
-	if zones.Covers("qq.com") {
-		t.Error("mtime 变化后仍返回旧集合")
-	}
-	if !zones.Covers("baidu.com") {
-		t.Error("未读到新集合")
+	end := strings.Index(text[start:], "\n}")
+	body2 := text[start : start+end]
+	for _, forbidden := range []string{"zones", "domain", "Covers", "os.", "ReadFile"} {
+		if strings.Contains(body2, forbidden) {
+			t.Errorf("ClassifyExitPath 又开始看 %q 了——"+
+				"一次本机递归要问多台权威，有的直连有的走隧道，根本没有「单一出口」。"+
+				"拿一个每 15 分钟重建的域名清单去反推出口，同一个域名的标签会来回翻："+
+				"生产上 maimemostatus.com 的缓存命中曾经 31 次标成直连、26 次标成隧道", forbidden)
+		}
 	}
 }
 
@@ -344,8 +308,9 @@ func TestHandleLineDropsClientAddressAndForwardsOperationalLogs(t *testing.T) {
 	if event.TS != 1700000000 {
 		t.Errorf("毫秒时间戳未换算: %d", event.TS)
 	}
-	if event.Route != "cn" || event.ExitPath != "tunnel" {
-		t.Errorf("route/exit_path = %q/%q", event.Route, event.ExitPath)
+	if event.Route != "cn" || event.ExitPath != "recursive" {
+		t.Errorf("route/exit_path = %q/%q，期望 cn/recursive——"+
+			"本机递归要问多台权威，逐跳分流，没有单一出口", event.Route, event.ExitPath)
 	}
 	if event.Prefetch != 1 {
 		t.Errorf("prefetch = %d", event.Prefetch)

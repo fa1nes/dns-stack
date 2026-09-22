@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
-	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -108,73 +106,20 @@ func CoarseSubnet(value string) string {
 	return prefix.Masked().String()
 }
 
-func ClassifyExitPath(zones *ZoneSet, domain, route string) string {
+func ClassifyExitPath(route string) string {
 	switch route {
 	case "foreign":
 		return "hongkong"
-	case "cn", "cache":
-		if zones.Covers(domain) {
-			return "direct"
-		}
-		return "tunnel"
+	case "cache":
+		return "cache"
+	case "cn":
+		return "recursive"
 	}
 	return route
 }
 
-type ZoneSet struct {
-	path  string
-	mu    sync.Mutex
-	mtime time.Time
-	zones map[string]struct{}
-}
-
-func NewZoneSet(path string) *ZoneSet {
-	return &ZoneSet{path: path}
-}
-
-func (z *ZoneSet) refresh() {
-	info, err := os.Stat(z.path)
-	if err != nil {
-		z.zones, z.mtime = nil, time.Time{}
-		return
-	}
-	if info.ModTime().Equal(z.mtime) {
-		return
-	}
-	raw, err := os.ReadFile(z.path)
-	if err != nil {
-		return
-	}
-	zones := make(map[string]struct{})
-	for _, line := range strings.Split(string(raw), "\n") {
-		value := strings.ToLower(strings.TrimSpace(line))
-		if value == "" || strings.HasPrefix(value, "#") {
-			continue
-		}
-		zones[value] = struct{}{}
-	}
-	z.zones, z.mtime = zones, info.ModTime()
-}
-
-func (z *ZoneSet) Covers(domain string) bool {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	z.refresh()
-	if len(z.zones) == 0 {
-		return false
-	}
-	labels := strings.Split(domain, ".")
-	for index := range labels {
-		if _, ok := z.zones[strings.Join(labels[index:], ".")]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 type Consumer struct {
 	dbPath string
-	zones  *ZoneSet
 	out    io.Writer
 	now    func() time.Time
 
@@ -192,7 +137,6 @@ func NewConsumer(dbPath, stateDir string, out io.Writer) *Consumer {
 	}
 	return &Consumer{
 		dbPath: dbPath,
-		zones:  NewZoneSet(stateDir + "/chnroute/cn-zones-matched.txt"),
 		out:    out,
 		now:    time.Now,
 	}
@@ -272,7 +216,7 @@ func (c *Consumer) HandleLine(text string) {
 		TS: ts, Domain: normalized,
 		QType: numberOf(query["type"]), RCode: rcode,
 		RespBy: respBy, Route: route,
-		ExitPath:  ClassifyExitPath(c.zones, normalized, route),
+		ExitPath:  ClassifyExitPath(route),
 		ServerTag: serverTag, Prefetch: prefetch, ElapsedMS: elapsed,
 		ClientSubnet: clientSubnet, ECSZone: ecsZone,
 		Kind: ClassifyKind(respBy, rcode),

@@ -13,8 +13,9 @@ import (
 )
 
 var exitNames = map[string]string{
-	"cache": "缓存命中", "direct": "大陆直连", "tunnel": "香港隧道",
-	"hongkong": "香港递归", "reject": "已拒绝", "failed": "无人应答", "unknown": "未知",
+	"cache": "缓存命中", "recursive": "本机递归", "hongkong": "香港递归",
+	"reject": "已拒绝", "failed": "无人应答", "unknown": "未知",
+	"direct": "大陆直连(旧口径)", "tunnel": "香港隧道(旧口径)",
 }
 
 func exitName(path string) string {

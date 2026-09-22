@@ -1562,8 +1562,10 @@ async function loadDomainSummary() {
     (d.by_exit || []).forEach((x) => { byExit[x.path] = x.count; });
     const exitCount = (k) => byExit[k] || 0;
     setHtml($('#domSummary'), html`${[
-      statCard(fmtNum(exitCount('direct')), '大陆直连', '近 24 小时', 'ok'),
-      statCard(fmtNum(exitCount('tunnel') + exitCount('hongkong')), '香港隧道', '近 24 小时', 'accent'),
+      statCard(fmtNum(exitCount('cache')), '缓存命中', '近 24 小时 · 没有查询出网', 'ok'),
+      statCard(fmtNum(exitCount('recursive')), '本机递归',
+        '近 24 小时 · 香港递归 ' + fmtNum(exitCount('hongkong')) + ' 次',
+        exitCount('hongkong') > 0 ? 'accent' : 'ok'),
       statCard(fmtNum(d.new_24h || 0), '近 24 小时新增',
         '近 1 小时活跃 ' + fmtNum(d.active_1h || 0)),
       statCard(fmtNum(d.failing || 0), '近 24 小时失败',
