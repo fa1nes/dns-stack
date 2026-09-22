@@ -42,16 +42,26 @@ func TestNormalizeDomain(t *testing.T) {
 }
 
 func TestClassifyRoute(t *testing.T) {
-	cases := map[string]string{
-		"":              "reject",
-		"cache":         "cache",
-		"local-unbound": "cn",
-		"foreign-hk":    "foreign",
-		"alidns":        "unknown",
+	cases := []struct {
+		respBy string
+		rcode  int64
+		want   string
+	}{
+		{"", rcodeNXDomain, "reject"},
+		{"", rcodeRefused, "reject"},
+		{"", 2, "failed"},
+		{"", 0, "failed"},
+		{"cache", 0, "cache"},
+		{"local-unbound", 0, "cn"},
+		{"foreign-hk", 0, "foreign"},
+		{"alidns", 0, "unknown"},
 	}
-	for input, want := range cases {
-		if got := ClassifyRoute(input); got != want {
-			t.Errorf("ClassifyRoute(%q) = %q, 期望 %q", input, got, want)
+	for _, c := range cases {
+		if got := ClassifyRoute(c.respBy, c.rcode); got != c.want {
+			t.Errorf("ClassifyRoute(%q, %d) = %q, 期望 %q；"+
+				"没有上游应答只说明这次没人回答，只有我们自己回了 NXDOMAIN 或 REFUSED "+
+				"才是「已拒绝」——把 SERVFAIL 标成拒绝，面板上就会出现一堆查不出来源的「路由错误」",
+				c.respBy, c.rcode, got, c.want)
 		}
 	}
 }

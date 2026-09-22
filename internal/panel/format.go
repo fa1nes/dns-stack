@@ -64,7 +64,7 @@ var qtypeNames = map[int64]string{1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PT
 
 var rcodeNames = map[int64]string{0: "NOERROR", 1: "FORMERR", 2: "SERVFAIL", 3: "NXDOMAIN", 4: "NOTIMP", 5: "REFUSED", 6: "YXDOMAIN", 7: "YXRRSET", 8: "NXRRSET", 9: "NOTAUTH", 10: "NOTZONE", 16: "BADVERS"}
 
-var routeNames = map[string]string{"cn": "本机递归", "foreign": "香港递归", "cache": "缓存命中", "recursive": "本机递归", "reject": "已拒绝", "unknown": "未知", "dynamic": "动态判定(架构已退场)"}
+var routeNames = map[string]string{"cn": "本机递归", "foreign": "香港递归", "cache": "缓存命中", "recursive": "本机递归", "reject": "已拒绝", "failed": "无人应答", "unknown": "未知"}
 
 func qtypeName(n int64) string {
 	if x := qtypeNames[n]; x != "" {

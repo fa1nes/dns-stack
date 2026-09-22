@@ -23,10 +23,12 @@ const (
 	nonASCIIReportEvery = 1000
 )
 
-func ClassifyRoute(respBy string) string {
+func ClassifyRoute(respBy string, rcode int64) string {
 	switch {
-	case respBy == "":
+	case respBy == "" && (rcode == rcodeNXDomain || rcode == rcodeRefused):
 		return "reject"
+	case respBy == "":
+		return "failed"
 	case respBy == "cache":
 		return "cache"
 	case strings.HasPrefix(respBy, "local"):
@@ -254,8 +256,8 @@ func (c *Consumer) HandleLine(text string) {
 		value := raw
 		elapsed = &value
 	}
-	route := ClassifyRoute(respBy)
 	rcode := numberOf(resp["rcode"])
+	route := ClassifyRoute(respBy, rcode)
 	serverTag, _ := meta["server"].(string)
 	prefetch := int64(0)
 	if flag, ok := query["prefetch"].(bool); ok && flag {

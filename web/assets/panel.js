@@ -751,7 +751,7 @@ function initLivePage() {
   if (!state.liveLoaded) { state.liveLoaded = true; loadQueries(1); }
 }
 
-const ROUTE_CLS = { cn: 'cn', foreign: 'foreign', recursive: 'cn', cache: 'cache', reject: 'reject' };
+const ROUTE_CLS = { cn: 'cn', foreign: 'foreign', recursive: 'cn', cache: 'cache', reject: 'reject', failed: 'warn' };
 
 const DIRECTION_BADGE = {
   direct:   ['cn', '整条递归全程直连'],
