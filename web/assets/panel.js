@@ -788,6 +788,12 @@ function routingSummary(rt) {
     parts.push(html`<div class="drawer-prose" style="margin-top:8px">
       ★ 最终命中 <span class="mono"><b>${rt.result_ip}</b></span>${geoTag(rt.result_geo)}
       ${cnBadge(rt.result_in_cn)}</div>`);
+    if (!rt.viewer_subnet) {
+      parts.push(html`<div class="callout">
+        这一行是<b>面板自己查的</b>，没带客户端子网(ECS)，按位置调度的域名会回默认节点——
+        通常就是隧道出口那一侧。<b>它不等于你的设备拿到的地址</b>；
+        要看真实结果，在上面的输入框里填上你的运营商网段再查一次。</div>`);
+    }
   }
 
   if (rt.authorities && rt.authorities.length) {
