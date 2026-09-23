@@ -9,9 +9,6 @@ import (
 
 var loaderStart = regexp.MustCompile(`(?m)^(?:async )?function ([A-Za-z0-9_]+)\(`)
 
-// 这些加载函数都由用户可以连点的控件驱动（标签页、下拉框、输入框）。
-// 两次请求的回包会乱序，晚发早回的那个会被后到的旧回包整个盖掉，
-// 于是标题、计数和表格各来自不同的一次请求。
 var mustGuardAgainstOutOfOrderResponses = []string{
 	"loadQueries", "loadDomains", "loadDomainSummary",
 	"loadLogs", "loadCdnHit", "loadIpLookup",

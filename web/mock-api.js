@@ -361,8 +361,8 @@
     '/api/doh': () => ({ doh_url: 'https://203.0.113.1/dns-query', is_default: true }),
 
     '/api/modules': () => {
-      const notes = { 'dns-stack-geo-cross': ['warn', '从未运行过'],
-                      'dns-stack-renew-cert': ['warn', '已经 4 天没有运行'] };
+      const notes = { 'dns-stack-collect-polluted': ['warn', '从未运行过'],
+                      'dns-stack-maintenance': ['warn', '已经 4 天没有运行'] };
       const counts = { ok: 0, warn: 0, down: 0, unknown: 0 };
       const attention = [];
       const byGroup = {};

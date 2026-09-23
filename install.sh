@@ -885,15 +885,12 @@ main() {
     dns-stack health || true
 }
 
-# 这些单元早已从 systemd/ 删除，但可能还留在旧机器上。它们不会出现在下面的目录扫描里，
-# 所以必须显式列出——否则升级过的机器卸载后会残留启用中的 timer。
-UNINSTALL_LEGACY_UNITS=(
+UNITS_DELETED_FROM_REPO_BUT_MAYBE_STILL_ENABLED_ON_OLD_MACHINES=(
     dns-stack-backup dns-stack-renew-cert dns-stack-chnroute dns-stack-cn-authority
     dns-stack-geoip dns-stack-ecs-zone dns-stack-shared-anycast dns-stack-geo-cross
     dns-stack-dynamic
 )
 
-# 现役单元一律从磁盘扫，不再手抄一份清单：手抄的那份每次新增单元都会漏。
 uninstall_units() {
     {
         local path
@@ -902,7 +899,7 @@ uninstall_units() {
             [[ -e "$path" ]] || continue
             basename "$path" .service
         done
-        printf '%s\n' "${UNINSTALL_LEGACY_UNITS[@]}"
+        printf '%s\n' "${UNITS_DELETED_FROM_REPO_BUT_MAYBE_STILL_ENABLED_ON_OLD_MACHINES[@]}"
     } | sort -u
 }
 

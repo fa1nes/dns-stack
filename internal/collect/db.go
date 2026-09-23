@@ -9,7 +9,10 @@ import (
 )
 
 const (
-	SchemaVersion   = 4
+	SchemaVersion = 4
+
+	schemaFailCountExcludesNXDomain = 4
+
 	DefaultDBPath   = "/var/lib/dns-stack/collector.db"
 	DefaultStateDir = "/var/lib/dns-stack"
 
@@ -153,8 +156,7 @@ func migrate(db *sql.DB) error {
 	}
 	var stored int
 	_ = db.QueryRow("SELECT value FROM schema_meta WHERE key = 'schema_version'").Scan(&stored)
-	if stored < 4 {
-		// v4 起 NXDOMAIN 不再计入 fail_count，旧口径累计的数字要清零重算
+	if stored < schemaFailCountExcludesNXDomain {
 		if _, err := db.Exec("UPDATE domains SET fail_count = 0"); err != nil {
 			return err
 		}

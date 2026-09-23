@@ -27,8 +27,6 @@ func TestHumanSpanAndAgeSayDifferentThings(t *testing.T) {
 	}
 }
 
-// humanAge 的返回值自带「前」。句子里再加一次时间方向词就会读成
-// 「9 小时前前更新」「已 3 天前 未更新」——这类句子只在生产的自检输出里才会被看见。
 var doubledTimeWords = []string{"%s前", "已 %s", "近 %s", "%s 前"}
 
 func TestHumanAgeIsNotUsedWhereTheSentenceAlreadySaysWhen(t *testing.T) {
