@@ -100,6 +100,7 @@ func (s *Server) doh(w http.ResponseWriter, r *http.Request) {
 	}
 	out["is_default"] = out["doh_path_is_default"] == "1"
 	delete(out, "doh_path_is_default")
+	delete(out, "doh_path")
 	writeJSON(w, 200, out)
 }
 

@@ -595,7 +595,8 @@ function latencyCard(lat, m) {
   if (lat && lat.samples) {
     const p50 = lat.p50;
     const sub = '半数快于此 · 最慢 5% 超 ' + dash(lat.p95, ' ms') +
-      (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '');
+      (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '') +
+      (lat.sampled ? ' · 分位数取最近 ' + fmtNum(lat.sampled_from) + ' 条算' : '');
     return statCard(dash(p50, ' ms'), '响应速度（近 1 小时）', sub,
       p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')));
   }
@@ -623,7 +624,8 @@ function renderOverviewSystem(sys) {
   }
   if (sys.disk) {
     parts.push(bar(sys.disk.percent, '磁盘',
-      fmtBytes(sys.disk.used) + ' / ' + fmtBytes(sys.disk.total) + ' (' + sys.disk.percent + '%)'));
+      fmtBytes(sys.disk.used) + ' / ' + fmtBytes(sys.disk.total) + ' (' + sys.disk.percent + '%)' +
+      ' · 可写 ' + fmtBytes(sys.disk.free)));
   }
   if (sys.load) {
     const pct = Math.min(sys.load['1m'] / (sys.cpu_count || 1) * 100, 100);

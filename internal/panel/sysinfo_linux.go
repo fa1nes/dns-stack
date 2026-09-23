@@ -71,10 +71,7 @@ func memoryUsage() any {
 	if total > 0 {
 		percent = roundTo(float64(total-available)/float64(total)*100, 1)
 	}
-	return map[string]any{
-		"total": total, "available": available, "used": total - available,
-		"percent": percent,
-	}
+	return map[string]any{"total": total, "used": total - available, "percent": percent}
 }
 
 func loadAverage() (map[string]any, bool) {

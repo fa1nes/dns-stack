@@ -147,6 +147,9 @@ func latencyStats(db *sql.DB, since int64) map[string]any {
 		out[item.label] = roundTo(value.Float64, 2)
 	}
 	out["sampled"] = sampleN < total
+	if sampleN < total {
+		out["sampled_from"] = sampleN
+	}
 	var slow int64
 	if err := db.QueryRow(
 		"SELECT COUNT(*) FROM query_events WHERE ts >= ? AND elapsed_ms >= 1000",
