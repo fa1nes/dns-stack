@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/backup"
@@ -252,8 +253,52 @@ func stepBackup(ctx context.Context, rt *Runtime) error {
 	return err
 }
 
+const (
+	UnboundLogPath = "/var/log/dns-stack/unbound.log"
+	UnboundUser    = "unbound"
+)
+
+func FileOwner(ctx context.Context, path string) string {
+	out, err := exec.CommandContext(ctx, "stat", "-c", "%U", path).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func stepUnboundLog(ctx context.Context, rt *Runtime) error {
+	_, statErr := os.Stat(UnboundLogPath)
+	switch {
+	case statErr != nil:
+		rt.Warnf("unbound 的 logfile 不存在——日志目录 unbound 只有 r-x，它自己建不出来，"+
+			"DNSSEC 校验失败会静默消失（%s）", UnboundLogPath)
+		file, err := os.OpenFile(UnboundLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+		if err != nil {
+			return fmt.Errorf("建不出 %s: %w", UnboundLogPath, err)
+		}
+		file.Close()
+	case FileOwner(ctx, UnboundLogPath) == UnboundUser:
+		rt.Infof("unbound 日志文件在位且属主正确")
+		return nil
+	default:
+		rt.Warnf("%s 的属主不是 %s——unbound 降权后打不开它，写进去的东西全部丢失",
+			UnboundLogPath, UnboundUser)
+	}
+	if err := exec.CommandContext(ctx, "chown", UnboundUser+":"+UnboundUser, UnboundLogPath).Run(); err != nil {
+		return fmt.Errorf("改 %s 属主失败: %w", UnboundLogPath, err)
+	}
+	reopen := exec.CommandContext(ctx, "unbound-control", "-c", "/etc/unbound/unbound.conf", "log_reopen")
+	reopen.Stdout, reopen.Stderr = rt.Out, rt.Out
+	if err := reopen.Run(); err != nil {
+		return fmt.Errorf("让 unbound 重开日志失败: %w", err)
+	}
+	rt.Infof("已修好 unbound 日志文件并让 unbound 重新打开")
+	return nil
+}
+
 func MaintenanceSteps() []Step {
 	return []Step{
+		{Name: "unbound-log", Label: "unbound 日志可写", Every: time.Hour, Run: stepUnboundLog},
 		{Name: "renew-cert", Label: "TLS 证书检查与续签", Every: 6 * time.Hour, Run: stepRenewCert},
 		{Name: "backup", Label: "数据库/配置/规则备份", Every: 24 * time.Hour, Run: stepBackup},
 	}

@@ -59,6 +59,32 @@ func checkBackupFreshness(opt Options, report *Report, now time.Time) {
 	}
 	c.ok("最近一次备份", "%s，共 %d 个可回滚版本", humanAge(age), count)
 	checkAcmeReloadCmd(c, opt)
+	checkUnboundLog(c, opt)
+}
+
+func checkUnboundLog(c *checker, opt Options) {
+	if opt.Role != stack.RoleCNResolver {
+		return
+	}
+	const fixHint = "跑一次 sudo dns-stack maintenance 会自动补上"
+	info, err := os.Stat(pipeline.UnboundLogPath)
+	if err != nil {
+		c.fail("unbound 日志可写",
+			"%s 不存在——日志目录 unbound 只有 r-x，它自己建不回来，"+
+				"verbosity 与 val-log-level 写的东西全部进了虚空，"+
+				"DNSSEC 校验失败从此看不见。%s",
+			pipeline.UnboundLogPath, fixHint)
+		return
+	}
+	if owner := pipeline.FileOwner(context.Background(), pipeline.UnboundLogPath); owner != pipeline.UnboundUser {
+		c.fail("unbound 日志可写",
+			"%s 的属主是 %q 而不是 %s——文件在，但 unbound 降权后打不开它，"+
+				"日志同样是空的。%s",
+			pipeline.UnboundLogPath, owner, pipeline.UnboundUser, fixHint)
+		return
+	}
+	c.ok("unbound 日志可写", "%s，属主 %s，%d 字节",
+		pipeline.UnboundLogPath, pipeline.UnboundUser, info.Size())
 }
 
 var acmeReloadRe = regexp.MustCompile(`Le_ReloadCmd='__ACME_BASE64__START_([A-Za-z0-9+/=]+)__ACME_BASE64__END_'`)

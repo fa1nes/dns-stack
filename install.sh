@@ -311,14 +311,13 @@ step7_deploy_unbound() {
         popd >/dev/null
     fi
 
-    chgrp unbound "$LOG_DIR" 2>/dev/null || true
+    chgrp unbound "$LOG_DIR" || die "改 $LOG_DIR 属组失败，unbound 将无法进入该目录写日志"
     chmod 0750 "$LOG_DIR"
     touch "$LOG_DIR/unbound.log"
-    chown unbound:unbound "$LOG_DIR/unbound.log" 2>/dev/null || true
-    for f in "$LOG_DIR/helper.log" "$LOG_DIR/dns-stack.log"; do
-        touch "$f"
-        chmod 0640 "$f"
-    done
+    chown unbound:unbound "$LOG_DIR/unbound.log" \
+        || die "改 $LOG_DIR/unbound.log 属主失败，unbound 降权后写不进去，日志会静默消失"
+    touch "$LOG_DIR/helper.log"
+    chmod 0640 "$LOG_DIR/helper.log"
 
     systemctl disable --now unbound-resolvconf.service 2>/dev/null || true
 

@@ -424,12 +424,6 @@ func (c *Ctl) VacuumLogs(ctx context.Context, keep string) error {
 		return err
 	}
 	c.Okf("日志已清理：%s → %s", before, journalUsage(ctx))
-	own := "/var/log/dns-stack/dns-stack.log"
-	if info, err := os.Stat(own); err == nil && info.Size() > 10<<20 {
-		if err := truncateTail(own, 2<<20); err == nil {
-			c.Okf("  dns-stack.log 已截断至 2MB")
-		}
-	}
 	return nil
 }
 
