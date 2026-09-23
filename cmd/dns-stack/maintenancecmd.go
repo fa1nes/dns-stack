@@ -15,7 +15,11 @@ func cmdMaintenance(args []string) error {
 	fs := flag.NewFlagSet("maintenance", flag.ContinueOnError)
 	state := fs.String("state", envOr("STATE_DIR", pipeline.DefaultStateDir), "状态目录")
 	conf := fs.String("config", envOr("CONFIG_FILE", pipeline.DefaultConfigFile), "配置文件")
-	only := fs.String("only", "", "只跑指定步骤：renew-cert,backup")
+	names := make([]string, 0, len(pipeline.MaintenanceSteps()))
+	for _, step := range pipeline.MaintenanceSteps() {
+		names = append(names, step.Name)
+	}
+	only := fs.String("only", "", "只跑指定步骤："+strings.Join(names, ","))
 	force := fs.Bool("force", false, "忽略周期，强制执行")
 	reload := fs.Bool("reload-mosproxy", false, "acme.sh 续签后的回调：让 mosproxy 用上新证书")
 	syncPanel := fs.Bool("sync-panel-cert", false, "把证书副本同步给面板用户并重启面板")

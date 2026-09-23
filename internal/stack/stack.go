@@ -60,6 +60,8 @@ func (m Module) Overdue() time.Duration {
 	return time.Hour
 }
 
+func (m Module) CronDriven() bool { return m.Cron != "" }
+
 func (m Module) HasRole(role string) bool {
 	for _, item := range m.Roles {
 		if item == role {
@@ -79,7 +81,7 @@ var modules = []Module{
 	},
 	{
 		Unit: "unbound", Name: "递归解析器", Group: GroupResolve,
-		OpenRC:  "unbound",
+		OpenRC: "unbound", LogFile: "unbound.log",
 		Purpose: "自己从根服务器一级级问下来，不依赖任何公共 DNS",
 		Kind:    KindDaemon, Impl: ImplExternal, Roles: both, Critical: true,
 	},
@@ -120,8 +122,15 @@ var modules = []Module{
 	},
 	{
 		Unit: "dns-stack-helper", Name: "特权助手", Group: GroupOps,
+		LogFile: "helper.log",
 		Purpose: "面板要动系统时经它代办，只放行白名单内的操作",
 		Kind:    KindDaemon, Impl: ImplGo, Roles: []string{RoleCNResolver}, Critical: true,
+	},
+	{
+		Unit: "dns-stack-trim-logs", Name: "日志瘦身", Group: GroupOps,
+		Cron: "trim-logs", LogFile: "trim-logs.log",
+		Purpose: "每天截断各份日志的尾部、清掉已删模块留下的僵尸日志——境外节点只有 989MB 磁盘",
+		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleOffshore}, Every: 24 * time.Hour,
 	},
 	{
 		Unit: "dns-stack-maintenance", Name: "例行维护", Group: GroupOps,

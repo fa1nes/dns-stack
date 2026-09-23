@@ -77,7 +77,7 @@ func TestDeclaredCadenceMatchesTheTimerFile(t *testing.T) {
 	dir := systemdDir(t)
 	checked := 0
 	for _, m := range All() {
-		if m.Kind != KindJob {
+		if m.Kind != KindJob || m.CronDriven() {
 			continue
 		}
 		props, ok := timerProps(t, dir, m.Unit)

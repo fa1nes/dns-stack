@@ -49,14 +49,15 @@ apk add -q flock 2>/dev/null || true
 touch "$CRON_FILE"
 sed -i '/# dns-stack begin/,/# dns-stack end/d' "$CRON_FILE"
 sed -i '/# dns-stack-classifier begin/,/# dns-stack-classifier end/d' "$CRON_FILE"
+TRIM_LOG="$LOG_DIR/trim-logs.log"
 cat >> "$CRON_FILE" <<EOF
 # dns-stack begin
-41 4 * * * $GO_BIN trim-logs --dir $LOG_DIR --keep-bytes $LOG_KEEP_BYTES >/dev/null 2>&1
+41 4 * * * $GO_BIN trim-logs --drop-stale --dir $LOG_DIR --keep-bytes $LOG_KEEP_BYTES >> $TRIM_LOG 2>&1
 # dns-stack end
 EOF
 rc-service crond status >/dev/null 2>&1 || rc-service crond start
 rc-update add crond default >/dev/null 2>&1 || true
-"$GO_BIN" trim-logs --dir "$LOG_DIR" --keep-bytes "$LOG_KEEP_BYTES"
+"$GO_BIN" trim-logs --drop-stale --dir "$LOG_DIR" --keep-bytes "$LOG_KEEP_BYTES" 2>&1 | tee -a "$TRIM_LOG"
 log_ok "每日保留每份日志末尾 $((LOG_KEEP_BYTES/1024/1024))MB"
 
 if dig +short +time=3 +tries=1 @127.0.0.1 -p 5335 www.aliyun.com A 2>/dev/null | grep -q '^[0-9]'; then

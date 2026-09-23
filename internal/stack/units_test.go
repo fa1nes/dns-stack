@@ -21,7 +21,7 @@ func systemdDir(t *testing.T) string {
 func TestEveryModuleHasAUnitFile(t *testing.T) {
 	dir := systemdDir(t)
 	for _, m := range All() {
-		if m.Impl == ImplExternal {
+		if m.Impl == ImplExternal || m.CronDriven() {
 			continue
 		}
 		service := filepath.Join(dir, m.Unit+".service")

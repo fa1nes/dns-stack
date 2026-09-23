@@ -42,11 +42,15 @@ func cmdTrimLogs(args []string) error {
 const staleLogMinAge = 14 * 24 * time.Hour
 
 func dropStaleLogs(dir string) ([]string, int64, error) {
-	live := map[string]bool{"helper.log": true}
+	live := map[string]bool{}
 	for _, module := range stack.All() {
 		if module.LogFile != "" {
 			live[module.LogFile] = true
 		}
+	}
+	if len(live) == 0 {
+		return nil, 0, fmt.Errorf("模块清单里没有任何模块声明 LogFile，" +
+			"「不在清单里就删」会把还在用的日志一并删掉，拒绝执行")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
