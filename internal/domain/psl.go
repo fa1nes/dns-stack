@@ -87,38 +87,6 @@ func (p *PSL) IsPublicSuffix(name string) bool {
 	return ok
 }
 
-func (p *PSL) PublicSuffix(name string) string {
-	if p == nil {
-		return ""
-	}
-	name = Normalize(name)
-	if name == "" {
-		return ""
-	}
-	labels := strings.Split(name, ".")
-	if len(labels) < 2 {
-		return ""
-	}
-	best := labels[len(labels)-1]
-	bestLen := 1
-	for i := 0; i < len(labels); i++ {
-		candidate := strings.Join(labels[i:], ".")
-		if _, ok := p.exceptions[candidate]; ok {
-			return strings.Join(labels[i+1:], ".")
-		}
-		length := len(labels) - i
-		if _, ok := p.rules[candidate]; ok && length > bestLen {
-			best, bestLen = candidate, length
-		}
-		if i+1 < len(labels) {
-			if _, ok := p.wildcards[strings.Join(labels[i+1:], ".")]; ok && length > bestLen {
-				best, bestLen = candidate, length
-			}
-		}
-	}
-	return best
-}
-
 func LoadPSL(paths []string) (*PSL, string) {
 	if paths == nil {
 		if configured := strings.TrimSpace(os.Getenv("PSL_FILE")); configured != "" {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
+	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
 const Schema = "cdn-direct/1"
@@ -90,7 +91,7 @@ func Parse(r io.Reader) (*Set, error) {
 			if err != nil {
 				return nil, err
 			}
-			name := normalize(fields[2])
+			name := domain.Normalize(fields[2])
 			if name == "" {
 				return nil, fmt.Errorf("第 %d 行 domain 为空", line)
 			}
@@ -193,7 +194,7 @@ func dedupeDomains(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
 	for _, d := range in {
-		key := normalize(d)
+		key := domain.Normalize(d)
 		if key == "" {
 			continue
 		}

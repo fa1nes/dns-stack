@@ -22,11 +22,6 @@ const (
 	DefaultCNIPPath = DefaultGeoIPDir + "/qqwry.ipdb"
 )
 
-type MMDBError struct{ Err error }
-
-func (e *MMDBError) Error() string { return e.Err.Error() }
-func (e *MMDBError) Unwrap() error { return e.Err }
-
 type decoder struct {
 	b    []byte
 	base int

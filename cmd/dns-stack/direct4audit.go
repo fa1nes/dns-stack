@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/geoaudit"
 )
 
@@ -117,7 +118,7 @@ func printSpans(spans []geoaudit.Span, limit int) {
 			break
 		}
 		fmt.Printf("    %-16s - %-16s %9d 个  %s\n",
-			geoaudit.FormatAddr(span.Lo), geoaudit.FormatAddr(span.Hi),
+			cidrutil.FormatAddr4(span.Lo), cidrutil.FormatAddr4(span.Hi),
 			span.Hi-span.Lo+1, span.Country)
 	}
 }

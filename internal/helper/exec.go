@@ -54,43 +54,6 @@ func (h *Helper) run(args []string, timeout time.Duration, sanitize bool) result
 	return result{"ok": code == 0, "returncode": code, "stdout": out, "stderr": errText}
 }
 
-type step struct {
-	label   string
-	command []string
-	timeout time.Duration
-}
-
-func (h *Helper) runSteps(steps []step) result {
-	var stdout, stderr []string
-	for _, s := range steps {
-		r := h.run(s.command, s.timeout, true)
-		if text, _ := r["stdout"].(string); text != "" {
-			stdout = append(stdout, "["+s.label+"]\n"+text)
-		}
-		if text, _ := r["stderr"].(string); text != "" {
-			stderr = append(stderr, "["+s.label+"]\n"+text)
-		}
-		if ok, _ := r["ok"].(bool); !ok {
-			code, _ := r["returncode"].(int)
-			return result{"ok": false, "returncode": code,
-				"stdout": joinLines(stdout), "stderr": joinLines(stderr)}
-		}
-	}
-	return result{"ok": true, "returncode": 0,
-		"stdout": joinLines(stdout), "stderr": joinLines(stderr)}
-}
-
-func joinLines(parts []string) string {
-	out := ""
-	for i, part := range parts {
-		if i > 0 {
-			out += "\n"
-		}
-		out += part
-	}
-	return out
-}
-
 type captureBuffer struct{ data []byte }
 
 func (b *captureBuffer) Write(p []byte) (int, error) {

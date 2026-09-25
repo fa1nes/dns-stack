@@ -448,12 +448,6 @@ func LoadSnapshot(path string) (Snapshot, error) {
 	return out, nil
 }
 
-func FormatAddr(value uint32) string {
-	return netip.AddrFrom4([4]byte{
-		byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value),
-	}).String()
-}
-
 func WriteSnapshots(disputedPath, promotedPath string, report Report) error {
 	if err := Write(disputedPath, KindDisputed, report.DisputeNeed, report.Sources, report.Disputed); err != nil {
 		return err

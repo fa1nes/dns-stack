@@ -312,3 +312,9 @@ func SortAddrs(addrs []netip.Addr) {
 		return ToBig(a).Cmp(ToBig(b)) < 0
 	})
 }
+
+func FormatAddr4(value uint32) string {
+	return netip.AddrFrom4([4]byte{
+		byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value),
+	}).String()
+}

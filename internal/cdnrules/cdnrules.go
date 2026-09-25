@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
 type Verdict uint8
@@ -90,7 +92,7 @@ func New(generatedAt time.Time, providers []Provider) *Set {
 	sort.SliceStable(s.providers, func(i, j int) bool { return s.providers[i].ID < s.providers[j].ID })
 	for i := range s.providers {
 		for _, d := range s.providers[i].Domains {
-			key := normalize(d)
+			key := domain.Normalize(d)
 			if key == "" {
 				continue
 			}
@@ -152,7 +154,7 @@ func (s *Set) MainlandRoots() []string {
 			continue
 		}
 		for _, d := range p.Domains {
-			if key := normalize(d); key != "" {
+			if key := domain.Normalize(d); key != "" {
 				out = append(out, key)
 			}
 		}
@@ -178,7 +180,7 @@ func (s *Set) ProviderFor(name string) (Provider, bool) {
 	if s == nil {
 		return Provider{}, false
 	}
-	for rest := normalize(name); rest != ""; {
+	for rest := domain.Normalize(name); rest != ""; {
 		if idx, ok := s.suffix[rest]; ok {
 			return s.providers[idx], true
 		}
@@ -240,10 +242,6 @@ func (s *Set) Classify(name string, addr netip.Addr) Decision {
 		d.Verdict = VerdictMismatch
 	}
 	return d
-}
-
-func normalize(name string) string {
-	return strings.ToLower(strings.TrimRight(strings.TrimSpace(name), "."))
 }
 
 func bounds(p netip.Prefix) (netip.Addr, netip.Addr, bool) {

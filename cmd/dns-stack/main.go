@@ -22,6 +22,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/anycast"
 	"github.com/dns-stack/dns-stack/internal/authority"
+	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/cnauth"
 	"github.com/dns-stack/dns-stack/internal/collect"
 	"github.com/dns-stack/dns-stack/internal/domain"
@@ -496,8 +497,8 @@ func cmdECSZone(args []string) error {
 	if index, bad := ecszone.FirstOverlap(merged); bad {
 		a, b := merged[index], merged[index+1]
 		return fmt.Errorf("自检发现重叠区间，拒绝写入: %s-%s[%s] vs %s-%s[%s]",
-			ecszone.FormatAddr(a.Lo), ecszone.FormatAddr(a.Hi), a.Zone,
-			ecszone.FormatAddr(b.Lo), ecszone.FormatAddr(b.Hi), b.Zone)
+			cidrutil.FormatAddr4(a.Lo), cidrutil.FormatAddr4(a.Hi), a.Zone,
+			cidrutil.FormatAddr4(b.Lo), cidrutil.FormatAddr4(b.Hi), b.Zone)
 	}
 	if clipped > 0 {
 		fmt.Printf("[警告] 裁剪了 %d 处跨 zone 重叠（保留起点更早的一条）。数量持续偏高说明归属库的分段出了问题\n", clipped)

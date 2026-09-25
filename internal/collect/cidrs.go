@@ -86,21 +86,6 @@ func keys(set map[netip.Prefix]struct{}) []netip.Prefix {
 	return out
 }
 
-func parsePrefixOrAddr(line string) (netip.Prefix, bool) {
-	if strings.Contains(line, "/") {
-		prefix, err := netip.ParsePrefix(line)
-		if err != nil {
-			return netip.Prefix{}, false
-		}
-		return prefix.Masked(), true
-	}
-	addr, err := netip.ParseAddr(line)
-	if err != nil {
-		return netip.Prefix{}, false
-	}
-	return netip.PrefixFrom(addr, addr.BitLen()), true
-}
-
 func dataLines(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {

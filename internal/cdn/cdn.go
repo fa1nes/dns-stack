@@ -3,6 +3,8 @@ package cdn
 import (
 	"sort"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
 type Trait uint8
@@ -212,7 +214,7 @@ func buildSharedDNSAS() map[int]string {
 
 func Traits(name string) Trait {
 	var out Trait
-	for rest := normalize(name); rest != ""; {
+	for rest := domain.Normalize(name); rest != ""; {
 		out |= suffixes[rest]
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
@@ -252,7 +254,7 @@ func Operators() []Operator {
 }
 
 func OperatorFor(name string) (string, bool) {
-	for rest := normalize(name); rest != ""; {
+	for rest := domain.Normalize(name); rest != ""; {
 		if id, ok := rootOwner[rest]; ok {
 			return id, true
 		}
@@ -268,8 +270,4 @@ func OperatorFor(name string) (string, bool) {
 func SharedDNSProvider(asn int) (string, bool) {
 	label, ok := sharedDNSAS[asn]
 	return label, ok
-}
-
-func normalize(name string) string {
-	return strings.ToLower(strings.TrimRight(strings.TrimSpace(name), "."))
 }

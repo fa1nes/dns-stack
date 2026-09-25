@@ -55,11 +55,6 @@ func (s *Server) databaseFreshness() map[string]any {
 	return out
 }
 
-func truthyValue(raw any) bool {
-	value, _ := raw.(bool)
-	return value
-}
-
 func (s *Server) onlineDB() *geoip.OnlineLookup {
 	s.geoMu.Lock()
 	defer s.geoMu.Unlock()

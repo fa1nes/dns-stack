@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
@@ -55,7 +56,7 @@ func TestMergeRowsJoinsAdjacentSameZone(t *testing.T) {
 		t.Fatalf("相邻同 zone 应当合并成 2 段，得到 %d: %+v", len(merged), merged)
 	}
 	if merged[0].Hi != addr(t, "1.0.2.255") {
-		t.Errorf("首段应当延伸到 1.0.2.255，得到 %s", FormatAddr(merged[0].Hi))
+		t.Errorf("首段应当延伸到 1.0.2.255，得到 %s", cidrutil.FormatAddr4(merged[0].Hi))
 	}
 }
 
@@ -81,7 +82,7 @@ func TestMergeRowsClipsCrossZoneOverlapKeepingTheEarlierStart(t *testing.T) {
 		t.Fatalf("裁剪后仍应是两段，得到 %+v", merged)
 	}
 	if merged[1].Lo != addr(t, "1.0.2.0") {
-		t.Errorf("后一段应当从 1.0.2.0 开始（起点更早的那条保留），得到 %s", FormatAddr(merged[1].Lo))
+		t.Errorf("后一段应当从 1.0.2.0 开始（起点更早的那条保留），得到 %s", cidrutil.FormatAddr4(merged[1].Lo))
 	}
 	if _, bad := FirstOverlap(merged); bad {
 		t.Error("裁剪之后不允许再有重叠")

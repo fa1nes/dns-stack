@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 	"github.com/dns-stack/dns-stack/internal/ecszone"
 	"github.com/dns-stack/dns-stack/internal/ipset"
@@ -154,7 +155,7 @@ func sampleSubnets(direct *ipset.Set, rows []ecszone.Row, seed int64) (inside, o
 		if base < r.Lo || base+255 > r.Hi {
 			continue
 		}
-		text := fmt.Sprintf("%s/24", ecszone.FormatAddr(base))
+		text := fmt.Sprintf("%s/24", cidrutil.FormatAddr4(base))
 		if ecszone.Marked(rows, base+1) {
 			if len(inside) < 2 && !contains(inside, text) {
 				inside = append(inside, text)

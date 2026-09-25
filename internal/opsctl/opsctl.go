@@ -438,26 +438,6 @@ func journalUsage(ctx context.Context) string {
 	return "未知"
 }
 
-func truncateTail(path string, keep int64) error {
-	info, err := os.Stat(path)
-	if err != nil || info.Size() <= keep {
-		return err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Seek(info.Size()-keep, io.SeekStart); err != nil {
-		return err
-	}
-	body, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, body, info.Mode().Perm())
-}
-
 func (c *Ctl) ListPackages() error {
 	for _, spec := range []struct {
 		label, dir, suffix string

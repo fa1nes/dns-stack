@@ -40,15 +40,6 @@ func arg(args []string, i int) string {
 	return ""
 }
 
-func hasFlag(args []string, name string) bool {
-	for _, a := range args {
-		if a == name {
-			return true
-		}
-	}
-	return false
-}
-
 func ctlDispatch(cmd string, raw []string) (bool, error) {
 	ctl, args := newCtl(raw)
 	ctx := context.Background()
