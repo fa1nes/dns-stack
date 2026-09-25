@@ -73,7 +73,7 @@ Cookie，SSE 日志流也会带凭据。若只在本机通过 SSH 隧道访问�
 {
   "auth_enabled": true,          // false 时隐藏所有 .auth-only 元素（退出按钮）
   "totp_enabled": false,         // 登录页据此决定渲不渲染验证码框
-  "role": "cn-resolver",         // 或 "global-builder"
+  "role": "cn-resolver",         // 或 "offshore"
   "role_name": "国内 DNS 服务器",
   "log_units": ["mosproxy", "unbound", "..."]   // 日志页的服务下拉
 }

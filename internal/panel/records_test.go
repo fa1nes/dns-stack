@@ -43,7 +43,7 @@ func countRows(t *testing.T, path, query string, args ...any) int64 {
 
 func TestDeleteQueryRemovesExactlyThatRow(t *testing.T) {
 	server := newExportServer(t)
-	path := server.dbPath()
+	path := server.cfg.DBPath
 
 	out := postAction(t, server, "delete_query", `{"id":2}`)
 	if ok, _ := out["ok"].(bool); !ok {
@@ -76,14 +76,14 @@ func TestDeleteRejectsMissingAndUnknownTargets(t *testing.T) {
 			}
 		})
 	}
-	if got := countRows(t, server.dbPath(), "SELECT COUNT(*) FROM query_events"); got != 3 {
+	if got := countRows(t, server.cfg.DBPath, "SELECT COUNT(*) FROM query_events"); got != 3 {
 		t.Errorf("失败的删除不应动数据，现在剩 %d 条", got)
 	}
 }
 
 func TestDeleteDomainClearsBothTablesAndNormalisesTheName(t *testing.T) {
 	server := newExportServer(t)
-	path := server.dbPath()
+	path := server.cfg.DBPath
 
 	out := postAction(t, server, "delete_domain", `{"domain":"  WWW.Example.COM.  "}`)
 	if ok, _ := out["ok"].(bool); !ok {
@@ -102,7 +102,7 @@ func TestDeleteDomainClearsBothTablesAndNormalisesTheName(t *testing.T) {
 
 func TestDeleteAuditRemovesTheRowAndLeavesItsOwnTrail(t *testing.T) {
 	server := newExportServer(t)
-	path := server.dbPath()
+	path := server.cfg.DBPath
 	server.writeAudit("healthcheck", map[string]any{}, true, "执行成功")
 
 	var id int64

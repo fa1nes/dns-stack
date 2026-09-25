@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -83,7 +84,10 @@ func latencyDB(t *testing.T, rows int) *sql.DB {
 }
 
 func TestLatencyStatsShipsNothingTheFrontendIgnores(t *testing.T) {
-	stats := latencyStats(latencyDB(t, latencySampleCap+1), 0)
+	stats, err := latencyStats(context.Background(), latencyDB(t, latencySampleCap+1), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	keys := make([]string, 0, len(stats))
 	for key := range stats {
 		keys = append(keys, key)
@@ -92,7 +96,10 @@ func TestLatencyStatsShipsNothingTheFrontendIgnores(t *testing.T) {
 }
 
 func TestLatencyStatsAnnouncesWhenQuantilesAreSampled(t *testing.T) {
-	small := latencyStats(latencyDB(t, 50), 0)
+	small, err := latencyStats(context.Background(), latencyDB(t, 50), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if small["sampled"] != false {
 		t.Errorf("只有 50 条时 sampled=%v，应当是 false", small["sampled"])
 	}
@@ -100,7 +107,10 @@ func TestLatencyStatsAnnouncesWhenQuantilesAreSampled(t *testing.T) {
 		t.Error("没抽样却报了 sampled_from，前端会显示一句没有意义的说明")
 	}
 
-	big := latencyStats(latencyDB(t, latencySampleCap+1), 0)
+	big, err := latencyStats(context.Background(), latencyDB(t, latencySampleCap+1), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if big["sampled"] != true {
 		t.Fatalf("超过 %d 条时 sampled=%v，应当是 true", latencySampleCap, big["sampled"])
 	}

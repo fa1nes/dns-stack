@@ -21,7 +21,7 @@ const (
 
 var shippedItems = []string{
 	"install.sh", "config.example.env", "versions.lock",
-	"systemd", "unbound", "mosproxy", "rules", "docs",
+	"systemd", "unbound", "mosproxy", "docs",
 }
 
 type MigrateOptions struct {

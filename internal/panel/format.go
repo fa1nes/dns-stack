@@ -25,19 +25,8 @@ func (s *Server) readConfig() map[string]string {
 	return config.Read(s.cfg.ConfigPath)
 }
 
-func (s *Server) dbPath() string {
-	if _, err := os.Stat(s.cfg.DBPath); err == nil {
-		return s.cfg.DBPath
-	}
-	fallback := filepath.Join(filepath.Dir(s.cfg.DBPath), "classifier.db")
-	if _, err := os.Stat(fallback); err == nil {
-		return fallback
-	}
-	return s.cfg.DBPath
-}
-
 func (s *Server) openDB() (*sql.DB, error) {
-	path := s.dbPath()
+	path := s.cfg.DBPath
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}

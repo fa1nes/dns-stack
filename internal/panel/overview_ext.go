@@ -89,15 +89,15 @@ func (t *rateTracker) update(counters map[string]float64) map[string]float64 {
 	return rates
 }
 
-func latencyStats(db *sql.DB, since int64) map[string]any {
+func latencyStats(ctx context.Context, db *sql.DB, since int64) (map[string]any, error) {
 	out := map[string]any{"samples": 0, "avg": nil}
 	var samples sql.NullInt64
 	var avg sql.NullFloat64
-	err := db.QueryRow(
+	err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*), AVG(elapsed_ms) FROM query_events "+
 			"WHERE ts >= ? AND elapsed_ms IS NOT NULL", since).Scan(&samples, &avg)
 	if err != nil {
-		return out
+		return out, err
 	}
 	total := samples.Int64
 	out["samples"] = total
@@ -105,7 +105,7 @@ func latencyStats(db *sql.DB, since int64) map[string]any {
 		out["avg"] = roundTo(avg.Float64, 2)
 	}
 	if total == 0 {
-		return out
+		return out, nil
 	}
 	sampleN := total
 	if sampleN > latencySampleCap {
@@ -120,14 +120,17 @@ func latencyStats(db *sql.DB, since int64) map[string]any {
 			offset = 0
 		}
 		var value sql.NullFloat64
-		err := db.QueryRow(
+		err := db.QueryRowContext(ctx,
 			"SELECT elapsed_ms FROM ("+
 				"  SELECT elapsed_ms FROM query_events "+
 				"  WHERE ts >= ? AND elapsed_ms IS NOT NULL "+
 				"  ORDER BY id DESC LIMIT ?"+
 				") ORDER BY elapsed_ms LIMIT 1 OFFSET ?",
 			since, sampleN, offset).Scan(&value)
-		if err != nil || !value.Valid {
+		if err != nil {
+			return out, err
+		}
+		if !value.Valid {
 			out[item.label] = nil
 			continue
 		}
@@ -138,12 +141,13 @@ func latencyStats(db *sql.DB, since int64) map[string]any {
 		out["sampled_from"] = sampleN
 	}
 	var slow int64
-	if err := db.QueryRow(
+	if err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM query_events WHERE ts >= ? AND elapsed_ms >= 1000",
-		since).Scan(&slow); err == nil {
-		out["slow_1s"] = slow
+		since).Scan(&slow); err != nil {
+		return out, err
 	}
-	return out
+	out["slow_1s"] = slow
+	return out, nil
 }
 
 func (s *Server) routingServiceState(r *http.Request) map[string]bool {
@@ -161,69 +165,107 @@ func (s *Server) routingServiceState(r *http.Request) map[string]bool {
 	return out
 }
 
-func domainSummaryExtras(db *sql.DB, out map[string]any, now, since int64) {
-
+func domainSummaryExtras(ctx context.Context, db *sql.DB, out map[string]any, now, since int64) error {
 	byExit := []map[string]any{}
-	if rows, err := db.Query(
+	rows, err := db.QueryContext(ctx,
 		"SELECT exit_path, COUNT(*) FROM query_events "+
 			"WHERE ts >= ? AND exit_path IS NOT NULL GROUP BY exit_path ORDER BY 2 DESC",
-		since); err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var path string
-			var count int
-			if rows.Scan(&path, &count) == nil {
-				byExit = append(byExit, map[string]any{"path": path, "count": count})
-			}
+		since)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var path string
+		var count int
+		if err := rows.Scan(&path, &count); err != nil {
+			_ = rows.Close()
+			return err
 		}
+		byExit = append(byExit, map[string]any{"path": path, "count": count})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
 	}
 	out["by_exit"] = byExit
 
 	var new24, active1h, failing, failedEver int
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE first_seen_at >= ?", since).Scan(&new24)
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", max64(now-3600, since)).Scan(&active1h)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE first_seen_at >= ?", since).Scan(&new24); err != nil {
+		return err
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", max64(now-3600, since)).Scan(&active1h); err != nil {
+		return err
+	}
 
-	_ = db.QueryRow(
+	if err := db.QueryRowContext(ctx,
 		"SELECT COUNT(DISTINCT domain) FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?",
-		since).Scan(&failing)
+		since).Scan(&failing); err != nil {
+		return err
+	}
 
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE COALESCE(fail_count,0) > 0").Scan(&failedEver)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE COALESCE(fail_count,0) > 0").Scan(&failedEver); err != nil {
+		return err
+	}
 	out["new_24h"] = new24
 	out["active_1h"] = active1h
 	out["failing"] = failing
 	out["failed_ever"] = failedEver
 
 	byQtype := []map[string]any{}
-	if rows, err := db.Query(
+	rows, err = db.QueryContext(ctx,
 		"SELECT qtype, COUNT(*) FROM query_events WHERE ts >= ? "+
-			"GROUP BY qtype ORDER BY 2 DESC LIMIT 10", since); err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var qtype int64
-			var count int
-			if rows.Scan(&qtype, &count) == nil {
-				byQtype = append(byQtype, map[string]any{
-					"qtype": qtype, "name": qtypeName(qtype), "count": count})
-			}
+			"GROUP BY qtype ORDER BY 2 DESC LIMIT 10", since)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var qtype int64
+		var count int
+		if err := rows.Scan(&qtype, &count); err != nil {
+			_ = rows.Close()
+			return err
 		}
+		byQtype = append(byQtype, map[string]any{
+			"qtype": qtype, "name": qtypeName(qtype), "count": count})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
 	}
 	out["by_qtype"] = byQtype
 
 	byRcode := []map[string]any{}
-	if rows, err := db.Query(
+	rows, err = db.QueryContext(ctx,
 		"SELECT rcode, COUNT(*) FROM query_events WHERE ts >= ? "+
-			"GROUP BY rcode ORDER BY 2 DESC LIMIT 10", since); err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var rcode int64
-			var count int
-			if rows.Scan(&rcode, &count) == nil {
-				byRcode = append(byRcode, map[string]any{
-					"rcode": rcode, "name": rcodeName(rcode), "count": count})
-			}
+			"GROUP BY rcode ORDER BY 2 DESC LIMIT 10", since)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var rcode int64
+		var count int
+		if err := rows.Scan(&rcode, &count); err != nil {
+			_ = rows.Close()
+			return err
 		}
+		byRcode = append(byRcode, map[string]any{
+			"rcode": rcode, "name": rcodeName(rcode), "count": count})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
 	}
 	out["by_rcode"] = byRcode
+	return nil
 }
 
 func (s *Server) attachResolvedNode(ctx context.Context, items []map[string]any) {

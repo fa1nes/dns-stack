@@ -28,12 +28,10 @@ func cmdDBMigrate(args []string) error {
 	defer cancel()
 
 	role := config.ReadKeys(*configFile, "ROLE")["ROLE"]
-	writers := []string{"dns-stack-panel"}
-	if role == stack.RoleCNResolver {
-		writers = append(writers, "mosproxy")
-	} else {
-		writers = append(writers, "dns-stack-classify", "dns-stack-verify")
+	if role != stack.RoleCNResolver {
+		return fmt.Errorf("db-migrate 仅适用于国内解析节点")
 	}
+	writers := []string{"dns-stack-panel", "mosproxy"}
 
 	var stopped []string
 	defer func() {
@@ -73,10 +71,7 @@ func cmdDBMigrate(args []string) error {
 		fmt.Printf("[数据库迁移] 已备份 %s\n", rel)
 	}
 
-	probe := []string{"classify", "status"}
-	if role == stack.RoleCNResolver {
-		probe = []string{"collect", "stats"}
-	}
+	probe := []string{"collect", "stats"}
 	cmd := exec.CommandContext(ctx, selfBinary(), probe...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {

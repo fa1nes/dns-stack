@@ -154,12 +154,16 @@ func (c *Ctl) Restart(ctx context.Context) error {
 
 func (c *Ctl) Logs(ctx context.Context, unit string) error {
 	if unit == "" {
-		unit = "dns-stack-classify"
-		if c.Role() == stack.RoleCNResolver {
-			unit = "mosproxy"
-		}
+		unit = defaultLogUnit(c.Role())
 	}
 	return c.Run(ctx, "journalctl", "-u", unit+".service", "-n", "100", "--no-pager")
+}
+
+func defaultLogUnit(role string) string {
+	if role == stack.RoleCNResolver {
+		return "mosproxy"
+	}
+	return "unbound"
 }
 
 func (c *Ctl) CertCheck(ctx context.Context) error {
@@ -475,13 +479,13 @@ func (c *Ctl) ListPackages() error {
 }
 
 func (c *Ctl) MigrationFinish(ctx context.Context) error {
-	if !c.Confirm("即将停止本机的 mosproxy/Unbound/面板/分类器服务(不删除任何数据)，确认继续？") {
+	if !c.Confirm("即将停止本机的 mosproxy/Unbound/面板服务(不删除任何数据)，确认继续？") {
 		c.Warnf("已取消")
 		return nil
 	}
 	for _, unit := range []string{
 		"mosproxy.service", "unbound.service",
-		"dns-stack-panel.service", "dns-stack-classify.service",
+		"dns-stack-panel.service",
 	} {
 		c.systemctl(ctx, "stop", unit)
 	}

@@ -176,7 +176,7 @@ func (c Config) Import(ctx context.Context, pkg string, allowRollback bool) erro
 
 func (c Config) applyImport(ctx context.Context, inner string) error {
 	c.logf("[信息] [10/12] 停止所有会写数据库的服务...")
-	for _, unit := range []string{"dns-stack-classify", "dns-stack-verify", "dns-stack-panel", "mosproxy"} {
+	for _, unit := range []string{"dns-stack-panel", "mosproxy"} {
 		exec.CommandContext(ctx, "systemctl", "stop", unit+".service").Run()
 	}
 	time.Sleep(2 * time.Second)

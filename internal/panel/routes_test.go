@@ -8,6 +8,7 @@ import (
 )
 
 var routeRe = regexp.MustCompile(`mux\.HandleFunc\("([^"]+)"`)
+var frontendAPIRe = regexp.MustCompile(`["'\x60](/api/[A-Za-z0-9_/-]+)`)
 
 var routesWithoutFrontendCaller = map[string]string{
 	"/api/health": "install.sh 与 selfcheck 用它探活",
@@ -56,6 +57,24 @@ func TestEveryRouteHasSomethingThatCallsIt(t *testing.T) {
 		}
 		if !strings.Contains(frontend, strings.TrimSuffix(route, "/")) {
 			t.Errorf("%s 注册了却没有任何前端调用它——要么前端漏接，要么这是死接口", route)
+		}
+	}
+}
+
+func TestEveryFrontendAPIHasABackendRoute(t *testing.T) {
+	frontend := frontendSources(t)
+	routes := registeredRoutes(t)
+	for _, match := range frontendAPIRe.FindAllStringSubmatch(frontend, -1) {
+		path := match[1]
+		found := false
+		for _, route := range routes {
+			if path == route || strings.HasSuffix(route, "/") && strings.HasPrefix(path, route) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("前端请求 %s 没有后端路由；上线后会成为静默失效的功能", path)
 		}
 	}
 }

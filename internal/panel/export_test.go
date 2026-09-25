@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -104,13 +105,13 @@ func TestExportTruncation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	items, err := exportQueryItems(db, 2)
+	items, err := exportQueryItems(context.Background(), db, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkedEqual(t, "truncated to limit", len(items), 2)
 	checkedEqual(t, "ascending order", []any{items[0]["id"], items[1]["id"]}, []any{1, 2})
-	domains, err := exportDomainItems(db, 1)
+	domains, err := exportDomainItems(context.Background(), db, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

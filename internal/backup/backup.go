@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/stack"
 
 	_ "modernc.org/sqlite"
 )
@@ -35,14 +36,6 @@ const (
 	identityBasename = "backup-age-identity.txt"
 	recipientBase    = "backup-age-recipient.txt"
 )
-
-var backedUpUnits = []string{
-	"dns-stack-helper", "dns-stack-panel", "dns-stack-classify", "dns-stack-verify",
-	"dns-stack-maintenance", "dns-stack-collect-polluted",
-	"dns-stack-reference-data", "dns-stack-publish", "dns-stack-routing-data",
-	"dns-stack-recursive-routing", "dns-stack-routing-watchdog",
-	"unbound", "mosproxy",
-}
 
 type Config struct {
 	ConfigFile string
@@ -162,11 +155,7 @@ func (c Config) CollectPayload(ctx context.Context, dest, mode string, includeSe
 		break
 	}
 	copyFile("/opt/dns-stack/versions.lock", filepath.Join(dest, "versions", "versions.lock"))
-	for _, unit := range backedUpUnits {
-		for _, suffix := range []string{".service", ".timer"} {
-			copyFile(filepath.Join(c.SystemdDir, unit+suffix), filepath.Join(dest, "systemd", unit+suffix))
-		}
-	}
+	c.collectSystemd(filepath.Join(dest, "systemd"))
 
 	if mode == ModeState || mode == ModeFull {
 		if err := c.collectState(ctx, dest); err != nil {
@@ -191,16 +180,7 @@ func (c Config) CollectPayload(ctx context.Context, dest, mode string, includeSe
 
 func (c Config) collectState(ctx context.Context, dest string) error {
 	stateOut := filepath.Join(dest, "state")
-	if c.Role() != "cn-resolver" {
-		os.MkdirAll(stateOut, 0o755)
-		if err := SnapshotSQLite(filepath.Join(c.StateDir, "classifier.db"),
-			filepath.Join(stateOut, "classifier.db")); err != nil {
-			c.logf("  ! classifier.db 快照失败: %v", err)
-		}
-		for _, name := range []string{"manual-cn.txt", "manual-gfw.txt", "manual-exclude.txt"} {
-			copyFile(filepath.Join(c.StateDir, name), filepath.Join(stateOut, name))
-		}
-		copyTree(filepath.Join(c.StateDir, "publish"), filepath.Join(stateOut, "publish"))
+	if c.Role() != stack.RoleCNResolver {
 		return nil
 	}
 	os.MkdirAll(filepath.Join(stateOut, "rule-history"), 0o755)
@@ -221,6 +201,21 @@ func (c Config) collectState(ctx context.Context, dest string) error {
 		c.logf("  ! 迁移包导出失败，本次备份缺少规则与 chnroute 状态: %v", err)
 	}
 	return nil
+}
+
+func (c Config) collectSystemd(dest string) {
+	for _, module := range stack.All() {
+		if !module.HasRole(c.Role()) || module.CronDriven() {
+			continue
+		}
+		for _, suffix := range []string{".service", ".timer"} {
+			src := filepath.Join(c.SystemdDir, module.Unit+suffix)
+			if _, err := os.Stat(src); err != nil {
+				continue
+			}
+			_ = copyFile(src, filepath.Join(dest, module.Unit+suffix))
+		}
+	}
 }
 
 type Manifest struct {

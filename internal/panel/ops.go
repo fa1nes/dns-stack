@@ -254,7 +254,7 @@ func (s *Server) opsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) openRW() (*sql.DB, error) {
-	dsn := "file:" + filepath.ToSlash(s.dbPath()) + "?_pragma=busy_timeout(5000)"
+	dsn := "file:" + filepath.ToSlash(s.cfg.DBPath) + "?_pragma=busy_timeout(5000)"
 	return sql.Open("sqlite", dsn)
 }
 

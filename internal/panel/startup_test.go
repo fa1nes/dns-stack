@@ -82,20 +82,22 @@ func TestPreStartCheck(t *testing.T) {
 	}
 }
 
-func TestDBPathFallback(t *testing.T) {
+func TestOpenDBUsesOnlyConfiguredCollectorDatabase(t *testing.T) {
 	dir := t.TempDir()
-	server := New(Config{DBPath: filepath.Join(dir, "collector.db")})
-	checkedEqual(t, "两个库都不在时保持原路径", server.dbPath(), filepath.Join(dir, "collector.db"))
-	classifier := filepath.Join(dir, "classifier.db")
-	if err := os.WriteFile(classifier, []byte{}, 0600); err != nil {
+	collector := filepath.Join(dir, "collector.db")
+	server := New(Config{DBPath: collector})
+	if err := os.WriteFile(filepath.Join(dir, "classifier.db"), []byte{}, 0600); err != nil {
 		t.Fatal(err)
 	}
-	checkedEqual(t, "回落 classifier.db", server.dbPath(), classifier)
-	if err := os.WriteFile(filepath.Join(dir, "collector.db"), []byte{}, 0600); err != nil {
+	if _, err := server.openDB(); err == nil {
+		t.Fatal("旧 classifier.db 不得替代缺失的 collector.db")
+	}
+	if err := os.WriteFile(collector, []byte{}, 0600); err != nil {
 		t.Fatal(err)
 	}
-	checkedEqual(t, "collector.db 优先", server.dbPath(), filepath.Join(dir, "collector.db"))
-	if _, err := New(Config{DBPath: filepath.Join(dir, "absent", "collector.db")}).openDB(); err == nil {
-		t.Fatal("两个库都不在时 openDB 应报错(端点回 503)")
+	db, err := server.openDB()
+	if err != nil {
+		t.Fatalf("配置的 collector.db 应可打开: %v", err)
 	}
+	_ = db.Close()
 }

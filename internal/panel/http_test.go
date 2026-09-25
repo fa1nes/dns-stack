@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newOpenServer(t *testing.T) *Server {
@@ -55,6 +57,18 @@ func TestStaticETagAndCacheHeaders(t *testing.T) {
 	index := serve(server, localRequest("GET", "/"))
 	checkedEqual(t, "HTML 缓存策略", index.Header().Get("Cache-Control"), "no-store")
 	checkedEqual(t, "HTML Content-Type", index.Header().Get("Content-Type"), "text/html; charset=utf-8")
+}
+
+func TestProductionPageDoesNotLoadDevelopmentMocks(t *testing.T) {
+	response := serve(newOpenServer(t), localRequest(http.MethodGet, "/"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("production page returned %d", response.Code)
+	}
+	for _, script := range []string{"mock-api.js", "layout-scan.js"} {
+		if bytes.Contains(response.Body.Bytes(), []byte(script)) {
+			t.Fatalf("production page references development script %s", script)
+		}
+	}
 }
 
 func TestStaticAssetsAreCompressedOnceAndReused(t *testing.T) {
@@ -166,6 +180,93 @@ func TestLogsStreamUnitWhitelist(t *testing.T) {
 	bad := serve(server, localRequest("GET", "/api/logs/stream?unit=nope"))
 	checkedEqual(t, "流端点未知 unit 回 400", bad.Code, http.StatusBadRequest)
 	checkedEqual(t, "400 不是 SSE", bad.Header().Get("Content-Type"), "application/json; charset=utf-8")
+}
+
+func TestDatabaseHandlersStopOnCancelledRequest(t *testing.T) {
+	server := newExportServer(t)
+	paths := []string{
+		"/api/overview",
+		"/api/queries",
+		"/api/domains",
+		"/api/domains?metric=slow",
+		"/api/domains/summary",
+		"/api/timeseries",
+		"/api/export?dataset=queries",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			request := localRequest(http.MethodGet, path).WithContext(ctx)
+			response := serve(server, request)
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf("cancelled request returned %d, want 503; body: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestAuditDatabaseFailureIsNotReportedAsEmpty(t *testing.T) {
+	response := serve(newExportServer(t), localRequest(http.MethodGet, "/api/audit"))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing audit table returned %d, want 503; body: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestDomainSummaryReportsFixtureCountsExactly(t *testing.T) {
+	server := newExportServer(t)
+	server.clock = func() time.Time { return time.Unix(1_700_000_200, 0) }
+	response := serve(server, localRequest(http.MethodGet, "/api/domains/summary"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("domain summary returned %d: %s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]float64{
+		"new_24h": 2, "active_1h": 2, "failing": 0, "failed_ever": 1,
+	} {
+		if got := body[key]; got != want {
+			t.Errorf("%s = %v, want %v", key, got, want)
+		}
+	}
+	byExit, ok := body["by_exit"].([]any)
+	if !ok {
+		t.Fatalf("by_exit has type %T", body["by_exit"])
+	}
+	counts := map[string]float64{}
+	for _, item := range byExit {
+		entry := item.(map[string]any)
+		counts[entry["path"].(string)] = entry["count"].(float64)
+	}
+	if counts["direct"] != 1 || counts["tunnel"] != 1 {
+		t.Fatalf("by_exit = %#v, want one direct and one tunnel event", counts)
+	}
+}
+
+func TestTimeseriesReturnsExactRouteBucketCounts(t *testing.T) {
+	server := newExportServer(t)
+	server.clock = func() time.Time { return time.Unix(1_700_003_600, 0) }
+	response := serve(server, localRequest(http.MethodGet, "/api/timeseries?span=3600&buckets=60"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("timeseries returned %d: %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Series []map[string]any `json:"series"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Series) != 61 {
+		t.Fatalf("series has %d buckets, want 61", len(body.Series))
+	}
+	first := body.Series[0]
+	for route, want := range map[string]float64{"cn": 1, "cache": 1, "foreign": 1} {
+		if got := first[route]; got != want {
+			t.Errorf("first bucket %s = %v, want %v", route, got, want)
+		}
+	}
 }
 
 func TestLoginRedirectsWhenNoPassword(t *testing.T) {

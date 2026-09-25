@@ -66,7 +66,10 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 
 	var total int
 	countArgs := append(append([]any{}, args...), queryCountCap+1)
-	_ = db.QueryRow("SELECT COUNT(*) FROM (SELECT 1 FROM query_events WHERE "+clause+" LIMIT ?)", countArgs...).Scan(&total)
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM (SELECT 1 FROM query_events WHERE "+clause+" LIMIT ?)", countArgs...).Scan(&total); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
 	capped := total > queryCountCap
 	if capped {
 		total = queryCountCap
@@ -77,7 +80,7 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 		offset = queryCountCap
 	}
 	dataArgs := append(append([]any{}, args...), size, offset)
-	rows, err := db.Query("SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE "+clause+" ORDER BY id DESC LIMIT ? OFFSET ?", dataArgs...)
+	rows, err := db.QueryContext(r.Context(), "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE "+clause+" ORDER BY id DESC LIMIT ? OFFSET ?", dataArgs...)
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
@@ -90,10 +93,15 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 		var prefetch int64
 		var elapsed sql.NullFloat64
 		var exit sql.NullString
-		if rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit) != nil {
-			continue
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
 		}
 		items = append(items, enrichItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit))
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
 	}
 	writeJSON(w, 200, map[string]any{"items": items, "total": total, "total_capped": capped, "page": page, "size": size, "pages": (total + size - 1) / size})
 }
@@ -137,7 +145,7 @@ func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 	if last == 0 {
-		_ = db.QueryRow("SELECT COALESCE(MAX(id),0) FROM query_events").Scan(&last)
+		_ = db.QueryRowContext(r.Context(), "SELECT COALESCE(MAX(id),0) FROM query_events").Scan(&last)
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -147,7 +155,7 @@ func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			rows, err := db.Query("SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE id > ? ORDER BY id ASC LIMIT 200", last)
+			rows, err := db.QueryContext(r.Context(), "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE id > ? ORDER BY id ASC LIMIT 200", last)
 			if err == nil {
 				events := []map[string]any{}
 				for rows.Next() {
@@ -155,12 +163,17 @@ func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
 					var domain, resp, route, tag string
 					var elapsed sql.NullFloat64
 					var exit sql.NullString
-					if rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &pre, &elapsed, &exit) != nil {
-						continue
+					if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &pre, &elapsed, &exit); err != nil {
+						_ = rows.Close()
+						return
 					}
 					events = append(events, enrichItem(id, ts, qt, rc, domain, resp, route, tag, pre, elapsed, exit))
 				}
+				rowErr := rows.Err()
 				rows.Close()
+				if rowErr != nil {
+					return
+				}
 				if len(events) > 0 {
 					last = events[len(events)-1]["id"].(int64)
 					payload, _ := json.Marshal(map[string]any{"events": events})
@@ -224,8 +237,11 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 	}
 	clause := strings.Join(where, " AND ")
 	var total int
-	_ = db.QueryRow("SELECT COUNT(*) FROM domains WHERE "+clause, args...).Scan(&total)
-	rows, err := db.Query("SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains WHERE "+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?", append(args, size, (page-1)*size)...)
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM domains WHERE "+clause, args...).Scan(&total); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	rows, err := db.QueryContext(r.Context(), "SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains WHERE "+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?", append(args, size, (page-1)*size)...)
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
@@ -235,10 +251,15 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var d, lr sql.NullString
 		var first, last, count, fail, rcode sql.NullInt64
-		if rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr) != nil {
-			continue
+		if err := rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
 		}
 		items = append(items, domainItem(d, first, last, count, fail, rcode, lr))
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
 	}
 	s.attachResolvedNode(r.Context(), items)
 	writeJSON(w, 200, map[string]any{"items": items, "metric": metric, "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
@@ -258,12 +279,12 @@ func (s *Server) domainsSlow(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	}
 	sub := "SELECT domain, elapsed_ms, ts FROM query_events WHERE " + strings.Join(where, " AND ") + " ORDER BY id DESC LIMIT 100000"
 	var total int
-	if err := db.QueryRow("SELECT COUNT(*) FROM (SELECT domain FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2)", args...).Scan(&total); err != nil {
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM (SELECT domain FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2)", args...).Scan(&total); err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
 	}
 	dataArgs := append(append([]any{}, args...), size, (page-1)*size)
-	rows, err := db.Query("SELECT domain, COUNT(*) AS samples, ROUND(AVG(elapsed_ms),2) AS avg_ms, ROUND(MAX(elapsed_ms),2) AS max_ms, MAX(ts) AS last_seen_at FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2 ORDER BY avg_ms DESC LIMIT ? OFFSET ?", dataArgs...)
+	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS samples, ROUND(AVG(elapsed_ms),2) AS avg_ms, ROUND(MAX(elapsed_ms),2) AS max_ms, MAX(ts) AS last_seen_at FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2 ORDER BY avg_ms DESC LIMIT ? OFFSET ?", dataArgs...)
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
@@ -274,10 +295,15 @@ func (s *Server) domainsSlow(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		var domain string
 		var samples, lastSeen int64
 		var avg, max sql.NullFloat64
-		if rows.Scan(&domain, &samples, &avg, &max, &lastSeen) != nil {
-			continue
+		if err := rows.Scan(&domain, &samples, &avg, &max, &lastSeen); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
 		}
 		items = append(items, map[string]any{"domain": domain, "samples": samples, "avg_ms": nilFloat(avg), "max_ms": nilFloat(max), "last_seen_at": lastSeen})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
 	}
 	s.attachResolvedNode(r.Context(), items)
 	writeJSON(w, 200, map[string]any{"items": items, "metric": "slow", "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
@@ -319,7 +345,10 @@ func (s *Server) domainSummary(w http.ResponseWriter, r *http.Request) {
 		since = epoch
 	}
 	out := map[string]any{}
-	domainSummaryExtras(db, out, now, since)
+	if err := domainSummaryExtras(r.Context(), db, out, now, since); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败"})
+		return
+	}
 	writeJSON(w, 200, out)
 }
 
@@ -347,20 +376,29 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.now().Unix()
 	since := now - int64(span)
-	rows, _ := db.Query("SELECT ((ts-?)/?) AS b, route, COUNT(*) FROM query_events WHERE ts >= ? GROUP BY b,route ORDER BY b", since, step, since)
+	rows, err := db.QueryContext(r.Context(), "SELECT ((ts-?)/?) AS b, route, COUNT(*) FROM query_events WHERE ts >= ? GROUP BY b,route ORDER BY b", since, step, since)
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+		return
+	}
 	vals := map[int64]map[string]int{}
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var b int64
-			var route string
-			var c int
-			_ = rows.Scan(&b, &route, &c)
-			if vals[b] == nil {
-				vals[b] = map[string]int{}
-			}
-			vals[b][route] = c
+	defer rows.Close()
+	for rows.Next() {
+		var b int64
+		var route string
+		var c int
+		if err := rows.Scan(&b, &route, &c); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+			return
 		}
+		if vals[b] == nil {
+			vals[b] = map[string]int{}
+		}
+		vals[b][route] = c
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+		return
 	}
 	series := []map[string]any{}
 	for i := 0; i <= buckets; i++ {
@@ -434,11 +472,25 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		defer db.Close()
 		var last5, last1, domains int
-		_ = db.QueryRow("SELECT COUNT(*) FROM query_events WHERE ts >= ?", now-300).Scan(&last5)
-		_ = db.QueryRow("SELECT COUNT(*) FROM query_events WHERE ts >= ?", now-3600).Scan(&last1)
-		_ = db.QueryRow("SELECT COUNT(*) FROM domains").Scan(&domains)
+		if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM query_events WHERE ts >= ?", now-300).Scan(&last5); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
+			return
+		}
+		if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM query_events WHERE ts >= ?", now-3600).Scan(&last1); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
+			return
+		}
+		if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM domains").Scan(&domains); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
+			return
+		}
+		latency, err := latencyStats(r.Context(), db, now-3600)
+		if err != nil {
+			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
+			return
+		}
 		out["events"] = map[string]any{"last_5m": last5, "last_1h": last1, "domains": domains,
-			"latency": latencyStats(db, now-3600)}
+			"latency": latency}
 	} else {
 		out["events"] = map[string]any{"error": "数据库不可用"}
 	}

@@ -2,6 +2,7 @@ package panel
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -110,9 +111,9 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 	var items []map[string]any
 	if dataset == "queries" {
-		items, err = exportQueryItems(db, exportRowLimit)
+		items, err = exportQueryItems(r.Context(), db, exportRowLimit)
 	} else {
-		items, err = exportDomainItems(db, exportRowLimit)
+		items, err = exportDomainItems(r.Context(), db, exportRowLimit)
 	}
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "查询失败"})
@@ -129,8 +130,8 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	writeExportJSON(w, items)
 }
 
-func exportQueryItems(db *sql.DB, limit int) ([]map[string]any, error) {
-	rows, err := db.Query("SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events ORDER BY id ASC LIMIT ?", limit)
+func exportQueryItems(ctx context.Context, db *sql.DB, limit int) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events ORDER BY id ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -142,16 +143,16 @@ func exportQueryItems(db *sql.DB, limit int) ([]map[string]any, error) {
 		var prefetch int64
 		var elapsed sql.NullFloat64
 		var exit sql.NullString
-		if rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit) != nil {
-			continue
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
+			return nil, err
 		}
 		items = append(items, queryItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit))
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
-func exportDomainItems(db *sql.DB, limit int) ([]map[string]any, error) {
-	rows, err := db.Query("SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains ORDER BY occurrence_count DESC, domain ASC LIMIT ?", limit)
+func exportDomainItems(ctx context.Context, db *sql.DB, limit int) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, "SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains ORDER BY occurrence_count DESC, domain ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -160,12 +161,12 @@ func exportDomainItems(db *sql.DB, limit int) ([]map[string]any, error) {
 	for rows.Next() {
 		var d, lr sql.NullString
 		var first, last, count, fail, rcode sql.NullInt64
-		if rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr) != nil {
-			continue
+		if err := rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr); err != nil {
+			return nil, err
 		}
 		items = append(items, domainItem(d, first, last, count, fail, rcode, lr))
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 func writeExportJSON(w http.ResponseWriter, v any) {

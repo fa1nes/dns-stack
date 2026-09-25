@@ -12,7 +12,7 @@ import (
 func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	db, err := s.openDB()
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"items": []any{}})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "数据库不可用", "items": []any{}})
 		return
 	}
 	defer db.Close()
@@ -20,9 +20,9 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	rows, err := db.Query("SELECT id,ts,actor,operation,args,ok,message FROM audit_log ORDER BY id DESC LIMIT ?", limit)
+	rows, err := db.QueryContext(r.Context(), "SELECT id,ts,actor,operation,args,ok,message FROM audit_log ORDER BY id DESC LIMIT ?", limit)
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"items": []any{}})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "查询失败", "items": []any{}})
 		return
 	}
 	defer rows.Close()
@@ -31,8 +31,15 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 		var id, ts int64
 		var actor, op, args, msg string
 		var ok int
-		_ = rows.Scan(&id, &ts, &actor, &op, &args, &ok, &msg)
+		if err := rows.Scan(&id, &ts, &actor, &op, &args, &ok, &msg); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "查询失败", "items": []any{}})
+			return
+		}
 		items = append(items, map[string]any{"id": id, "ts": ts, "actor": actor, "operation": op, "args": args, "ok": ok, "message": msg})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "查询失败", "items": []any{}})
+		return
 	}
 	writeJSON(w, 200, map[string]any{"items": items})
 }

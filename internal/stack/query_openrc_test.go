@@ -42,20 +42,20 @@ func TestCronJobStatusReportsMissingSchedule(t *testing.T) {
 }
 
 func TestActiveCronContainsIgnoresCommentedJobs(t *testing.T) {
-	body := "*/5 * * * * dns-stack classify pipeline\n# 7 */6 * * * dns-stack classify publish\n"
-	if !activeCronContains(body, "classify pipeline") {
+	body := "0 3 * * * dns-stack trim-logs\n# 7 */6 * * * dns-stack removed-command\n"
+	if !activeCronContains(body, "dns-stack trim-logs") {
 		t.Fatal("active pipeline cron entry was not found")
 	}
-	if activeCronContains(body, "classify publish") {
+	if activeCronContains(body, "dns-stack removed-command") {
 		t.Fatal("commented publish entry must not count as scheduled")
 	}
 }
 
-func TestGlobalBuilderDoesNotClaimCNOnlyPanelServices(t *testing.T) {
+func TestOffshoreDoesNotClaimCNOnlyPanelServices(t *testing.T) {
 	for _, module := range ForRole(RoleOffshore) {
 		switch module.Unit {
 		case "dns-stack-panel", "dns-stack-helper", "dns-stack-maintenance":
-			t.Fatalf("HK/global-builder must not claim CN-only module %s", module.Unit)
+			t.Fatalf("offshore role must not claim CN-only module %s", module.Unit)
 		}
 	}
 }
