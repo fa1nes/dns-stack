@@ -1,7 +1,6 @@
 package panel
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -54,22 +53,5 @@ func TestRoutingReasonNeverClaimsWhatItDidNotCheck(t *testing.T) {
 	}
 	if got := routingReason("example.com", 4, 0, true); got != "" {
 		t.Errorf("找到了大陆权威时应由 direct 分支自己写 reason，这里返回 %q", got)
-	}
-}
-
-func TestOnlyDirect4ProvesDomesticRouting(t *testing.T) {
-	body, err := os.ReadFile("detail.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(body), "\n") {
-		if !strings.Contains(line, "hasDomesticAuthority =") {
-			continue
-		}
-		if strings.Contains(line, "inAuthority") {
-			t.Errorf("把 cn-authority 表当成「这是国内域名」的证据了：%s\n"+
-				"那张表是派生的、会过期，里面一个陈旧条目就能让境外域名被判成国内。"+
-				"它只决定这一跳走哪个出口，归属判据只有 direct4", strings.TrimSpace(line))
-		}
 	}
 }

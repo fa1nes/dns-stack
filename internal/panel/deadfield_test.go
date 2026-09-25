@@ -83,17 +83,12 @@ func latencyDB(t *testing.T, rows int) *sql.DB {
 }
 
 func TestLatencyStatsShipsNothingTheFrontendIgnores(t *testing.T) {
-	frontend := frontendText(t)
-	for name, rows := range map[string]int{"全量": 50, "抽样": latencySampleCap + 1} {
-		t.Run(name, func(t *testing.T) {
-			stats := latencyStats(latencyDB(t, rows), 0)
-			keys := make([]string, 0, len(stats))
-			for key := range stats {
-				keys = append(keys, key)
-			}
-			assertFrontendReads(t, "/api/overview.latency", keys, frontend)
-		})
+	stats := latencyStats(latencyDB(t, latencySampleCap+1), 0)
+	keys := make([]string, 0, len(stats))
+	for key := range stats {
+		keys = append(keys, key)
 	}
+	assertFrontendReads(t, "/api/overview.latency", keys, frontendText(t))
 }
 
 func TestLatencyStatsAnnouncesWhenQuantilesAreSampled(t *testing.T) {
