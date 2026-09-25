@@ -1106,22 +1106,8 @@ function ecsVerdict(e) {
     + '<span class="note-xs">应答 scope=0，对所有子网通用</span>');
 }
 
-const EXIT_NAMES = {
-  cache: '缓存命中', direct: '大陆直连', tunnel: '香港隧道',
-  hongkong: '香港递归', reject: '已拒绝', unknown: '未知',
-};
-const EXIT_CLS = { cache: 'cache', direct: 'cn', tunnel: 'foreign', hongkong: 'foreign', reject: 'reject' };
-
-const exitBadge = (path) => html`<span class="badge ${EXIT_CLS[path] || 'unknown'}">${EXIT_NAMES[path] || path}</span>`;
-
-const ROUTED_EXITS = { direct: 1, tunnel: 1, hongkong: 1 };
-
-const routeBadge = (r) => {
-  const badge = html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
-  return ROUTED_EXITS[r.exit_path]
-    ? html`${badge} <span class="exit-tag">${EXIT_NAMES[r.exit_path] || r.exit_path}</span>`
-    : badge;
-};
+const routeBadge = (r) =>
+  html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
 const rcodeBadge = (r) =>
   html`<span class="badge ${r.rcode === 0 ? 'ok' : (r.rcode === 3 ? 'warn' : 'err')}">${r.rcode_name}</span>`;
 
@@ -1153,19 +1139,23 @@ const queryRow = (r, isNew) => html`<tr class="clickable" data-domain="${r.domai
         : html`<button class="row-del" data-qid="${r.id}" title="删除这条记录">删除</button>`}</td>
   </tr>`;
 
-async function deleteQuery(id, btn) {
-  if (!confirm('删除这条查询记录？')) return;
+async function deleteRecord(op, args, opts) {
+  if (!confirm(opts.confirm)) return;
   try {
-    const d = await api('/api/action/delete_query', {
-      method: 'POST', body: JSON.stringify({ id: Number(id) }),
-    });
+    const d = await api('/api/action/' + op, { method: 'POST', body: JSON.stringify(args) });
     if (d && d.ok === false) { toast('删除失败', d.message || '', 'err'); return; }
-    const tr = btn && btn.closest('tr');
+    const tr = opts.btn && opts.btn.closest('tr');
     if (tr) tr.remove();
-    toast('已删除该条记录', '', 'ok');
-    invalidateCache();
-    loadQueries(state.queryPage);
+    toast(opts.done, opts.detail || '', 'ok');
+    opts.after();
   } catch (e) { toast('删除失败', e.message, 'err'); }
+}
+
+function deleteQuery(id, btn) {
+  return deleteRecord('delete_query', { id: Number(id) }, {
+    confirm: '删除这条查询记录？', btn, done: '已删除该条记录',
+    after: () => { invalidateCache(); loadQueries(state.queryPage); },
+  });
 }
 
 async function downloadExport(dataset, format) {
@@ -1432,18 +1422,16 @@ async function showDomain(domain) {
   }
 }
 
-async function deleteDomain(domain) {
-  if (!confirm('删除「' + domain + '」的全部统计记录？\n\n只影响面板统计，不影响这个域名的实际解析。')) return;
-  try {
-    const d = await api('/api/action/delete_domain', {
-      method: 'POST', body: JSON.stringify({ domain: domain }),
-    });
-    if (d && d.ok === false) { toast('删除失败', d.message || '', 'err'); return; }
-    toast('已删除', domain, 'ok');
-    closeDrawer();
-    if (state.page === 'queries') loadDomains(state.domPage);
-    if (state.page === 'settings') loadCollected();
-  } catch (e) { toast('删除失败', e.message, 'err'); }
+function deleteDomain(domain) {
+  return deleteRecord('delete_domain', { domain: domain }, {
+    confirm: '删除「' + domain + '」的全部统计记录？\n\n只影响面板统计，不影响这个域名的实际解析。',
+    done: '已删除', detail: domain,
+    after: () => {
+      closeDrawer();
+      if (state.page === 'queries') loadDomains(state.domPage);
+      if (state.page === 'settings') loadCollected();
+    },
+  });
 }
 
 const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fRespBy', '#fSince'];
@@ -2511,18 +2499,10 @@ async function loadAudit() {
   }
 }
 
-async function deleteAudit(id, btn) {
-  if (!confirm('删除这条审计记录？')) return;
-  try {
-    const d = await api('/api/action/delete_audit', {
-      method: 'POST', body: JSON.stringify({ id: Number(id) }),
-    });
-    if (d && d.ok === false) { toast('删除失败', d.message || '', 'err'); return; }
-    const tr = btn && btn.closest('tr');
-    if (tr) tr.remove();
-    toast('已删除该条记录', '', 'ok');
-    loadAudit();
-  } catch (e) { toast('删除失败', e.message, 'err'); }
+function deleteAudit(id, btn) {
+  return deleteRecord('delete_audit', { id: Number(id) }, {
+    confirm: '删除这条审计记录？', btn, done: '已删除该条记录', after: loadAudit,
+  });
 }
 
 let OPS_META = {};

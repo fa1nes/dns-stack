@@ -77,7 +77,6 @@
       route_name: cached ? '缓存命中' : (foreign ? '香港递归' : '本机递归'),
       cache_hit: cached,
       elapsed_ms: i % 11 === 0 ? null : (cached ? 0.42 : 186.3),
-      exit_path: foreign ? 'hongkong' : (i % 2 ? 'direct' : 'tunnel'),
     };
   }
 
@@ -194,10 +193,9 @@
       by_route: [{ route: 'cn', route_name: '本机递归', count: 731 },
                  { route: 'cache', route_name: '缓存命中', count: 96 },
                  { route: 'foreign', route_name: '香港递归', count: 26 }],
-      by_exit: [{ path: 'direct', name: '直连出网', count: 2841 },
-                { path: 'tunnel', name: '经隧道', count: 1163 },
-                { path: 'cache', name: '缓存命中', count: 5210 },
-                { path: 'hongkong', name: '香港递归器', count: 12 }],
+      by_exit: [{ path: 'cache', count: 5210 },
+                { path: 'recursive', count: 4004 },
+                { path: 'hongkong', count: 12 }],
       new_24h: 37, active_1h: 118, failing: 6,
       by_qtype: [{ qtype: 1, name: 'A', count: 5210 }, { qtype: 28, name: 'AAAA', count: 3106 },
                  { qtype: 65, name: 'HTTPS', count: 902 }],

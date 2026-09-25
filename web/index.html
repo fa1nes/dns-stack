@@ -63,8 +63,6 @@
         <h2 id="pageTitle">概览</h2>
         <span class="page-desc" id="pageDesc"></span>
       </div>
-      <div class="actions" id="pageActions"></div>
-
       <button class="icon" id="btnDiag" title="环境诊断（显示异常时点这里）" aria-label="环境诊断">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
              stroke-linecap="round" stroke-linejoin="round">
@@ -343,7 +341,7 @@
           <div class="sec-grid">
             <div class="card">
               <h3>密码登录 <span id="pwBadge"></span></h3>
-              <details class="sec-fold" id="foldPassword">
+              <details class="sec-fold">
                 <summary>修改密码</summary>
                 <div class="sec-fold-body">
                   <form id="pwForm" autocomplete="off">
@@ -358,7 +356,7 @@
                   <div class="login-msg" id="pwMsg" role="alert"></div>
                 </div>
               </details>
-              <div class="sec-act" id="pwToggleWrap">
+              <div class="sec-act">
                 <button class="danger sm" id="btnTogglePwd">关闭密码登录</button>
                 <span class="hint" id="pwToggleHint"></span>
               </div>
@@ -380,11 +378,11 @@
                   <button class="sm" id="btnTotpCancel">取消</button>
                 </div>
               </div>
-              <div class="sec-act" id="totpActions">
+              <div class="sec-act">
                 <button class="primary sm" id="btnTotpSetup">启用二次认证</button>
                 <button class="danger sm" id="btnTotpDisable" hidden>停用二次认证</button>
               </div>
-              <div class="sec-note" id="totpHint">
+              <div class="sec-note">
                 启用后登录页会多出一个 6 位验证码输入框。
               </div>
               <div class="sec-note">
@@ -397,7 +395,7 @@
           <div class="card">
             <h3>GitHub 联合登录 <span id="oauthBadge"></span></h3>
             <div class="sec-chips" id="oauthChips"></div>
-            <details class="sec-fold" id="foldOauth">
+            <details class="sec-fold">
               <summary>配置 OAuth 应用</summary>
               <div class="sec-fold-body">
                 <div class="sec-form-grid">

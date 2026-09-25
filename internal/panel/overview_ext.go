@@ -12,19 +12,6 @@ import (
 	"time"
 )
 
-var exitNames = map[string]string{
-	"cache": "缓存命中", "recursive": "本机递归", "hongkong": "香港递归",
-	"reject": "已拒绝", "failed": "无人应答", "unknown": "未知",
-	"direct": "大陆直连(旧口径)", "tunnel": "香港隧道(旧口径)",
-}
-
-func exitName(path string) string {
-	if name := exitNames[path]; name != "" {
-		return name
-	}
-	return path
-}
-
 func (s *Server) archEpoch() int64 {
 	raw, err := os.ReadFile(s.statePath("architecture-epoch"))
 	if err != nil {
@@ -186,8 +173,7 @@ func domainSummaryExtras(db *sql.DB, out map[string]any, now, since int64) {
 			var path string
 			var count int
 			if rows.Scan(&path, &count) == nil {
-				byExit = append(byExit, map[string]any{
-					"path": path, "name": exitName(path), "count": count})
+				byExit = append(byExit, map[string]any{"path": path, "count": count})
 			}
 		}
 	}
