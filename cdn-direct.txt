@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1790329595
+# generated-at: 1790415035
 # providers: 20
 # domains: 78
-# prefixes: 9771
+# prefixes: 9783
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -330,7 +330,6 @@ N	akamai	off	2001:418:4001:4::/64
 N	akamai	off	2001:590:2005:200::/56
 N	akamai	off	2001:c38:500a::/48
 N	akamai	off	2001:df4:4c40::/48
-N	akamai	off	2001:41a8:806:200::/56
 N	akamai	off	2001:41a8:807:100::/56
 N	akamai	off	2001:4450:40::/48
 N	akamai	off	2001:4457:ff0::/48
@@ -906,7 +905,9 @@ N	alibaba	off	155.102.48.0/20
 N	alibaba	off	155.102.64.0/23
 N	alibaba	off	155.102.68.0/23
 N	alibaba	off	155.102.70.0/24
-N	alibaba	off	155.102.72.0/21
+N	alibaba	off	155.102.72.0/23
+N	alibaba	off	155.102.75.0/24
+N	alibaba	off	155.102.76.0/22
 N	alibaba	off	155.102.80.0/24
 N	alibaba	off	155.102.82.0/23
 N	alibaba	off	155.102.84.0/23
@@ -4308,6 +4309,7 @@ N	amazon	off	163.253.46.0/23
 N	amazon	off	163.253.59.0/24
 N	amazon	off	164.37.198.0/23
 N	amazon	off	164.37.208.0/24
+N	amazon	off	164.37.233.0/24
 N	amazon	off	164.55.224.0/23
 N	amazon	off	164.55.227.0/24
 N	amazon	off	164.55.229.0/24
@@ -4823,7 +4825,7 @@ N	amazon	off	185.125.87.0/24
 N	amazon	off	185.126.156.0/23
 N	amazon	off	185.127.153.0/24
 N	amazon	off	185.131.228.0/22
-N	amazon	off	185.133.138.0/24
+N	amazon	off	185.133.138.0/23
 N	amazon	off	185.135.116.0/24
 N	amazon	off	185.135.128.0/24
 N	amazon	off	185.137.13.0/24
@@ -6027,6 +6029,7 @@ N	amazon	off	216.52.132.0/22
 N	amazon	off	216.52.136.0/22
 N	amazon	off	216.52.144.0/22
 N	amazon	off	216.52.152.0/22
+N	amazon	off	216.52.209.0/24
 N	amazon	off	216.52.240.0/24
 N	amazon	off	216.57.0.0/18
 N	amazon	off	216.57.102.0/23
@@ -6460,6 +6463,7 @@ N	amazon	off	2601:9200:160::/47
 N	amazon	off	2601:9200:163::/48
 N	amazon	off	2601:9200:164::/46
 N	amazon	off	2601:9200:168::/46
+N	amazon	off	2601:9200:16d::/48
 N	amazon	off	2601:9200:200d::/48
 N	amazon	off	2601:9200:2011::/48
 N	amazon	off	2601:9200:2029::/48
@@ -6693,8 +6697,10 @@ N	amazon	off	2605:9cc0:492::/47
 N	amazon	off	2605:9cc0:64d::/48
 N	amazon	off	2605:9cc0:c00::/47
 N	amazon	off	2605:9cc0:c03::/48
+N	amazon	off	2605:9cc0:c04::/48
 N	amazon	off	2605:9cc0:c07::/48
-N	amazon	off	2605:9cc0:c0a::/48
+N	amazon	off	2605:9cc0:c08::/48
+N	amazon	off	2605:9cc0:c0a::/47
 N	amazon	off	2605:9cc0:c0c::/48
 N	amazon	off	2605:9cc0:c0f::/48
 N	amazon	off	2605:9cc0:c14::/47
@@ -7473,8 +7479,10 @@ N	cloudflare	off	77.90.173.0/24
 N	cloudflare	off	78.128.122.0/24
 N	cloudflare	off	80.240.93.0/24
 N	cloudflare	off	82.21.82.0/24
+N	cloudflare	off	82.21.188.0/24
 N	cloudflare	off	82.22.16.0/24
 N	cloudflare	off	82.22.21.0/24
+N	cloudflare	off	82.22.49.0/24
 N	cloudflare	off	82.25.20.0/24
 N	cloudflare	off	82.26.156.0/24
 N	cloudflare	off	82.39.253.0/24
@@ -7489,6 +7497,7 @@ N	cloudflare	off	87.232.113.0/24
 N	cloudflare	off	88.216.69.0/24
 N	cloudflare	off	89.46.251.0/24
 N	cloudflare	off	89.106.90.0/24
+N	cloudflare	off	90.96.176.0/20
 N	cloudflare	off	91.206.71.0/24
 N	cloudflare	off	91.213.221.0/24
 N	cloudflare	off	91.224.186.0/24
@@ -7580,6 +7589,8 @@ N	cloudflare	off	151.245.127.0/24
 N	cloudflare	off	151.246.216.0/23
 N	cloudflare	off	152.114.0.0/17
 N	cloudflare	off	152.114.128.0/18
+N	cloudflare	off	153.51.214.0/23
+N	cloudflare	off	153.51.216.0/21
 N	cloudflare	off	153.79.172.0/23
 N	cloudflare	off	153.79.174.0/24
 N	cloudflare	off	154.46.20.0/24
@@ -7811,6 +7822,7 @@ N	cloudflare	off	2a09:bac4::/30
 N	cloudflare	off	2a0a:6c80::/29
 N	cloudflare	off	2a0b:85c7:ffff::/48
 N	cloudflare	off	2a13:9500:3e::/48
+N	cloudflare	off	2a13:9500:1e4::/48
 N	cloudflare	off	2a14:a087::/47
 N	cloudflare	off	2c0f:f248::/32
 N	fastly	off	23.154.64.0/24
@@ -8987,6 +8999,7 @@ N	microsoft	off	134.138.0.0/16
 N	microsoft	off	134.149.0.0/16
 N	microsoft	off	134.170.0.0/16
 N	microsoft	off	134.217.7.0/24
+N	microsoft	off	134.217.160.0/24
 N	microsoft	off	135.1.0.0/16
 N	microsoft	off	135.3.0.0/16
 N	microsoft	off	135.4.0.0/14
@@ -9847,7 +9860,6 @@ N	tencent	off	162.62.240.0/23
 N	tencent	off	162.62.244.0/22
 N	tencent	off	162.62.248.0/23
 N	tencent	off	162.62.250.0/24
-N	tencent	off	162.62.252.0/23
 N	tencent	off	162.62.254.0/24
 N	tencent	off	170.106.0.0/17
 N	tencent	off	170.106.128.0/18
