@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1790415035
+# generated-at: 1790503852
 # providers: 20
 # domains: 78
-# prefixes: 9783
+# prefixes: 9782
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -3422,7 +3422,6 @@ N	amazon	off	130.248.236.0/23
 N	amazon	off	130.248.238.0/24
 N	amazon	off	131.127.0.0/16
 N	amazon	off	131.143.28.0/24
-N	amazon	off	131.143.52.0/24
 N	amazon	off	131.143.244.0/24
 N	amazon	off	131.149.232.0/22
 N	amazon	off	131.168.0.0/16
@@ -4700,7 +4699,7 @@ N	amazon	off	176.116.14.0/24
 N	amazon	off	176.116.21.0/24
 N	amazon	off	176.124.224.0/24
 N	amazon	off	176.221.80.0/22
-N	amazon	off	177.28.8.0/24
+N	amazon	off	177.28.8.0/23
 N	amazon	off	177.71.128.0/17
 N	amazon	off	177.72.240.0/21
 N	amazon	off	178.21.148.0/24
@@ -7573,7 +7572,7 @@ N	cloudflare	off	144.124.211.0/24
 N	cloudflare	off	144.124.212.0/24
 N	cloudflare	off	144.124.214.0/23
 N	cloudflare	off	144.208.122.0/24
-N	cloudflare	off	144.225.66.0/24
+N	cloudflare	off	144.225.66.0/23
 N	cloudflare	off	144.225.90.0/24
 N	cloudflare	off	145.63.64.0/24
 N	cloudflare	off	145.224.255.0/24
