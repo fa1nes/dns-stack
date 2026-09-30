@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 )
@@ -291,18 +290,9 @@ func (s *Server) collectedInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer db.Close()
-	now := time.Now()
-	if s.clock != nil {
-		now = s.clock()
-	}
-	since := now.Unix() - 86400
-	if content, err := os.ReadFile(s.statePath("architecture-epoch")); err == nil {
-		if epoch, err := strconv.ParseInt(strings.TrimSpace(string(content)), 10, 64); err == nil && epoch > since {
-			since = epoch
-		}
-	}
+	since := s.statsWindowStart(s.now().Unix())
 	out := map[string]any{}
-	for key, query := range map[string]string{"domains_total": "SELECT COUNT(*) FROM domains", "domains_active_24h": "SELECT COUNT(DISTINCT domain) FROM query_events WHERE ts >= ?", "queries_24h": "SELECT COUNT(*) FROM query_events WHERE ts >= ?"} {
+	for key, query := range map[string]string{"domains_total": "SELECT COUNT(*) FROM domains", "domains_active_24h": "SELECT COUNT(DISTINCT +domain) FROM query_events WHERE ts >= ?", "queries_24h": "SELECT COUNT(*) FROM query_events WHERE ts >= ?"} {
 		args := []any{}
 		if key != "domains_total" {
 			args = append(args, since)
@@ -314,7 +304,7 @@ func (s *Server) collectedInfo(w http.ResponseWriter, r *http.Request) {
 		}
 		out[key] = count
 	}
-	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS c FROM query_events WHERE ts >= ? AND rcode NOT IN (0,3) GROUP BY domain", since)
+	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS c FROM query_events WHERE ts >= ? AND rcode NOT IN (0,3) GROUP BY +domain", since)
 	if err != nil {
 		out["error"] = err.Error()
 	} else {

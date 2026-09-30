@@ -24,14 +24,11 @@ func (s *Server) archEpoch() int64 {
 	return value
 }
 
-const latencySampleCap = 10000
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
+func (s *Server) statsWindowStart(now int64) int64 {
+	return max(now-86400, s.archEpoch())
 }
+
+const latencySampleCap = 10000
 
 const (
 	resolveCap      = 60
@@ -196,12 +193,12 @@ func domainSummaryExtras(ctx context.Context, db *sql.DB, out map[string]any, no
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE first_seen_at >= ?", since).Scan(&new24); err != nil {
 		return err
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", max64(now-3600, since)).Scan(&active1h); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM domains WHERE last_seen_at >= ?", max(now-3600, since)).Scan(&active1h); err != nil {
 		return err
 	}
 
 	if err := db.QueryRowContext(ctx,
-		"SELECT COUNT(DISTINCT domain) FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?",
+		"SELECT COUNT(DISTINCT +domain) FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?",
 		since).Scan(&failing); err != nil {
 		return err
 	}

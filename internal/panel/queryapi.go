@@ -340,10 +340,7 @@ func (s *Server) domainSummary(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	now := s.now().Unix()
-	since := now - 86400
-	if epoch := s.archEpoch(); epoch > since {
-		since = epoch
-	}
+	since := s.statsWindowStart(now)
 	out := map[string]any{}
 	if err := domainSummaryExtras(r.Context(), db, out, now, since); err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败"})
@@ -407,14 +404,6 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 		series = append(series, map[string]any{"t": since + b*int64(step), "cn": x["cn"], "foreign": x["foreign"], "cache": x["cache"], "reject": x["reject"], "unknown": x["unknown"]})
 	}
 	writeJSON(w, 200, map[string]any{"series": series, "step": step, "start": since, "end": now})
-}
-
-func (s *Server) domainDetail(w http.ResponseWriter, r *http.Request) {
-	s.detailInfo(w, r)
-}
-
-func (s *Server) collected(w http.ResponseWriter, r *http.Request) {
-	s.collectedInfo(w, r)
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
