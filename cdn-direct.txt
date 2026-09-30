@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1790764957
+# generated-at: 1790781032
 # providers: 20
 # domains: 78
-# prefixes: 9807
+# prefixes: 9814
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -2416,7 +2416,6 @@ N	amazon	off	67.222.254.0/24
 N	amazon	off	67.226.220.0/22
 N	amazon	off	68.64.4.0/23
 N	amazon	off	68.64.8.0/22
-N	amazon	off	68.64.20.0/24
 N	amazon	off	68.66.112.0/20
 N	amazon	off	68.67.112.0/24
 N	amazon	off	68.67.122.0/24
@@ -4490,6 +4489,7 @@ N	amazon	off	168.203.44.0/24
 N	amazon	off	168.203.63.0/24
 N	amazon	off	168.203.64.0/18
 N	amazon	off	168.203.128.0/17
+N	amazon	off	168.222.17.0/24
 N	amazon	off	168.222.121.0/24
 N	amazon	off	168.225.7.0/24
 N	amazon	off	168.225.11.0/24
@@ -5780,6 +5780,7 @@ N	amazon	off	208.72.192.0/21
 N	amazon	off	208.73.5.0/24
 N	amazon	off	208.73.7.0/24
 N	amazon	off	208.76.65.0/24
+N	amazon	off	208.77.164.0/24
 N	amazon	off	208.78.4.0/22
 N	amazon	off	208.78.128.0/21
 N	amazon	off	208.78.152.0/22
@@ -7587,6 +7588,7 @@ N	cloudflare	off	144.124.208.0/24
 N	cloudflare	off	144.124.211.0/24
 N	cloudflare	off	144.124.212.0/24
 N	cloudflare	off	144.124.214.0/23
+N	cloudflare	off	144.124.223.0/24
 N	cloudflare	off	144.208.122.0/24
 N	cloudflare	off	144.225.66.0/23
 N	cloudflare	off	144.225.90.0/24
@@ -8183,7 +8185,12 @@ N	huawei	off	159.138.72.0/23
 N	huawei	off	159.138.76.0/22
 N	huawei	off	159.138.80.0/20
 N	huawei	off	159.138.96.0/19
-N	huawei	off	159.138.128.0/18
+N	huawei	off	159.138.128.0/19
+N	huawei	off	159.138.160.0/20
+N	huawei	off	159.138.176.0/21
+N	huawei	off	159.138.185.0/24
+N	huawei	off	159.138.186.0/23
+N	huawei	off	159.138.188.0/22
 N	huawei	off	159.138.192.0/20
 N	huawei	off	159.138.208.0/21
 N	huawei	off	159.138.216.0/22
