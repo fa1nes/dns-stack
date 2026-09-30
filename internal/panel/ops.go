@@ -379,10 +379,13 @@ func (s *Server) authOAuth(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	for i := range users {
-		users[i] = strings.ToLower(strings.TrimSpace(users[i]))
+	cleaned := []string{}
+	for _, user := range users {
+		if user = strings.ToLower(strings.TrimSpace(user)); user != "" {
+			cleaned = append(cleaned, user)
+		}
 	}
-	update := map[string]any{"oauth": map[string]any{"client_id": strings.TrimSpace(p.ClientID), "client_secret": strings.TrimSpace(p.ClientSecret), "allowed_users": users}}
+	update := map[string]any{"oauth": map[string]any{"client_id": strings.TrimSpace(p.ClientID), "client_secret": strings.TrimSpace(p.ClientSecret), "allowed_users": cleaned}}
 	s.commitAuthUpdate(w, r, update, "set_oauth_config", "已保存 GitHub OAuth 配置")
 }
 
@@ -404,15 +407,11 @@ func (s *Server) passwordToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Disabled {
-		clientID, _ := rec.OAuth["client_id"].(string)
-		secret, _ := rec.OAuth["client_secret"].(string)
-		users, _ := rec.OAuth["allowed_users"].([]any)
-		verified := boolValue(rec.OAuth["verified_once"])
-		if strings.TrimSpace(clientID) == "" || strings.TrimSpace(secret) == "" || len(users) == 0 {
+		if !oauthReady(rec) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "OAuth 尚未配置完整(需要 Client ID / Secret / 允许的用户)"})
 			return
 		}
-		if !verified {
+		if !boolValue(rec.OAuth["verified_once"]) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "请先用 GitHub 成功登录一次，确认通路可用后再关闭密码登录"})
 			return
 		}

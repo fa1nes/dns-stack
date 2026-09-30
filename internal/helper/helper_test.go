@@ -229,17 +229,42 @@ func TestMergeAuthUpdateRefusesCredentialFields(t *testing.T) {
 func TestMergeAuthUpdateOAuthSemantics(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	writeRecord(t, path, map[string]any{"oauth": map[string]any{
-		"client_id": "old", "client_secret": "kept", "verified_once": true,
+		"client_id": "same", "client_secret": "kept", "verified_once": true,
 	}})
 	merged := MergeAuthUpdate(path, map[string]any{"oauth": map[string]any{
-		"client_id": "new", "client_secret": "   ", "verified_once": false,
+		"client_id": "same", "client_secret": "   ", "verified_once": false,
 		"allowed_users": []any{"someone"},
 	}})
 	oauth := merged["oauth"].(map[string]any)
-	equal(t, "client_id 更新", oauth["client_id"], "new")
+	equal(t, "client_id 更新", oauth["client_id"], "same")
 	equal(t, "空 client_secret 表示不改动", oauth["client_secret"], "kept")
 	equal(t, "verified_once 不可被前端清除", oauth["verified_once"], true)
 	equal(t, "allowed_users 可写", oauth["allowed_users"], []any{"someone"})
+}
+
+func TestMergeAuthUpdateRetiresVerifiedOnceWhenCredentialsChange(t *testing.T) {
+	stored := map[string]any{"client_id": "app-a", "client_secret": "secret-a", "verified_once": true}
+	for _, tc := range []struct {
+		name     string
+		incoming map[string]any
+		want     bool
+	}{
+		{"换了 Client ID", map[string]any{"client_id": "app-b", "client_secret": ""}, false},
+		{"换了 Secret", map[string]any{"client_id": "app-a", "client_secret": "secret-b"}, false},
+		{"只改允许账号", map[string]any{"client_id": "app-a", "client_secret": "", "allowed_users": []any{"x"}}, true},
+		{"回调只标记通路已验证", map[string]any{"verified_once": true}, true},
+	} {
+		path := filepath.Join(t.TempDir(), "auth.json")
+		writeRecord(t, path, map[string]any{"oauth": stored})
+		merged := MergeAuthUpdate(path, map[string]any{"oauth": tc.incoming})
+		oauth := merged["oauth"].(map[string]any)
+		if oauth["verified_once"] != tc.want {
+			t.Errorf("%s: verified_once = %v, want %v——"+
+				"「已用 GitHub 登录成功一次」证明的是那一对凭据可用，换掉凭据后这个标记就不再有效；"+
+				"它一旦粘住，关闭密码登录的闸门就会放行一条从未验证过的通路，结果是彻底登不进面板",
+				tc.name, oauth["verified_once"], tc.want)
+		}
+	}
 }
 
 func TestMergeAuthUpdateTOTPRemovalAndWhitelist(t *testing.T) {

@@ -16,7 +16,11 @@ func oauthUsers(rec authRecord) []string {
 	users := []string{}
 	if values, ok := rec.OAuth["allowed_users"].([]any); ok {
 		for _, value := range values {
-			if user, ok := value.(string); ok && user != "" {
+			user, ok := value.(string)
+			if !ok {
+				continue
+			}
+			if user = strings.ToLower(strings.TrimSpace(user)); user != "" {
 				users = append(users, user)
 			}
 		}

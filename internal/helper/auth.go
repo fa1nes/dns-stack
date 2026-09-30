@@ -116,6 +116,23 @@ func truthy(raw any) bool {
 	}
 }
 
+func oauthCredentialReplaced(old, incoming map[string]any) bool {
+	changed := func(key string, blankKeeps bool) bool {
+		raw, present := incoming[key]
+		if !present {
+			return false
+		}
+		next, _ := raw.(string)
+		next = strings.TrimSpace(next)
+		if next == "" && blankKeeps {
+			return false
+		}
+		previous, _ := old[key].(string)
+		return next != strings.TrimSpace(previous)
+	}
+	return changed("client_id", false) || changed("client_secret", true)
+}
+
 func MergeAuthUpdate(authPath string, update map[string]any) map[string]any {
 	record := loadAuthRecord(authPath)
 	for key, value := range update {
@@ -138,7 +155,11 @@ func MergeAuthUpdate(authPath string, update map[string]any) map[string]any {
 			if secret, _ := incoming["client_secret"].(string); strings.TrimSpace(secret) == "" {
 				merged["client_secret"] = old["client_secret"]
 			}
-			merged["verified_once"] = truthy(old["verified_once"]) || truthy(incoming["verified_once"])
+			if oauthCredentialReplaced(old, incoming) {
+				merged["verified_once"] = false
+			} else {
+				merged["verified_once"] = truthy(old["verified_once"]) || truthy(incoming["verified_once"])
+			}
 			record["oauth"] = merged
 		case "totp":
 			incoming := objectValue(value)
