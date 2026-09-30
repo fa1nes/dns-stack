@@ -1979,7 +1979,14 @@ function startLogFollow() {
       }
     } catch (e) {  }
   };
-  es.onerror = () => { toast('日志实时流中断', '正在自动重连…', 'err'); };
+  es.onerror = () => {
+    if (state.logES !== es) return;
+    setBtnState($('#btnLogFollow'), ICON_PAUSE, '重连中…');
+  };
+  es.onopen = () => {
+    if (state.logES !== es) return;
+    setBtnState($('#btnLogFollow'), ICON_PAUSE, '暂停');
+  };
 }
 
 function stopLogFollow() {
@@ -2791,7 +2798,10 @@ function bindEvents() {
     if (state.logFollow) { stopLogFollow(); startLogFollow(); }
     loadLogs();
   });
-  $('#logPriority').addEventListener('change', loadLogs);
+  $('#logPriority').addEventListener('change', () => {
+    if (state.logFollow) { stopLogFollow(); startLogFollow(); }
+    loadLogs();
+  });
 
   window.addEventListener('hashchange', () => {
     const target = location.hash.replace(/^#/, '');
