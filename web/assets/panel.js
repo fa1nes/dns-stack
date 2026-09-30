@@ -401,7 +401,8 @@ function switchPage(page) {
 
   if (page !== 'queries' && state.liveOn) stopLive();
   if (page !== 'tools' && state.logFollow) stopLogFollow();
-  if (state.overviewTimer) { clearInterval(state.overviewTimer); state.overviewTimer = null; }
+  latestOnly('overview-loop');
+  if (state.overviewTimer) { clearTimeout(state.overviewTimer); state.overviewTimer = null; }
 
   const loaders = {
     overview: startOverview,
@@ -422,10 +423,11 @@ function switchPage(page) {
 
 function startOverview() {
   loadTimeseries();
+  const alive = latestOnly('overview-loop');
   let sinceModules = Infinity;
   const tick = async () => {
     state.overviewTimer = 0;
-    if (state.page !== 'overview') return;
+    if (!alive() || state.page !== 'overview') return;
     if (!document.hidden) {
       try { await loadOverview(); } catch (e) {  }
       if (sinceModules >= 30000) {
@@ -434,7 +436,8 @@ function startOverview() {
       }
       sinceModules += 5000;
     }
-    if (state.page === 'overview') state.overviewTimer = setTimeout(tick, 5000);
+    if (!alive() || state.page !== 'overview') return;
+    state.overviewTimer = setTimeout(tick, 5000);
   };
   tick();
 }
@@ -698,10 +701,17 @@ function renderUnbound(u) {
 
 async function loadTimeseries() {
   const span = Number($('#tsSpan').value || 3600);
+  const fresh = latestOnly('timeseries');
   try {
-    state.tsData = await api('/api/timeseries?span=' + span + '&buckets=72');
+    const d = await api('/api/timeseries?span=' + span + '&buckets=72');
+    if (!fresh()) return;
+    state.tsData = d;
     drawChart(state.tsData);
-  } catch (e) { state.tsData = null; }
+  } catch (e) {
+    if (!fresh()) return;
+    state.tsData = null;
+    setHtml($('#tsChart'), errState(e));
+  }
 }
 
 function drawChart(d) {
@@ -1349,8 +1359,10 @@ const SERVER_NAMES = {
 
 async function showDomain(domain) {
   openDrawer(domain);
+  const fresh = latestOnly('domain-detail');
   try {
     const d = await api('/api/domain/' + encodeURIComponent(domain) + '?live=true');
+    if (!fresh()) return;
     const parts = [];
 
     parts.push(html`<h4>递归出口</h4>`);
@@ -1418,6 +1430,7 @@ async function showDomain(domain) {
     const delBtn = $('#btnDelDomain');
     if (delBtn) delBtn.addEventListener('click', () => deleteDomain(domain));
   } catch (e) {
+    if (!fresh()) return;
     setHtml($('#drawerBody'), errState(e));
   }
 }

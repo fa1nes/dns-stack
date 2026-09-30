@@ -9,9 +9,12 @@ import (
 
 var loaderStart = regexp.MustCompile(`(?m)^(?:async )?function ([A-Za-z0-9_]+)\(`)
 
+var dynamicGet = regexp.MustCompile(`await api(?:Cached)?\([^\n]*`)
+
 var mustGuardAgainstOutOfOrderResponses = []string{
 	"loadQueries", "loadDomains", "loadDomainSummary",
 	"loadLogs", "loadCdnHit", "loadIpLookup",
+	"loadTimeseries", "showDomain",
 }
 
 func panelScript(t *testing.T) string {
@@ -37,6 +40,18 @@ func functionBodies(script string) map[string]string {
 	return bodies
 }
 
+func buildsRequestFromChangingParams(body string) bool {
+	for _, call := range dynamicGet.FindAllString(body, -1) {
+		if strings.Contains(call, "method") {
+			continue
+		}
+		if strings.Contains(call, "+") || strings.Contains(call, "${") {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSwitchableLoadersIgnoreStaleResponses(t *testing.T) {
 	bodies := functionBodies(panelScript(t))
 	for _, name := range mustGuardAgainstOutOfOrderResponses {
@@ -52,9 +67,51 @@ func TestSwitchableLoadersIgnoreStaleResponses(t *testing.T) {
 	}
 }
 
+func TestEveryLoaderWithAChangingPathIsOnTheGuardList(t *testing.T) {
+	listed := map[string]bool{}
+	for _, name := range mustGuardAgainstOutOfOrderResponses {
+		listed[name] = true
+	}
+	for name, body := range functionBodies(panelScript(t)) {
+		if !buildsRequestFromChangingParams(body) || listed[name] {
+			continue
+		}
+		t.Errorf("%s 把会变的参数拼进了 GET 路径，却既不在守卫清单里也没有 latestOnly()——"+
+			"上面那条检查只认手写清单，新加的 loader 漏进来时它不会报警", name)
+	}
+}
+
+func TestGuardListDoesNotOutliveTheCriterionThatFeedsIt(t *testing.T) {
+	bodies := functionBodies(panelScript(t))
+	matched := 0
+	for _, body := range bodies {
+		if buildsRequestFromChangingParams(body) {
+			matched++
+		}
+	}
+	if matched == 0 {
+		t.Fatal("判据一个 loader 都没匹配上，说明 panel.js 的请求写法变了，" +
+			"上面那条补漏检查已经变成空转")
+	}
+}
+
 func TestLatestOnlyGuardStillExists(t *testing.T) {
 	script := panelScript(t)
 	if !strings.Contains(script, "function latestOnly(") {
 		t.Fatal("latestOnly 没了，上面那条守卫检查会全部变成空转")
+	}
+}
+
+func TestOverviewPollLoopCannotBeStartedTwice(t *testing.T) {
+	body, found := functionBodies(panelScript(t))["startOverview"]
+	if !found {
+		t.Fatal("panel.js 里没有 startOverview 了")
+	}
+	if !strings.Contains(body, "latestOnly(") {
+		t.Error("startOverview 没有代号守卫——切出 overview 再切回来会让上一轮 tick 在 " +
+			"await 之后重新发现 page==='overview' 并自己续上定时器，两条 5 秒轮询同时跑")
+	}
+	if strings.Contains(body, "clearInterval") {
+		t.Error("startOverview 的句柄来自 setTimeout，却用 clearInterval 去取消，读代码的人会误判它是间隔定时器")
 	}
 }
