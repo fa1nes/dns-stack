@@ -105,18 +105,29 @@ func TestExportTruncation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	items, err := exportQueryItems(context.Background(), db, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	items := collectExport(t, openQueryExport, db, 2)
 	checkedEqual(t, "truncated to limit", len(items), 2)
 	checkedEqual(t, "ascending order", []any{items[0]["id"], items[1]["id"]}, []any{1, 2})
-	domains, err := exportDomainItems(context.Background(), db, 1)
+	domains := collectExport(t, openDomainExport, db, 1)
+	checkedEqual(t, "domain truncation", len(domains), 1)
+	checkedEqual(t, "highest count first", domains[0]["domain"], "www.example.com")
+}
+
+func collectExport(t *testing.T, open func(context.Context, *sql.DB, int) (*exportCursor, error), db *sql.DB, limit int) []map[string]any {
+	t.Helper()
+	cursor, err := open(context.Background(), db, limit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkedEqual(t, "domain truncation", len(domains), 1)
-	checkedEqual(t, "highest count first", domains[0]["domain"], "www.example.com")
+	defer cursor.close()
+	items := []map[string]any{}
+	if err := cursor.each(func(item map[string]any) error {
+		items = append(items, item)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return items
 }
 
 func TestExportBadParams(t *testing.T) {

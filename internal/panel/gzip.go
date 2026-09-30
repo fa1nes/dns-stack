@@ -10,9 +10,20 @@ import (
 
 const gzipMinSize = 512
 
+var selfStreamingPaths = []string{"/api/export"}
+
+func streamsItsOwnBody(path string) bool {
+	for _, prefix := range selfStreamingPaths {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/stream") ||
+		if strings.HasSuffix(r.URL.Path, "/stream") || streamsItsOwnBody(r.URL.Path) ||
 			!strings.HasPrefix(r.URL.Path, "/api/") || !clientAcceptsGzip(r) {
 			next.ServeHTTP(w, r)
 			return

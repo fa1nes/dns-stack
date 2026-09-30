@@ -2,10 +2,13 @@ package panel
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/netip"
 	"os"
@@ -109,87 +112,157 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer db.Close()
-	var items []map[string]any
-	if dataset == "queries" {
-		items, err = exportQueryItems(r.Context(), db, exportRowLimit)
-	} else {
-		items, err = exportDomainItems(r.Context(), db, exportRowLimit)
+	columns, open := exportQueryColumns, openQueryExport
+	if dataset == "domains" {
+		columns, open = exportDomainColumns, openDomainExport
 	}
+	cursor, err := open(r.Context(), db, exportRowLimit)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "查询失败"})
 		return
 	}
+	defer cursor.close()
 	if format == "csv" {
-		columns := exportQueryColumns
-		if dataset == "domains" {
-			columns = exportDomainColumns
-		}
-		writeExportCSV(w, columns, items)
-		return
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	}
-	writeExportJSON(w, items)
+	body, finish := exportStream(w, r)
+	var streamErr error
+	if format == "csv" {
+		streamErr = streamExportCSV(body, columns, cursor)
+	} else {
+		streamErr = streamExportJSON(body, cursor)
+	}
+	finish()
+	if streamErr != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
-func exportQueryItems(ctx context.Context, db *sql.DB, limit int) ([]map[string]any, error) {
+type exportCursor struct {
+	rows *sql.Rows
+	item func(*sql.Rows) (map[string]any, error)
+}
+
+func (c *exportCursor) close() { c.rows.Close() }
+
+func (c *exportCursor) each(fn func(map[string]any) error) error {
+	for c.rows.Next() {
+		item, err := c.item(c.rows)
+		if err != nil {
+			return err
+		}
+		if err := fn(item); err != nil {
+			return err
+		}
+	}
+	return c.rows.Err()
+}
+
+func openQueryExport(ctx context.Context, db *sql.DB, limit int) (*exportCursor, error) {
 	rows, err := db.QueryContext(ctx, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events ORDER BY id ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items := []map[string]any{}
-	for rows.Next() {
-		var id, ts, qt, rc int64
-		var domain, resp, route, tag string
-		var prefetch int64
-		var elapsed sql.NullFloat64
-		var exit sql.NullString
-		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
-			return nil, err
-		}
-		items = append(items, queryItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit))
-	}
-	return items, rows.Err()
+	return &exportCursor{rows: rows, item: scanQueryItem}, nil
 }
 
-func exportDomainItems(ctx context.Context, db *sql.DB, limit int) ([]map[string]any, error) {
+func scanQueryItem(rows *sql.Rows) (map[string]any, error) {
+	var id, ts, qt, rc int64
+	var domain, resp, route, tag string
+	var prefetch int64
+	var elapsed sql.NullFloat64
+	var exit sql.NullString
+	if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
+		return nil, err
+	}
+	return queryItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit), nil
+}
+
+func openDomainExport(ctx context.Context, db *sql.DB, limit int) (*exportCursor, error) {
 	rows, err := db.QueryContext(ctx, "SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains ORDER BY occurrence_count DESC, domain ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items := []map[string]any{}
-	for rows.Next() {
-		var d, lr sql.NullString
-		var first, last, count, fail, rcode sql.NullInt64
-		if err := rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr); err != nil {
-			return nil, err
-		}
-		items = append(items, domainItem(d, first, last, count, fail, rcode, lr))
+	return &exportCursor{rows: rows, item: scanDomainItem}, nil
+}
+
+func scanDomainItem(rows *sql.Rows) (map[string]any, error) {
+	var d, lr sql.NullString
+	var first, last, count, fail, rcode sql.NullInt64
+	if err := rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr); err != nil {
+		return nil, err
 	}
-	return items, rows.Err()
+	return domainItem(d, first, last, count, fail, rcode, lr), nil
+}
+
+func exportStream(w http.ResponseWriter, r *http.Request) (io.Writer, func()) {
+	if clientAcceptsGzip(r) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+		zw := gzip.NewWriter(w)
+		buffered := bufio.NewWriterSize(zw, 32*1024)
+		return buffered, func() { buffered.Flush(); zw.Close() }
+	}
+	w.WriteHeader(http.StatusOK)
+	buffered := bufio.NewWriterSize(w, 32*1024)
+	return buffered, func() { buffered.Flush() }
+}
+
+func streamExportJSON(w io.Writer, cursor *exportCursor) error {
+	if _, err := w.Write([]byte("[")); err != nil {
+		return err
+	}
+	var line bytes.Buffer
+	encoder := json.NewEncoder(&line)
+	encoder.SetEscapeHTML(false)
+	first := true
+	if err := cursor.each(func(item map[string]any) error {
+		line.Reset()
+		if err := encoder.Encode(item); err != nil {
+			return err
+		}
+		if !first {
+			if _, err := w.Write([]byte(",")); err != nil {
+				return err
+			}
+		}
+		first = false
+		_, err := w.Write(bytes.TrimRight(line.Bytes(), "\n"))
+		return err
+	}); err != nil {
+		return err
+	}
+	_, err := w.Write([]byte("]\n"))
+	return err
+}
+
+func streamExportCSV(w io.Writer, columns []string, cursor *exportCursor) error {
+	writer := csv.NewWriter(w)
+	if err := writer.Write(columns); err != nil {
+		return err
+	}
+	record := make([]string, len(columns))
+	if err := cursor.each(func(item map[string]any) error {
+		for i, column := range columns {
+			record[i] = exportCSVValue(item[column])
+		}
+		return writer.Write(record)
+	}); err != nil {
+		return err
+	}
+	writer.Flush()
+	return writer.Error()
 }
 
 func writeExportJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
-}
-
-func writeExportCSV(w http.ResponseWriter, columns []string, items []map[string]any) {
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	writer := csv.NewWriter(w)
-	_ = writer.Write(columns)
-	record := make([]string, len(columns))
-	for _, item := range items {
-		for i, column := range columns {
-			record[i] = exportCSVValue(item[column])
-		}
-		_ = writer.Write(record)
-	}
-	writer.Flush()
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(v)
 }
 
 func exportCSVValue(value any) string {
