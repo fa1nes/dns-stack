@@ -96,48 +96,6 @@ func TestUnpackAddressesAndTargets(t *testing.T) {
 	}
 }
 
-func TestUnpackSVCBHints(t *testing.T) {
-	b := newBuilder(1, RCodeNoError, "example.com", TypeHTTPS)
-	b.addAnswer("example.com", TypeHTTPS, func(bb *builder) {
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 1)
-
-		out, err := appendName(nil, "svc.example.net")
-		if err != nil {
-			t.Fatalf("appendName 失败: %v", err)
-		}
-		bb.buf = append(bb.buf, out...)
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 1)
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 3)
-		bb.buf = append(bb.buf, 2, 'h', '2')
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 4)
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 8)
-		bb.buf = append(bb.buf, 1, 1, 1, 1, 116, 5, 6, 7)
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 6)
-		bb.buf = binary.BigEndian.AppendUint16(bb.buf, 16)
-		addr := netip.MustParseAddr("2606:4700::1").As16()
-		bb.buf = append(bb.buf, addr[:]...)
-	})
-
-	msg, err := Unpack(b.buf)
-	if err != nil {
-		t.Fatalf("Unpack 失败: %v", err)
-	}
-	svcb, ok := msg.Answers[0].SVCB(b.buf)
-	if !ok {
-		t.Fatal("SVCB 解析失败")
-	}
-	if svcb.Priority != 1 || svcb.Target != "svc.example.net" {
-		t.Fatalf("SVCB 头解析错误: %+v", svcb)
-	}
-	if len(svcb.IPv4Hint) != 2 || svcb.IPv4Hint[0].String() != "1.1.1.1" ||
-		svcb.IPv4Hint[1].String() != "116.5.6.7" {
-		t.Fatalf("ipv4hint 解析错误: %v", svcb.IPv4Hint)
-	}
-	if len(svcb.IPv6Hint) != 1 || svcb.IPv6Hint[0].String() != "2606:4700::1" {
-		t.Fatalf("ipv6hint 解析错误: %v", svcb.IPv6Hint)
-	}
-}
-
 func TestUnpackRejectsMalformedMessages(t *testing.T) {
 	if _, err := Unpack([]byte{1, 2, 3}); err == nil {
 		t.Fatal("过短报文应报错")
@@ -184,12 +142,6 @@ func TestNameHelpers(t *testing.T) {
 	}
 	if got := TypeName(9999); got != "TYPE9999" {
 		t.Fatalf("未知类型应回报数字，实际 %q", got)
-	}
-	if _, ok := TypeByName("mx"); ok {
-		t.Fatal("未支持的类型不该被接受")
-	}
-	if v, ok := TypeByName(" aaaa "); !ok || v != TypeAAAA {
-		t.Fatalf("TypeByName(aaaa) = %d ok=%v", v, ok)
 	}
 	if _, err := appendName(nil, "a..b"); err == nil {
 		t.Fatal("空标签应报错")

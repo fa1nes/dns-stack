@@ -7,16 +7,13 @@ import (
 	"errors"
 	"net"
 	"net/netip"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 )
 
 const (
-	MaxCNAMEDepth  = 16
 	DefaultTimeout = 15 * time.Second
 	maxUDPResponse = 4096
 )
@@ -28,16 +25,6 @@ const (
 	StatusNXDomain
 	StatusServFail
 	StatusTimeout
-)
-
-const (
-	ReasonAnswer    = "answer"
-	ReasonNXDomain  = "nxdomain"
-	ReasonNoData    = "nodata"
-	ReasonCNAMELoop = "cname_loop"
-	ReasonMaxDepth  = "max_depth"
-	ReasonTimeout   = "timeout"
-	ReasonServFail  = "servfail"
 )
 
 type Answer struct {
@@ -239,194 +226,4 @@ func TargetNames(a Answer, rtype uint16) []string {
 		}
 	}
 	return out
-}
-
-func ServiceHints(answers ...Answer) ([]netip.Addr, []netip.Addr) {
-	var v4, v6 []netip.Addr
-	for _, a := range answers {
-		if a.Status != StatusOK || a.Msg == nil {
-			continue
-		}
-		for _, rr := range a.Msg.Answers {
-			svcb, ok := rr.SVCB(a.Raw)
-			if !ok {
-				continue
-			}
-			v4 = append(v4, svcb.IPv4Hint...)
-			v6 = append(v6, svcb.IPv6Hint...)
-		}
-	}
-	return v4, v6
-}
-
-func ServiceTargets(answers ...Answer) []string {
-	var out []string
-	seen := make(map[string]struct{})
-	for _, a := range answers {
-		if a.Status != StatusOK || a.Msg == nil {
-			continue
-		}
-		for _, rr := range a.Msg.Answers {
-			svcb, ok := rr.SVCB(a.Raw)
-			if !ok {
-				continue
-			}
-			target := dnswire.NormalizeName(svcb.Target)
-			if target == "" {
-				continue
-			}
-			if _, dup := seen[target]; dup {
-				continue
-			}
-			seen[target] = struct{}{}
-			out = append(out, target)
-		}
-	}
-	return out
-}
-
-type Outcome struct {
-	OK         bool
-	Reason     string
-	CNAMEChain []string
-	A          []netip.Addr
-	AAAA       []netip.Addr
-}
-
-type addrSet struct {
-	mu   sync.Mutex
-	seen map[netip.Addr]struct{}
-}
-
-func newAddrSet() *addrSet {
-	return &addrSet{seen: make(map[netip.Addr]struct{})}
-}
-
-func (s *addrSet) add(values ...netip.Addr) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, v := range values {
-		if v.IsValid() {
-			s.seen[v.Unmap()] = struct{}{}
-		}
-	}
-}
-
-func (s *addrSet) sorted() []netip.Addr {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]netip.Addr, 0, len(s.seen))
-	for v := range s.seen {
-		out = append(out, v)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Compare(out[j]) < 0 })
-	return out
-}
-
-func Chain(ctx context.Context, c *Client, domain string) Outcome {
-	type item struct {
-		name      string
-		ancestors []string
-	}
-	var chain []string
-	inChain := make(map[string]struct{})
-	seen := make(map[string]struct{})
-	v4 := newAddrSet()
-	v6 := newAddrSet()
-	failures := make(map[string]struct{})
-	queue := []item{{name: dnswire.NormalizeName(domain)}}
-
-	appendChain := func(name string) {
-		if _, ok := inChain[name]; ok {
-			return
-		}
-		inChain[name] = struct{}{}
-		chain = append(chain, name)
-	}
-
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for _, ancestor := range current.ancestors {
-			if ancestor == current.name {
-				return Outcome{Reason: ReasonCNAMELoop, CNAMEChain: chain}
-			}
-		}
-		if len(current.ancestors) >= MaxCNAMEDepth {
-			return Outcome{Reason: ReasonMaxDepth, CNAMEChain: chain}
-		}
-		if _, ok := seen[current.name]; ok {
-			continue
-		}
-		seen[current.name] = struct{}{}
-
-		cname := c.Query(ctx, current.name, dnswire.TypeCNAME)
-		switch cname.Status {
-		case StatusTimeout:
-			failures[ReasonTimeout] = struct{}{}
-			continue
-		case StatusServFail:
-			failures[ReasonServFail] = struct{}{}
-			continue
-		case StatusNXDomain:
-			failures[ReasonNXDomain] = struct{}{}
-			continue
-		}
-		if targets := TargetNames(cname, dnswire.TypeCNAME); len(targets) > 0 {
-			target := dnswire.NormalizeName(targets[0])
-			appendChain(target)
-			queue = append(queue, item{
-				name:      target,
-				ancestors: append(append([]string{}, current.ancestors...), current.name),
-			})
-			continue
-		}
-
-		var https, svcb, aAns, aaaaAns Answer
-		var wg sync.WaitGroup
-		wg.Add(4)
-		go func() { defer wg.Done(); https = c.Query(ctx, current.name, dnswire.TypeHTTPS) }()
-		go func() { defer wg.Done(); svcb = c.Query(ctx, current.name, dnswire.TypeSVCB) }()
-		go func() { defer wg.Done(); aAns = c.Query(ctx, current.name, dnswire.TypeA) }()
-		go func() { defer wg.Done(); aaaaAns = c.Query(ctx, current.name, dnswire.TypeAAAA) }()
-		wg.Wait()
-
-		a4, _ := Addresses(aAns)
-		_, a6 := Addresses(aaaaAns)
-		v4.add(a4...)
-		v6.add(a6...)
-		hint4, hint6 := ServiceHints(https, svcb)
-		v4.add(hint4...)
-		v6.add(hint6...)
-
-		for _, target := range ServiceTargets(https, svcb) {
-			appendChain(target)
-			queue = append(queue, item{
-				name:      target,
-				ancestors: append(append([]string{}, current.ancestors...), current.name),
-			})
-		}
-
-		for _, answer := range []Answer{aAns, aaaaAns} {
-			switch answer.Status {
-			case StatusTimeout:
-				failures[ReasonTimeout] = struct{}{}
-			case StatusServFail:
-				failures[ReasonServFail] = struct{}{}
-			case StatusNXDomain:
-				failures[ReasonNXDomain] = struct{}{}
-			}
-		}
-	}
-
-	got4, got6 := v4.sorted(), v6.sorted()
-	if len(got4) > 0 || len(got6) > 0 {
-		return Outcome{OK: true, Reason: ReasonAnswer, CNAMEChain: chain, A: got4, AAAA: got6}
-	}
-	for _, reason := range []string{ReasonTimeout, ReasonServFail, ReasonNXDomain} {
-		if _, ok := failures[reason]; ok {
-			return Outcome{Reason: reason, CNAMEChain: chain}
-		}
-	}
-	return Outcome{Reason: ReasonNoData, CNAMEChain: chain}
 }

@@ -21,31 +21,18 @@ func TestValidClientSubnet(t *testing.T) {
 	}
 }
 
-func TestCompareDNSViews(t *testing.T) {
-	view := func(values ...string) map[string]any {
-		records := make([]map[string]any, 0, len(values))
-		for _, value := range values {
-			records = append(records, map[string]any{"type": "A", "value": value})
-		}
-		return map[string]any{"records": records}
+func TestParsedGlobalIPsDropsAddressesThatCannotLocateAServer(t *testing.T) {
+	var records []map[string]any
+	for _, value := range []string{
+		"127.0.0.1", "10.0.0.1", "100.64.1.1", "198.18.0.1", "192.0.2.1", "::1", "2001:db8::1",
+		"1.2.3.4",
+	} {
+		records = append(records, map[string]any{"type": "A", "value": value})
 	}
-	if got := compareDNSViews(map[string]any{
-		"local-unbound": view("1.2.3.4"),
-		"foreign-hk":    view("1.2.3.4"),
-	}); got != "consistent" {
-		t.Fatalf("same views: %s", got)
-	}
-	if got := compareDNSViews(map[string]any{
-		"local-unbound": view("1.2.3.4"),
-		"foreign-hk":    view("8.8.8.8"),
-	}); got != "geo_split" {
-		t.Fatalf("split views: %s", got)
-	}
-	if got := compareDNSViews(map[string]any{
-		"local-unbound": view("127.0.0.1"),
-		"foreign-hk":    view("8.8.8.8"),
-	}); got != "no_final_global_address" {
-		t.Fatalf("non-global answer: %s", got)
+	got := parsedGlobalIPs(map[string]any{"records": records})
+	if len(got) != 1 || got[0] != "1.2.3.4" {
+		t.Fatalf("parsedGlobalIPs = %v, 期望只剩 [1.2.3.4]——"+
+			"保留地址、回环和文档段不是服务器所在地，混进来会被递归出口与归属判定当成位置证据", got)
 	}
 }
 

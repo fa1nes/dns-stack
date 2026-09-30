@@ -58,12 +58,10 @@ func (b *Builder) Bytes(v ...byte) {
 	b.Buf = append(b.Buf, v...)
 }
 
-func A(values ...string) func(*Builder) {
+func A(value string) func(*Builder) {
 	return func(b *Builder) {
-		for _, v := range values {
-			addr := netip.MustParseAddr(v).As4()
-			b.Bytes(addr[:]...)
-		}
+		addr := netip.MustParseAddr(value).As4()
+		b.Bytes(addr[:]...)
 	}
 }
 

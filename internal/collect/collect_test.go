@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -388,19 +387,6 @@ func TestConsumeStdinPersistsThroughRun(t *testing.T) {
 	}
 }
 
-func TestCollapsePrefixesMergesSiblingsAndContained(t *testing.T) {
-	got := formatPrefixes(collapsePrefixes(mustPrefixes(t,
-		"10.0.0.0/25", "10.0.0.128/25",
-		"10.0.0.0/24",
-		"10.0.1.0/24", "10.0.0.0/23",
-		"192.168.1.0/24",
-	)))
-	want := []string{"10.0.0.0/23", "192.168.1.0/24"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("= %v, 期望 %v", got, want)
-	}
-}
-
 func TestJSONOutputStaysCompact(t *testing.T) {
 
 	encoded, err := json.Marshal(Stats{TotalDomains: 1, QueryEvents: 2})
@@ -411,17 +397,4 @@ func TestJSONOutputStaysCompact(t *testing.T) {
 	if string(encoded) != want {
 		t.Fatalf("= %s, 期望 %s", encoded, want)
 	}
-}
-
-func mustPrefixes(t *testing.T, values ...string) []netip.Prefix {
-	t.Helper()
-	out := make([]netip.Prefix, 0, len(values))
-	for _, value := range values {
-		prefix, err := netip.ParsePrefix(value)
-		if err != nil {
-			t.Fatalf("非法前缀 %q: %v", value, err)
-		}
-		out = append(out, prefix)
-	}
-	return out
 }

@@ -128,124 +128,51 @@ func addrStrings(values []netip.Addr) []string {
 	return out
 }
 
-func TestChainFollowsCNAMEToFinalAddress(t *testing.T) {
+func TestQueryDecodesCNAMETargetAndAddressesOverTheWire(t *testing.T) {
 	client := fakeServer(t, map[string]zone{
 		"www.example.com": {records: map[uint16][]record{
 			dnswire.TypeCNAME: {{dnswire.TypeCNAME, targetName("cdn.example.net")}},
 		}},
 		"cdn.example.net": {records: map[uint16][]record{
-			dnswire.TypeA: {{dnswire.TypeA, ipv4("116.1.2.3")}},
+			dnswire.TypeA: {{dnswire.TypeA, ipv4("116.1.2.3")}, {dnswire.TypeA, ipv4("116.1.2.4")}},
 		}},
 	})
-	got := Chain(context.Background(), client, "WWW.Example.com.")
-	if !got.OK || got.Reason != ReasonAnswer {
-		t.Fatalf("应拿到最终地址: %+v", got)
+	cname := client.Query(context.Background(), "WWW.Example.com.", dnswire.TypeCNAME)
+	if cname.Status != StatusOK {
+		t.Fatalf("CNAME 查询状态 = %v，期望 StatusOK", cname.Status)
 	}
-	if want := []string{"116.1.2.3"}; !equal(addrStrings(got.A), want) {
-		t.Fatalf("A 记录 = %v, 期望 %v", got.A, want)
+	if got, want := TargetNames(cname, dnswire.TypeCNAME), []string{"cdn.example.net"}; !equal(got, want) {
+		t.Fatalf("TargetNames = %v, 期望 %v——authority 与 opsctl 都靠它顺着 CNAME 往下走", got, want)
 	}
-	if want := []string{"cdn.example.net"}; !equal(got.CNAMEChain, want) {
-		t.Fatalf("CNAME 链 = %v, 期望 %v", got.CNAMEChain, want)
+	a := client.Query(context.Background(), "cdn.example.net", dnswire.TypeA)
+	v4, v6 := Addresses(a)
+	if got, want := addrStrings(v4), []string{"116.1.2.3", "116.1.2.4"}; !equal(got, want) || len(v6) != 0 {
+		t.Fatalf("Addresses = %v / %v, 期望 %v / []", got, addrStrings(v6), want)
 	}
 }
 
-func TestChainDetectsCNAMELoop(t *testing.T) {
+func TestQueryMapsResponseCodesToStatus(t *testing.T) {
 	client := fakeServer(t, map[string]zone{
-		"a.example": {records: map[uint16][]record{
-			dnswire.TypeCNAME: {{dnswire.TypeCNAME, targetName("b.example")}},
-		}},
-		"b.example": {records: map[uint16][]record{
-			dnswire.TypeCNAME: {{dnswire.TypeCNAME, targetName("a.example")}},
-		}},
+		"gone.example":   {rcode: dnswire.RCodeNXDomain},
+		"broken.example": {rcode: 2},
+		"quiet.example":  {silent: true},
 	})
-	got := Chain(context.Background(), client, "a.example")
-	if got.OK || got.Reason != ReasonCNAMELoop {
-		t.Fatalf("应判为 CNAME 成环: %+v", got)
-	}
-}
-
-func TestChainCollectsServiceHintsAndTargets(t *testing.T) {
-	client := fakeServer(t, map[string]zone{
-		"example.com": {records: map[uint16][]record{
-			dnswire.TypeHTTPS: {{dnswire.TypeHTTPS, func(b *respBuilder) {
-				b.buf = binary.BigEndian.AppendUint16(b.buf, 1)
-				for _, label := range []string{"svc", "example", "net"} {
-					b.buf = append(b.buf, byte(len(label)))
-					b.buf = append(b.buf, label...)
-				}
-				b.buf = append(b.buf, 0)
-				b.buf = binary.BigEndian.AppendUint16(b.buf, 4)
-				b.buf = binary.BigEndian.AppendUint16(b.buf, 4)
-				b.buf = append(b.buf, 116, 9, 9, 9)
-			}}},
-		}},
-		"svc.example.net": {records: map[uint16][]record{
-			dnswire.TypeA: {{dnswire.TypeA, ipv4("116.8.8.8")}},
-		}},
-	})
-	got := Chain(context.Background(), client, "example.com")
-	if !got.OK {
-		t.Fatalf("应拿到地址: %+v", got)
-	}
-
-	if want := []string{"116.8.8.8", "116.9.9.9"}; !equal(addrStrings(got.A), want) {
-		t.Fatalf("A 记录 = %v, 期望 %v", addrStrings(got.A), want)
-	}
-	if want := []string{"svc.example.net"}; !equal(got.CNAMEChain, want) {
-		t.Fatalf("链 = %v, 期望 %v", got.CNAMEChain, want)
-	}
-}
-
-func TestChainReasonsForFailures(t *testing.T) {
-	cases := []struct {
-		name   string
-		zones  map[string]zone
-		reason string
+	for _, tc := range []struct {
+		name string
+		want Status
 	}{
-		{
-			name: "nxdomain",
-			zones: map[string]zone{
-				"gone.example": {rcode: dnswire.RCodeNXDomain},
-			},
-			reason: ReasonNXDomain,
-		},
-		{
-			name: "servfail",
-			zones: map[string]zone{
-				"broken.example": {rcode: dnswire.RCodeServFail},
-			},
-			reason: ReasonServFail,
-		},
-		{
-			name: "nodata",
-			zones: map[string]zone{
-				"empty.example": {},
-			},
-			reason: ReasonNoData,
-		},
-		{
-			name: "timeout",
-			zones: map[string]zone{
-				"black.example": {silent: true},
-			},
-			reason: ReasonTimeout,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			client := fakeServer(t, tc.zones)
-			var name string
-			for key := range tc.zones {
-				name = key
-			}
-			got := Chain(context.Background(), client, name)
-			if got.OK {
-				t.Fatalf("不该判为成功: %+v", got)
-			}
-			if got.Reason != tc.reason {
-				t.Fatalf("reason = %q, 期望 %q", got.Reason, tc.reason)
-			}
-		})
+		{"gone.example", StatusNXDomain},
+		{"broken.example", StatusServFail},
+		{"quiet.example", StatusTimeout},
+	} {
+		got := client.Query(context.Background(), tc.name, dnswire.TypeA)
+		if got.Status != tc.want {
+			t.Errorf("%s: Status = %v, 期望 %v——调用方靠这个区分「域名不存在」「上游坏了」「没回应」，"+
+				"混为一谈会让污染采集和权威判定把故障当成证据", tc.name, got.Status, tc.want)
+		}
+		if v4, v6 := Addresses(got); len(v4)+len(v6) != 0 {
+			t.Errorf("%s: 失败的应答不该产出任何地址，却给出了 %v %v", tc.name, v4, v6)
+		}
 	}
 }
 

@@ -7,13 +7,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/domain"
 )
 
-type Trait uint8
-
-const (
-	TraitSharedTenancy Trait = 1 << iota
-	TraitGeoSteering
-)
-
 type Operator struct {
 	ID    string
 	Name  string
@@ -149,54 +142,19 @@ var dnsOnlyAS = map[int]string{
 	30060: "Verisign",
 }
 
-var sharedTenancyRoots = []string{
-	"apple.com", "apple-cloudkit.com", "icloud.com", "mzstatic.com",
-	"akamai.com", "cloudflare.com",
-	"amazonaws.com", "googleapis.com", "githubusercontent.com",
-	"unpkg.com", "jsdelivr.net", "jsdelivr.com", "cdnjs.com", "bootstrapcdn.com",
-	"esm.sh", "skypack.dev", "jspm.io", "statically.io",
-	"netdna-cdn.com", "netdna-ssl.com", "kxcdn.com",
-	"fbcdn.net", "cdninstagram.com", "twimg.com", "googlevideo.com",
-	"gvt1.com", "gvt2.com", "ggpht.com", "dns.google",
-	"github.com", "githubassets.com", "gitlab-static.net",
-	"alicdn.net", "bcebos.com", "qiniucdn.com", "qbox.me",
-	"upaiyun.com", "example.com", "example.net", "example.org",
-}
-
 var (
-	geoSteeringRoots = collectRoots()
-	suffixes         = buildTable()
-	rootOwner        = buildRootOwner()
-	sharedDNSAS      = buildSharedDNSAS()
+	geoSteered  = buildGeoSteered()
+	sharedDNSAS = buildSharedDNSAS()
 )
 
-func collectRoots() []string {
-	out := make([]string, 0, 64)
-	for _, op := range operators {
-		out = append(out, op.Roots...)
-	}
-	return out
-}
-
-func buildTable() map[string]Trait {
-	table := make(map[string]Trait, len(geoSteeringRoots)+len(sharedTenancyRoots))
-	for _, root := range geoSteeringRoots {
-		table[root] = TraitSharedTenancy | TraitGeoSteering
-	}
-	for _, root := range sharedTenancyRoots {
-		table[root] |= TraitSharedTenancy
-	}
-	return table
-}
-
-func buildRootOwner() map[string]string {
-	table := make(map[string]string, len(geoSteeringRoots))
+func buildGeoSteered() map[string]struct{} {
+	out := make(map[string]struct{}, 96)
 	for _, op := range operators {
 		for _, root := range op.Roots {
-			table[root] = op.ID
+			out[root] = struct{}{}
 		}
 	}
-	return table
+	return out
 }
 
 func buildSharedDNSAS() map[int]string {
@@ -212,27 +170,18 @@ func buildSharedDNSAS() map[int]string {
 	return table
 }
 
-func Traits(name string) Trait {
-	var out Trait
+func IsGeoSteered(name string) bool {
 	for rest := domain.Normalize(name); rest != ""; {
-		out |= suffixes[rest]
+		if _, ok := geoSteered[rest]; ok {
+			return true
+		}
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
-			break
+			return false
 		}
 		rest = rest[dot+1:]
 	}
-	return out
-}
-
-func IsSharedTenancy(name string) bool { return Traits(name)&TraitSharedTenancy != 0 }
-
-func IsGeoSteered(name string) bool { return Traits(name)&TraitGeoSteering != 0 }
-
-func GeoSteeringRoots() []string {
-	out := make([]string, len(geoSteeringRoots))
-	copy(out, geoSteeringRoots)
-	return out
+	return false
 }
 
 func Operators() []Operator {
@@ -251,20 +200,6 @@ func Operators() []Operator {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
-}
-
-func OperatorFor(name string) (string, bool) {
-	for rest := domain.Normalize(name); rest != ""; {
-		if id, ok := rootOwner[rest]; ok {
-			return id, true
-		}
-		dot := strings.IndexByte(rest, '.')
-		if dot < 0 {
-			break
-		}
-		rest = rest[dot+1:]
-	}
-	return "", false
 }
 
 func SharedDNSProvider(asn int) (string, bool) {

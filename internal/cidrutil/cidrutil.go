@@ -237,14 +237,6 @@ func Subtract(base, remove []netip.Prefix) []netip.Prefix {
 	return spansToPrefixes(subtractSpans(b4, r4), subtractSpans(b6, r6))
 }
 
-func Overlaps(a, b netip.Prefix) bool {
-	if a.Addr().Is6() != b.Addr().Is6() {
-		return false
-	}
-	sa, sb := spansOfPrefix(a), spansOfPrefix(b)
-	return sa.lo.Cmp(sb.hi) <= 0 && sb.lo.Cmp(sa.hi) <= 0
-}
-
 func ReadPrefixes(r io.Reader) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	sc := bufio.NewScanner(r)
@@ -286,21 +278,6 @@ func ParsePrefix(text string) (netip.Prefix, error) {
 	}
 	addr = addr.Unmap()
 	return netip.PrefixFrom(addr, addr.BitLen()), nil
-}
-
-func Render(prefixes []netip.Prefix) string {
-	if len(prefixes) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for i, p := range prefixes {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(p.String())
-	}
-	b.WriteString("\n")
-	return b.String()
 }
 
 func SortAddrs(addrs []netip.Addr) {

@@ -31,11 +31,6 @@ const (
 )
 
 const (
-	svcParamIPv4Hint uint16 = 4
-	svcParamIPv6Hint uint16 = 6
-)
-
-const (
 	maxNamePointers = 32
 	maxNameLength   = 255
 	maxLabelLength  = 63
@@ -93,26 +88,6 @@ func TypeName(t uint16) string {
 		return "HTTPS"
 	}
 	return fmt.Sprintf("TYPE%d", t)
-}
-
-func TypeByName(name string) (uint16, bool) {
-	switch strings.ToUpper(strings.TrimSpace(name)) {
-	case "A":
-		return TypeA, true
-	case "NS":
-		return TypeNS, true
-	case "CNAME":
-		return TypeCNAME, true
-	case "SOA":
-		return TypeSOA, true
-	case "AAAA":
-		return TypeAAAA, true
-	case "SVCB":
-		return TypeSVCB, true
-	case "HTTPS":
-		return TypeHTTPS, true
-	}
-	return 0, false
 }
 
 func NormalizeName(name string) string {
@@ -361,72 +336,4 @@ func (r RR) TargetName(msg []byte) (string, bool) {
 		return name, true
 	}
 	return "", false
-}
-
-type SVCB struct {
-	Priority uint16
-	Target   string
-	IPv4Hint []netip.Addr
-	IPv6Hint []netip.Addr
-}
-
-func (r RR) SVCB(msg []byte) (SVCB, bool) {
-	if r.Type != TypeSVCB && r.Type != TypeHTTPS {
-		return SVCB{}, false
-	}
-	if len(r.Data) < 3 {
-		return SVCB{}, false
-	}
-	out := SVCB{Priority: binary.BigEndian.Uint16(r.Data[:2])}
-	target, err := NameInRDATA(msg, r.RDataAt, 2)
-	if err != nil {
-		return SVCB{}, false
-	}
-	out.Target = target
-
-	consumed := 2 + wireNameLength(r.Data[2:])
-	if consumed <= 2 || consumed > len(r.Data) {
-		return out, true
-	}
-	rest := r.Data[consumed:]
-	for len(rest) >= 4 {
-		key := binary.BigEndian.Uint16(rest[:2])
-		length := int(binary.BigEndian.Uint16(rest[2:4]))
-		rest = rest[4:]
-		if length > len(rest) {
-			break
-		}
-		value := rest[:length]
-		rest = rest[length:]
-		switch key {
-		case svcParamIPv4Hint:
-			for i := 0; i+4 <= len(value); i += 4 {
-				if addr, ok := netip.AddrFromSlice(value[i : i+4]); ok {
-					out.IPv4Hint = append(out.IPv4Hint, addr.Unmap())
-				}
-			}
-		case svcParamIPv6Hint:
-			for i := 0; i+16 <= len(value); i += 16 {
-				if addr, ok := netip.AddrFromSlice(value[i : i+16]); ok {
-					out.IPv6Hint = append(out.IPv6Hint, addr.Unmap())
-				}
-			}
-		}
-	}
-	return out, true
-}
-
-func wireNameLength(b []byte) int {
-	n := 0
-	for n < len(b) {
-		l := int(b[n])
-		if l == 0 {
-			return n + 1
-		}
-		if l&0xC0 != 0 {
-			return n + 2
-		}
-		n += 1 + l
-	}
-	return 0
 }

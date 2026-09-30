@@ -12,16 +12,6 @@ func TestEveryGeoSteeringRootHasExactlyOneOperator(t *testing.T) {
 			owners[root] = op.ID
 		}
 	}
-	for _, root := range GeoSteeringRoots() {
-		id, ok := OperatorFor(root)
-		if !ok {
-			t.Errorf("%s 是 geo-steering 根域却查不到 operator", root)
-			continue
-		}
-		if id != owners[root] {
-			t.Errorf("%s 的 operator 是 %s，后缀查找给出 %s", root, owners[root], id)
-		}
-	}
 }
 
 func TestOperatorIDsAreUniqueAndNamed(t *testing.T) {
@@ -96,21 +86,18 @@ func TestPrefixASNsActuallyReachThePrefixBuilder(t *testing.T) {
 	}
 }
 
-func TestOperatorLookupIsSuffixSafe(t *testing.T) {
-	for name, want := range map[string]string{
-		"a13-65.akam.net":                   "akamai",
-		"www.microsoft.com-c-3.edgekey.net": "akamai",
-		"ns1-206.azure-dns.com":             "microsoft",
-		"img.alicdn.com":                    "alibaba",
-		"foo.cdntip.com":                    "tencent",
+func TestRealAuthorityNamesAreGeoSteered(t *testing.T) {
+	for _, name := range []string{
+		"a13-65.akam.net", "www.microsoft.com-c-3.edgekey.net",
+		"ns1-206.azure-dns.com", "img.alicdn.com", "foo.cdntip.com",
 	} {
-		if id, ok := OperatorFor(name); !ok || id != want {
-			t.Errorf("%s 应归属 %s，得到 %q/%v", name, want, id, ok)
+		if !IsGeoSteered(name) {
+			t.Errorf("%s 是线上真实出现过的地理调度权威，却没被识别", name)
 		}
 	}
-	for _, name := range []string{"notakam.net", "akam.net.evil.com", "qq.com", "com"} {
-		if id, ok := OperatorFor(name); ok {
-			t.Errorf("%s 不该命中任何 operator，却得到 %s", name, id)
+	for _, name := range []string{"notakam.net", "akam.net.evil.com"} {
+		if IsGeoSteered(name) {
+			t.Errorf("%s 只是名字相似，不该命中", name)
 		}
 	}
 }

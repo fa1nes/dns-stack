@@ -225,39 +225,6 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("3fff::/20"),
 }
 
-func compareDNSViews(results map[string]any) string {
-	local, localOK := results["local-unbound"].(map[string]any)
-	hk, hkOK := results["foreign-hk"].(map[string]any)
-	if !localOK || !hkOK {
-		return "incomplete"
-	}
-	localIPs := parsedGlobalIPs(local)
-	hkIPs := parsedGlobalIPs(hk)
-	if len(localIPs) == 0 || len(hkIPs) == 0 {
-		return "no_final_global_address"
-	}
-	if sameStringSet(localIPs, hkIPs) {
-		return "consistent"
-	}
-	return "geo_split"
-}
-
-func sameStringSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	seen := make(map[string]bool, len(a))
-	for _, value := range a {
-		seen[value] = true
-	}
-	for _, value := range b {
-		if !seen[value] {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *Server) myLocation(w http.ResponseWriter, r *http.Request) {
 
 	ip := clientIP(r)

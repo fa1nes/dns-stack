@@ -2,38 +2,35 @@ package cdn
 
 import "testing"
 
-func TestSuffixMatchingRespectsLabelBoundaries(t *testing.T) {
+func TestGeoSteeringMatchRespectsLabelBoundaries(t *testing.T) {
 	shouldMatch := []string{
 		"fastly.net", "a.b.fastly.net", "akamaiedge.net", "edge.akamaiedge.net",
-		"alicdn.com", "img.alicdn.com", "aliyuncs.com", "example.com",
+		"alicdn.com", "img.alicdn.com", "aliyuncs.com",
 	}
 	for _, name := range shouldMatch {
-		if !IsSharedTenancy(name) {
-			t.Errorf("%s 应当被识别为多租户共享根域", name)
+		if !IsGeoSteered(name) {
+			t.Errorf("%s 应当被识别为地理调度链", name)
 		}
 	}
 	shouldNotMatch := []string{
-		"notfastly.net", "evil-example.com", "fastly.net.evil.com",
-		"myakamaiedge.net", "qq.com", "baidu.com", "net", "com",
+		"notfastly.net", "fastly.net.evil.com", "myakamaiedge.net",
+		"evil-alicdn.com", "qq.com", "baidu.com", "net", "com", "",
 	}
 	for _, name := range shouldNotMatch {
-		if IsSharedTenancy(name) {
-			t.Errorf("%s 不该命中共享根域判据（按标签边界匹配才不会误伤）", name)
+		if IsGeoSteered(name) {
+			t.Errorf("%s 不该命中地理调度判据——它决定哪些权威进 ECS 白名单，"+
+				"不按标签边界匹配就会把任意注册了相似名字的域名放进去", name)
 		}
 	}
 }
 
-func TestGeoSteeringRootsAreAlwaysSharedTenancy(t *testing.T) {
-	for _, root := range geoSteeringRoots {
-		if !IsGeoSteered(root) {
-			t.Errorf("%s 应当带 geo-steering 标志", root)
+func TestEveryOperatorRootIsGeoSteered(t *testing.T) {
+	for _, op := range operators {
+		for _, root := range op.Roots {
+			if !IsGeoSteered(root) {
+				t.Errorf("%s 属于 %s 却不被 IsGeoSteered 识别", root, op.ID)
+			}
 		}
-		if !IsSharedTenancy(root) {
-			t.Errorf("%s 带 geo-steering 却不带多租户标志——这两个集合的包含关系必须由构造保证", root)
-		}
-	}
-	if IsGeoSteered("qq.com") {
-		t.Error("普通域名不该被当成 geo-steering 链")
 	}
 }
 

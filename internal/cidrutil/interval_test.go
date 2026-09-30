@@ -20,7 +20,18 @@ func prefixes(t *testing.T, values ...string) []netip.Prefix {
 }
 
 func totalAddrs(list []netip.Prefix) *big.Int {
-	return NewSet(list).AddressCount()
+	return addressCount(NewSet(list))
+}
+
+func addressCount(s *Set) *big.Int {
+	total := new(big.Int)
+	one := big.NewInt(1)
+	for _, group := range [][]span{s.v4, s.v6} {
+		for _, sp := range group {
+			total.Add(total, new(big.Int).Add(new(big.Int).Sub(sp.hi, sp.lo), one))
+		}
+	}
+	return total
 }
 
 func TestIntersectKeepsOnlyTheOverlap(t *testing.T) {

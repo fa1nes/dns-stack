@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 )
@@ -180,15 +179,6 @@ func Render(report Report, out io.Writer) {
 	}
 	fmt.Fprintf(out, "\n通过 %d / 关注 %d / 失败 %d / 跳过 %d\n",
 		report.OK, report.Warn, report.Fail, report.Skip)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for key := range m {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func Run(ctx context.Context, opt Options) (Report, error) {
