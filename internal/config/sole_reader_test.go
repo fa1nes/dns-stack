@@ -11,7 +11,27 @@ var splitters = []string{`strings.Cut(line, "=")`, `strings.SplitN(line, "=", 2)
 
 var allowedToSplitOnEquals = map[string]string{
 	"internal/backup/migrate.go": "它是在改写 config.env，必须按原始行操作才能保住格式与注释",
-	"internal/panel/server.go":   "它切的是 helper 的 KEY=VALUE 标准输出，不是 config.env",
+}
+
+func TestEveryExemptionStillCoversSomething(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for rel, reason := range allowedToSplitOnEquals {
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Errorf("%s 在豁免名单里，但文件已经不存在了", rel)
+			continue
+		}
+		covered := false
+		for _, splitter := range splitters {
+			if strings.Contains(string(body), splitter) {
+				covered = true
+			}
+		}
+		if !covered {
+			t.Errorf("%s 被豁免的理由是「%s」，可它里面已经没有按等号切行的代码了——"+
+				"代码搬走以后豁免还留在原地，下一个在这个文件里手写 config.env 解析器的人会被静默放行", rel, reason)
+		}
+	}
 }
 
 func TestNobodyElseParsesConfigEnv(t *testing.T) {
