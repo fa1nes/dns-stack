@@ -73,14 +73,9 @@ func cmdRoutingWatchdog(args []string) error {
 	}
 	cfg := pipeline.LoadConfig(*state, *conf)
 	rt := pipeline.NewRuntime(cfg, os.Stdout)
-	watchdog := pipeline.WatchdogConfig{
-		Config:     cfg,
-		FWMark:     envOr("FWMARK", pipeline.DefaultFWMark),
-		Unit:       envOr("UNIT", pipeline.DefaultRoutingUnit),
-		MinEntries: pipeline.DefaultMinSetEntries,
-		MaxRepairs: pipeline.DefaultMaxRepairs,
-		AuthRatio:  pipeline.DefaultAuthorityRatio,
-	}
+	watchdog := pipeline.NewWatchdog(cfg)
+	watchdog.FWMark = envOr("FWMARK", watchdog.FWMark)
+	watchdog.Unit = envOr("UNIT", watchdog.Unit)
 	ctx := context.Background()
 	if *checkOnly {
 		health := watchdog.Diagnose(ctx, rt)

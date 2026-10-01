@@ -25,8 +25,6 @@ const (
 	offshoreProbeName = "www.wikipedia.org"
 	mosproxyMetrics   = "http://127.0.0.1:8888/metrics"
 	collectorWindow   = time.Hour
-	minDirectEntries  = 1000
-	authorityRatioPct = 40
 )
 
 func shellOut(ctx context.Context, name string, args ...string) (string, error) {
@@ -93,22 +91,19 @@ func checkNFTSets(ctx context.Context, opt Options, report *Report) {
 		return
 	}
 	c := &checker{report: report, group: "出口分流"}
-	cfg := pipeline.LoadConfig(opt.StateDir, opt.ConfigFile)
-	rt := pipeline.NewRuntime(cfg, nil)
-	direct := rt.NFTSetCount(ctx, cfg.DirectSet)
-	if direct < minDirectEntries {
-		c.fail("大陆 IP 集合规模", "仅 %d 段（下限 %d），国内递归查询会被误导进隧道", direct, minDirectEntries)
+	watchdog := pipeline.NewWatchdog(pipeline.LoadConfig(opt.StateDir, opt.ConfigFile))
+	sizes := watchdog.ReadSetSizes(ctx)
+	if watchdog.DirectTooSmall(sizes) {
+		c.fail("大陆 IP 集合规模", "仅 %d 段（下限 %d），国内递归查询会被误导进隧道", sizes.Direct, watchdog.MinEntries)
 		return
 	}
-	authority := rt.NFTSetCount(ctx, cfg.AuthoritySet)
-	baseline := countRows(filepath.Join(opt.StateDir, "chnroute", "cn-authority.txt"))
-	if baseline >= 20 && authority < baseline*authorityRatioPct/100 {
+	if watchdog.AuthorityTooSmall(sizes) {
 		c.fail("墙内权威集合规模",
 			"仅 %d 段(基线 %d 段)，国内域名会走隧道拿境外 CDN 节点——恢复: systemctl restart dns-stack-recursive-routing",
-			authority, baseline)
+			sizes.Authority, sizes.AuthorityBaseline)
 		return
 	}
-	c.ok("出口分流集合", "大陆 %d 段 / 墙内权威 %d 段", direct, authority)
+	c.ok("出口分流集合", "大陆 %d 段 / 墙内权威 %d 段", sizes.Direct, sizes.Authority)
 }
 
 func checkCollector(ctx context.Context, opt Options, report *Report, now time.Time) {

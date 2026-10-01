@@ -73,13 +73,45 @@ func (r *Runtime) NFTSetCount(ctx context.Context, set string) int {
 	if err != nil {
 		return 0
 	}
+	return countNFTElements(string(out))
+}
+
+func countNFTElements(text string) int {
 	count := 0
-	for _, field := range strings.Split(string(out), ",") {
+	for _, field := range strings.Split(text, ",") {
 		if nftEntry.MatchString(field) {
 			count++
 		}
 	}
 	return count
+}
+
+func nftTableBlocks(table string) map[string]string {
+	blocks := map[string]string{}
+	var name string
+	var body strings.Builder
+	depth := 0
+	for _, line := range strings.Split(table, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if depth == 1 && strings.HasSuffix(trimmed, "{") {
+			fields := strings.Fields(trimmed)
+			if len(fields) == 3 && (fields[0] == "set" || fields[0] == "chain") {
+				name = fields[0] + " " + fields[1]
+				body.Reset()
+			}
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+		if name == "" {
+			continue
+		}
+		body.WriteString(line)
+		body.WriteByte('\n')
+		if depth == 1 {
+			blocks[name] = body.String()
+			name = ""
+		}
+	}
+	return blocks
 }
 
 func HasNFT() bool {

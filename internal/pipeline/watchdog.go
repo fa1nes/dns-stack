@@ -71,36 +71,86 @@ func writeFailCount(path string, n int) {
 	os.WriteFile(path, []byte(strconv.Itoa(n)+"\n"), 0o644)
 }
 
-func (w WatchdogConfig) Diagnose(ctx context.Context, rt *Runtime) Health {
-	mark := w.markPattern()
-	var problems []string
+func NewWatchdog(cfg Config) WatchdogConfig {
+	return WatchdogConfig{
+		Config:     cfg,
+		FWMark:     DefaultFWMark,
+		Unit:       DefaultRoutingUnit,
+		MinEntries: DefaultMinSetEntries,
+		MaxRepairs: DefaultMaxRepairs,
+		AuthRatio:  DefaultAuthorityRatio,
+	}
+}
 
-	chain, _ := run(ctx, "nft", "list", "chain", "inet", w.Config.NFTTable, "output")
-	if !regexp.MustCompile(`meta mark set ` + mark.String()).MatchString(chain) {
+type SetSizes struct {
+	Direct            int
+	Authority         int
+	AuthorityBaseline int
+}
+
+func (w WatchdogConfig) DirectTooSmall(s SetSizes) bool { return s.Direct < w.MinEntries }
+
+func (w WatchdogConfig) AuthorityTooSmall(s SetSizes) bool {
+	return s.AuthorityBaseline >= 20 && s.Authority < s.AuthorityBaseline*w.AuthRatio/100
+}
+
+type routingSnapshot struct {
+	NFTTable          string
+	IPRules           string
+	AuthorityBaseline int
+}
+
+func (w WatchdogConfig) sizes(snap routingSnapshot) SetSizes {
+	blocks := nftTableBlocks(snap.NFTTable)
+	return SetSizes{
+		Direct:            countNFTElements(blocks["set "+w.Config.DirectSet]),
+		Authority:         countNFTElements(blocks["set "+w.Config.AuthoritySet]),
+		AuthorityBaseline: snap.AuthorityBaseline,
+	}
+}
+
+func (w WatchdogConfig) problems(snap routingSnapshot) []string {
+	mark := w.markPattern()
+	blocks := nftTableBlocks(snap.NFTTable)
+	var problems []string
+	if !regexp.MustCompile(`meta mark set ` + mark.String()).MatchString(blocks["chain output"]) {
 		problems = append(problems, "分流链缺失或无打标规则")
 	}
-	nat, _ := run(ctx, "nft", "list", "chain", "inet", w.Config.NFTTable, "postrouting")
+	nat := blocks["chain postrouting"]
 	if !(mark.MatchString(nat) && strings.Contains(nat, "masquerade")) {
 		problems = append(problems, "NAT 源地址改写链缺失")
 	}
-	rules, _ := run(ctx, "ip", "rule", "show")
-	if !regexp.MustCompile(`fwmark ` + mark.String()).MatchString(rules) {
+	if !regexp.MustCompile(`fwmark ` + mark.String()).MatchString(snap.IPRules) {
 		problems = append(problems, "fwmark 策略路由规则缺失")
 	}
-	if rt.NFTSetCount(ctx, w.Config.DirectSet) < w.MinEntries {
+	sizes := w.sizes(snap)
+	if w.DirectTooSmall(sizes) {
 		problems = append(problems, "大陆 IP 集合过小或为空")
 	}
-	baseline := countPrefixes(w.Config.Chnroute("cn-authority.txt"))
-	if baseline >= 20 {
-		if rt.NFTSetCount(ctx, w.Config.AuthoritySet) < baseline*w.AuthRatio/100 {
-			problems = append(problems,
-				"墙内权威集合过小或为空(国内域名会走隧道拿境外节点)")
-		}
+	if w.AuthorityTooSmall(sizes) {
+		problems = append(problems, "墙内权威集合过小或为空(国内域名会走隧道拿境外节点)")
 	}
+	return problems
+}
 
+func (w WatchdogConfig) snapshot(ctx context.Context, withRules bool) routingSnapshot {
+	table, _ := run(ctx, "nft", "list", "table", "inet", w.Config.NFTTable)
+	snap := routingSnapshot{NFTTable: table, AuthorityBaseline: countPrefixes(w.Config.Chnroute("cn-authority.txt"))}
+	if withRules {
+		snap.IPRules, _ = run(ctx, "ip", "rule", "show")
+	}
+	return snap
+}
+
+func (w WatchdogConfig) ReadSetSizes(ctx context.Context) SetSizes {
+	return w.sizes(w.snapshot(ctx, false))
+}
+
+func (w WatchdogConfig) Diagnose(ctx context.Context, rt *Runtime) Health {
+	snap := w.snapshot(ctx, true)
 	_, tunnelErr := run(ctx, "ip", "link", "show", w.Config.TunnelIf)
 	return Health{
-		Problems:  problems,
+		Problems:  w.problems(snap),
 		TunnelUp:  tunnelErr == nil,
 		FailCount: readFailCount(w.failStatePath()),
 	}
