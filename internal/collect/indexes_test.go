@@ -24,6 +24,41 @@ func eventIndexes(t *testing.T, db *sql.DB) map[string]bool {
 	return out
 }
 
+func TestUnreadableSchemaVersionNeverWipesFailCounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "collector.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"INSERT INTO domains(domain,first_seen_at,last_seen_at,occurrence_count,fail_count) VALUES ('flaky.example',1,2,9,7)",
+		"UPDATE schema_meta SET value = 'garbled' WHERE key = 'schema_version'",
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	if reopened, err := OpenDB(path); err == nil {
+		reopened.Close()
+		t.Error("schema_version 读不出来时 OpenDB 应当报错，而不是把它当成「旧库」继续迁移")
+	}
+	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	var fails int
+	if err := raw.QueryRow("SELECT fail_count FROM domains WHERE domain='flaky.example'").Scan(&fails); err != nil {
+		t.Fatal(err)
+	}
+	if fails != 7 {
+		t.Errorf("fail_count = %d，期望 7——读版本号出错时 stored 停在 0，"+
+			"看起来就像迁移前的旧库，于是全部域名的累计失败数被清零", fails)
+	}
+}
+
 func TestIndexesNoQueryCanUseAreDroppedFromExistingDatabases(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "collector.db")
 	legacy, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))

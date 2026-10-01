@@ -2,6 +2,8 @@ package collect
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -155,13 +157,16 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	var stored int
-	_ = db.QueryRow("SELECT value FROM schema_meta WHERE key = 'schema_version'").Scan(&stored)
+	err := db.QueryRow("SELECT value FROM schema_meta WHERE key = 'schema_version'").Scan(&stored)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("读不出 schema_version，拒绝在看不清版本时执行会清零 fail_count 的迁移: %w", err)
+	}
 	if stored < schemaFailCountExcludesNXDomain {
 		if _, err := db.Exec("UPDATE domains SET fail_count = 0"); err != nil {
 			return err
 		}
 	}
-	_, err := db.Exec(
+	_, err = db.Exec(
 		"INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?) "+
 			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 		SchemaVersion)
