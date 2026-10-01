@@ -77,13 +77,13 @@ var eventExtraColumns = [][2]string{
 
 var droppedIndexes = []string{
 	`DROP INDEX IF EXISTS idx_domains_pulled`,
+	`DROP INDEX IF EXISTS idx_events_kind`,
+	`DROP INDEX IF EXISTS idx_events_domain_elapsed`,
 }
 
 var eventExtraIndexes = []string{
 	`CREATE INDEX IF NOT EXISTS idx_events_exit ON query_events(exit_path, ts)`,
-	`CREATE INDEX IF NOT EXISTS idx_events_kind ON query_events(kind, ts)`,
 	`CREATE INDEX IF NOT EXISTS idx_events_elapsed ON query_events(ts, elapsed_ms) WHERE elapsed_ms IS NOT NULL`,
-	`CREATE INDEX IF NOT EXISTS idx_events_domain_elapsed ON query_events(domain, elapsed_ms) WHERE elapsed_ms IS NOT NULL`,
 }
 
 type Event struct {
