@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -129,6 +130,9 @@ type Consumer struct {
 	consecutiveFailures int
 	failureReported     bool
 	nonASCIIDropped     int
+	oversized           atomic.Int64
+	oversizedReported   int64
+	readErr             error
 }
 
 func NewConsumer(dbPath, stateDir string, out io.Writer) *Consumer {
@@ -152,6 +156,47 @@ func (c *Consumer) log(level, message string, extra map[string]any) {
 		return
 	}
 	fmt.Fprintln(c.out, string(encoded))
+}
+
+const maxLineBytes = 1 << 20
+
+func (c *Consumer) reportOversized() {
+	if n := c.oversized.Load(); n > c.oversizedReported {
+		c.log("warn", "跳过了超长日志行", map[string]any{"count": n - c.oversizedReported, "limit_bytes": maxLineBytes})
+		c.oversizedReported = n
+	}
+}
+
+func forEachLine(input io.Reader, limit int, emit func(string), oversized func()) error {
+	reader := bufio.NewReaderSize(input, 64*1024)
+	var line []byte
+	tooLong := false
+	for {
+		chunk, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		if !tooLong {
+			if len(line)+len(chunk) > limit {
+				tooLong = true
+				line = line[:0]
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if isPrefix {
+			continue
+		}
+		if tooLong {
+			oversized()
+		} else {
+			emit(string(line))
+		}
+		line, tooLong = line[:0], false
+	}
 }
 
 func (c *Consumer) HandleLine(text string) {
@@ -299,12 +344,7 @@ func (c *Consumer) Run(input io.Reader) error {
 	lines := make(chan string, maxBatch)
 	go func() {
 		defer close(lines)
-		scanner := bufio.NewScanner(input)
-
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			lines <- scanner.Text()
-		}
+		c.readErr = forEachLine(input, maxLineBytes, func(line string) { lines <- line }, func() { c.oversized.Add(1) })
 	}()
 
 	_, _ = PruneEvents(c.db, c.now().Unix())
@@ -318,13 +358,15 @@ func (c *Consumer) Run(input io.Reader) error {
 		case line, ok := <-lines:
 			if !ok {
 				c.Flush()
-				return nil
+				c.reportOversized()
+				return c.readErr
 			}
 			if text := strings.TrimSpace(line); text != "" {
 				c.HandleLine(text)
 			}
 		case <-ticker.C:
 		}
+		c.reportOversized()
 		now := c.now()
 		if len(c.pending) >= maxBatch || now.Sub(lastFlush) >= flushInterval {
 			c.Flush()

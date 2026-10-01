@@ -239,9 +239,18 @@ func runMosproxyCollector(binary, config, dbPath, stateDir string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动 mosproxy 失败: %w", err)
 	}
-	consumerErr := collect.NewConsumer(dbPath, stateDir, os.Stdout).Run(pipe)
+	consumerErr := consumeWithoutBlocking(pipe, collect.NewConsumer(dbPath, stateDir, os.Stdout).Run, os.Stderr)
 	producerErr := cmd.Wait()
 	return pipelineError(producerErr, consumerErr)
+}
+
+func consumeWithoutBlocking(pipe io.Reader, consume func(io.Reader) error, warn io.Writer) error {
+	err := consume(pipe)
+	if err != nil {
+		fmt.Fprintf(warn, "[错误] collector 已停止，查询统计中断，DNS 照常服务: %v\n", err)
+	}
+	_, _ = io.Copy(io.Discard, pipe)
+	return err
 }
 
 func pipelineError(producerErr, consumerErr error) error {
