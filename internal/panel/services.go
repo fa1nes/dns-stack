@@ -23,6 +23,8 @@ func (s *Server) watchedUnit(unit string) bool {
 	return false
 }
 
+const serviceStatusTTL = 15 * time.Second
+
 type svcCacheEntry struct {
 	at   time.Time
 	item map[string]any
@@ -37,7 +39,7 @@ func (s *Server) serviceStatus(r *http.Request, units []string) []any {
 	need := []string{}
 	for _, unit := range units {
 		entry, ok := s.svcCache[unit]
-		if !ok || now.Sub(entry.at) >= 3*time.Second {
+		if !ok || now.Sub(entry.at) >= serviceStatusTTL {
 			need = append(need, unit)
 		}
 	}

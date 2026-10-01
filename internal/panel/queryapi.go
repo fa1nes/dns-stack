@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -409,8 +410,13 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	now := s.now().Unix()
 	out := map[string]any{"role": s.role(), "ts": now, "upstreams": []any{}, "system": map[string]any{}, "routing": map[string]any{}}
-	mos, mosErr := helperCall(r.Context(), "mosproxy_metrics", nil)
-	unbound, unboundErr := helperCall(r.Context(), "unbound_stats", nil)
+	var mos, unbound map[string]any
+	var mosErr, unboundErr error
+	var fetched sync.WaitGroup
+	fetched.Add(2)
+	go func() { defer fetched.Done(); mos, mosErr = helperCall(r.Context(), "mosproxy_metrics", nil) }()
+	go func() { defer fetched.Done(); unbound, unboundErr = helperCall(r.Context(), "unbound_stats", nil) }()
+	fetched.Wait()
 	if mosErr == nil && helperOK(mos) {
 		parsed := parseMetrics(helperStdout(mos))
 		queries := metricByLabel(parsed, "upstream_query_total", "upstream")
