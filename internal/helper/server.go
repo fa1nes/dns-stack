@@ -162,22 +162,36 @@ func (h *Helper) Dispatch(op string, args map[string]any) (resp map[string]any) 
 }
 
 func redactArgs(args map[string]any) string {
-	safe := map[string]any{}
-	for key, value := range args {
-		if key == "confirm" {
-			continue
-		}
-		if secretArgKeys[key] {
-			safe[key] = redactedValue
-			continue
-		}
-		safe[key] = value
-	}
-	encoded, err := json.Marshal(safe)
+	encoded, err := json.Marshal(redactValue(args))
 	if err != nil {
 		return "{}"
 	}
 	return string(encoded)
+}
+
+func redactValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		safe := make(map[string]any, len(v))
+		for key, inner := range v {
+			if key == "confirm" {
+				continue
+			}
+			if secretArgKeys[key] {
+				safe[key] = redactedValue
+				continue
+			}
+			safe[key] = redactValue(inner)
+		}
+		return safe
+	case []any:
+		safe := make([]any, len(v))
+		for i, inner := range v {
+			safe[i] = redactValue(inner)
+		}
+		return safe
+	}
+	return value
 }
 
 func (h *Helper) handleConn(conn net.Conn) {

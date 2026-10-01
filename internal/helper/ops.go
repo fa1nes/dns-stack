@@ -74,6 +74,8 @@ var RoleOps = map[string]string{
 var secretArgKeys = map[string]bool{
 	"password": true, "pw": true, "old_password": true,
 	"new_password": true, "passwd": true, "token": true,
+	"client_secret": true, "secret": true, "totp_code": true, "code": true,
+	"session_key": true, "hash": true, "salt": true,
 }
 
 func stringArg(args map[string]any, key string) string {

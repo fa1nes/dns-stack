@@ -191,6 +191,29 @@ func TestRedactArgsHidesSecretsAndDropsConfirm(t *testing.T) {
 	}
 }
 
+func TestRedactArgsReachesSecretsNestedInsideAuthUpdates(t *testing.T) {
+	for name, args := range map[string]map[string]any{
+		"保存 OAuth": {"update": map[string]any{"oauth": map[string]any{
+			"client_id": "Iv1.visible", "client_secret": "gh-oauth-SECRET-value", "allowed_users": []any{"fa1nes"}}}},
+		"启用 TOTP": {"update": map[string]any{"totp": map[string]any{"secret": "JBSWY3DPEHPK3PXP", "enabled": true}}},
+		"关闭 TOTP": {"totp_code": "123456", "confirm": true},
+	} {
+		got := redactArgs(args)
+		for _, secret := range []string{"gh-oauth-SECRET-value", "JBSWY3DPEHPK3PXP", "123456"} {
+			if strings.Contains(got, secret) {
+				t.Errorf("%s: 日志里出现了 %q：%s——helper.log 会被打进备份包，"+
+					"拿到 TOTP 密钥就等于绕过了二次认证", name, secret, got)
+			}
+		}
+	}
+	args := map[string]any{"confirm": true, "update": map[string]any{"totp": map[string]any{"secret": "S"}}}
+	redactArgs(args)
+	if args["confirm"] != true || args["update"].(map[string]any)["totp"].(map[string]any)["secret"] != "S" {
+		t.Fatalf("脱敏改动了传给处理函数的参数：%v——它在执行操作之前调用，"+
+			"一旦改掉 confirm 或 secret，危险操作会被拒、密钥会被写成占位符", args)
+	}
+}
+
 func TestOperationSetMatchesDangerousList(t *testing.T) {
 	h := newTestHelper(t)
 	for op := range DangerousOps {
