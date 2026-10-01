@@ -214,6 +214,7 @@ dns-stack version
 
 | 文件 | 内容 |
 |---|---|
+| [`docs/技术详解.md`](docs/技术详解.md) | 分层架构、一次解析的旅程、降级与自愈、负载画像、演进方向 |
 | [`docs/使用指南.md`](docs/使用指南.md) | 日常运维操作 |
 | [`docs/故障模式.md`](docs/故障模式.md) | **反复出现的故障模式**——每一条都是实际踩出来的，多数不止一次 |
 | [`fa1nes/mosproxy` 的 FORK-NOTES](https://github.com/fa1nes/mosproxy/blob/dev/FORK-NOTES.zh-CN.md) | mosproxy fork 改了什么、为什么 |
