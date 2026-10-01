@@ -419,6 +419,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	fetched.Wait()
 	if mosErr == nil && helperOK(mos) {
 		parsed := parseMetrics(helperStdout(mos))
+		out["upstreams"] = upstreamRows(parsed)
 		queries := metricByLabel(parsed, "upstream_query_total", "upstream")
 		errors := metricByLabel(parsed, "upstream_err_total", "upstream")
 		cache := metricScalar(parsed, "query_cache_hit_total")

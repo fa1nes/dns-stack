@@ -17,12 +17,10 @@
   const OVERSEAS = geo('新加坡 示例数据中心 有限公司', null, null, 'SG');
 
   const UPSTREAMS = [
+    { tag: 'foreign-hk', online: false, query_total: 11, err_total: 11,
+      success_ratio: 0, avg_latency_ms: null, p95_latency_ms: null },
     { tag: 'local-unbound', online: true, query_total: 128340, err_total: 12,
-      success_ratio: 99.99, stale_failures: false, avg_latency_ms: 18.4,
-      p95_latency_ms: 96, direction: '本机递归' },
-    { tag: 'foreign-hk', online: true, query_total: 0, err_total: 0,
-      success_ratio: null, stale_failures: false, avg_latency_ms: null,
-      p95_latency_ms: null, direction: '香港递归' },
+      success_ratio: 99.99, avg_latency_ms: 18.4, p95_latency_ms: 96 },
   ];
 
   const OVERVIEW = {

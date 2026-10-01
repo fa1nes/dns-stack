@@ -494,7 +494,7 @@ function renderOverviewUpstreams(list) {
   if (!list || !list.length) { setHtml(body, rowSpan(6, EMPTY('暂无上游数据'))); return; }
   setHtml(body, html`${list.map((u) => {
     const ratio = u.success_ratio;
-    const rc = ratio === null || ratio === undefined || u.stale_failures ? 'var(--text-muted)'
+    const rc = ratio === null || ratio === undefined ? 'var(--text-muted)'
       : (ratio >= 99 ? 'var(--ok)' : (ratio >= 95 ? 'var(--warn)' : 'var(--err)'));
     return html`<tr>
       <td class="mono">${u.tag}</td>
@@ -502,7 +502,7 @@ function renderOverviewUpstreams(list) {
       <td class="mono" style="color:${rc}">${ratio === null || ratio === undefined ? '—' : ratio + '%'}</td>
       <td class="mono">${dash(u.avg_latency_ms, ' ms')}</td>
       <td class="mono">${dash(u.p95_latency_ms, ' ms')}</td>
-      <td class="dim">${u.direction || '—'}</td>
+      <td class="dim">${SERVER_NAMES[u.tag] || '—'}</td>
     </tr>`;
   })}`);
 }
