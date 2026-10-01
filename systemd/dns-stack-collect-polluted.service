@@ -4,4 +4,6 @@ Description=dns-stack 采集 GFW DNS 污染 IP
 [Service]
 Type=oneshot
 ExecStart=/opt/dns-stack/bin/dns-stack-go collect-polluted
+MemoryHigh=192M
+MemoryMax=256M
 Nice=10

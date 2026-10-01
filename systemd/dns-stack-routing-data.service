@@ -6,6 +6,8 @@ Wants=wg-quick@wg0.service
 [Service]
 Type=oneshot
 ExecStart=/opt/dns-stack/bin/dns-stack-go routing-data
+MemoryHigh=384M
+MemoryMax=512M
 TimeoutStartSec=30min
 Nice=5
 IOSchedulingClass=best-effort
