@@ -355,6 +355,7 @@ function initSession() {
 const state = {
   page: 'overview',
   overviewTimer: null,
+  sysModules: null, sysHealth: null,
   liveES: null, liveOn: false, liveLoaded: false,
   logES: null, logFollow: false, logLines: [],
   queryPage: 1, queryPages: 1,
@@ -474,8 +475,11 @@ async function loadOverview() {
   try {
 
     const d = await apiCached('/api/overview');
-    const alive = (d.mosproxy && d.mosproxy.available) || (d.unbound && d.unbound.available);
-    $('#healthDot').className = 'dot ' + (alive ? 'ok' : 'err');
+    const health = overviewHealth(d);
+    const dot = $('#healthDot');
+    dot.className = 'dot ' + health.level;
+    dot.title = health.reasons.length ? health.reasons.join('\n') : '解析链路正常';
+    renderSysBar(null, health);
     cacheUpstreams(d.upstreams);
     renderOverviewStats(d);
     renderOverviewSystem(d.system);
@@ -486,6 +490,20 @@ async function loadOverview() {
     setHtml($('#ovStats'), stateHtml('概览数据加载失败：' + e.message, 'error'));
     $('#healthDot').className = 'dot err';
   }
+}
+
+function overviewHealth(d) {
+  const down = [];
+  const degraded = [];
+  if (!(d.mosproxy && d.mosproxy.available)) down.push('DNS 入口 mosproxy 无响应');
+  if (!(d.unbound && d.unbound.available)) down.push('本机 Unbound 无响应');
+  (d.upstreams || []).forEach((u) => {
+    if (!u.online) degraded.push((SERVER_NAMES[u.tag] || u.tag) + ' 离线（健康检查失败）');
+  });
+  return {
+    level: down.length ? 'err' : (degraded.length ? 'warn' : 'ok'),
+    reasons: down.concat(degraded),
+  };
 }
 
 function renderOverviewUpstreams(list) {
@@ -2377,22 +2395,28 @@ function moduleRow(m) {
   </div>`;
 }
 
-function renderSysBar(d) {
+function renderSysBar(modules, health) {
+  if (modules) state.sysModules = modules;
+  if (health) state.sysHealth = health;
+  const d = state.sysModules;
   const bar = $('#sysBar');
-  if (!bar) return;
-  const st = MOD_STATE[d.verdict] || MOD_STATE.unknown;
+  if (!bar || !d) return;
+  const extra = (state.sysHealth && state.sysHealth.level === 'warn') ? state.sysHealth.reasons : [];
+  const verdict = (d.verdict === 'ok' && extra.length) ? 'warn' : d.verdict;
+  const headline = (d.verdict === 'ok' && extra.length) ? '模块正常，但解析链路降级' : d.headline;
+  const st = MOD_STATE[verdict] || MOD_STATE.unknown;
   const c = d.counts || {};
-  const issues = d.attention || [];
-  const detail = (d.verdict === 'ok')
+  const issues = extra.concat(d.attention || []);
+  const detail = (verdict === 'ok')
     ? html`<span class="dim">${d.total} 个模块协同工作，全部就绪</span>`
     : issues.length
       ? html`<ul class="sys-issues">${issues.slice(0, 4).map((x) => html`<li>${x}</li>`)}</ul>`
       : html`<span class="dim">${c.unknown || 0} 个模块查不到状态，其余正常——
         多半是 helper 没应答，用 systemctl is-active dns-stack-helper 确认</span>`;
-  setHtml(bar, html`<div class="sys-card ${d.verdict}">
+  setHtml(bar, html`<div class="sys-card ${verdict}">
     <div class="sys-head">
       <span class="dot ${st.dot}"></span>
-      <b class="sys-headline">${d.headline}</b>
+      <b class="sys-headline">${headline}</b>
       <span class="sys-counts mono dim">正常 ${c.ok || 0} · 关注 ${c.warn || 0} · 中断 ${c.down || 0}${
         c.unknown ? ' · 查不到 ' + c.unknown : ''}</span>
       <button class="ghost sm" data-page-jump="settings" data-tab="services">查看模块</button>
