@@ -35,7 +35,7 @@ var operationOrder = []string{
 	"reload_mosproxy", "restart_mosproxy", "restart_unbound",
 	"healthcheck", "cert_check", "cert_renew", "backup", "purge_legacy",
 	"clear_audit", "vacuum_logs", "clear_domains", "clear_domains_all",
-	"set_arch_epoch", "export", "import", "refresh_routing",
+	"set_arch_epoch", "export", "refresh_routing",
 	"prune_backups", "drop_stale_logs",
 	"delete_query", "delete_domain", "delete_audit",
 }
@@ -60,7 +60,6 @@ var operationSpecs = map[string]operationSpec{
 	"clear_domains_all":   {Label: "清空全部域名统计", Dangerous: true, Timeout: 300},
 	"set_arch_epoch":      {Label: "重设统计起点", Dangerous: true, Timeout: 30},
 	"export":              {Label: "导出迁移包", Timeout: 300},
-	"import":              {Label: "导入迁移包", Dangerous: true, Timeout: 600},
 	"refresh_routing":     {Label: "刷新递归分流数据", Timeout: 2220, Role: "cn-resolver"},
 	"prune_backups":       {Label: "清理旧备份", Dangerous: true, Timeout: 60},
 	"drop_stale_logs":     {Label: "清除僵尸日志", Dangerous: true, Timeout: 60},

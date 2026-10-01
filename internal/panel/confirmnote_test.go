@@ -24,7 +24,7 @@ func TestEveryDangerousOperationExplainsItsConsequence(t *testing.T) {
 	}
 	dangerous := 0
 	for op, spec := range operationSpecs {
-		if !spec.Dangerous || op == "import" {
+		if !spec.Dangerous {
 			continue
 		}
 		dangerous++

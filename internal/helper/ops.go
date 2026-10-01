@@ -52,7 +52,7 @@ var DangerousOps = map[string]bool{
 	"purge_legacy": true, "clear_audit": true, "vacuum_logs": true,
 	"clear_domains": true, "clear_domains_all": true,
 	"restart_mosproxy": true, "restart_unbound": true,
-	"import": true, "cert_renew": true, "rotate_doh_path": true,
+	"cert_renew": true, "rotate_doh_path": true,
 	"migration_restore": true, "flush_cache": true,
 	"set_arch_epoch": true,
 	"acl_add":        true, "acl_remove": true, "acl_apply": true, "acl_disable": true,
@@ -288,18 +288,6 @@ func (h *Helper) opExport(args map[string]any) result {
 		return errorResult("非法的导出模式")
 	}
 	return h.run([]string{h.goBin, "export", "--mode", mode}, 300*time.Second, true)
-}
-
-func (h *Helper) opImport(args map[string]any) result {
-	resolved, err := filepath.EvalSymlinks(stringArg(args, "path"))
-	if err != nil {
-		return errorResult("文件不存在")
-	}
-	info, err := os.Stat(resolved)
-	if err != nil || !info.Mode().IsRegular() || !strings.HasPrefix(filepath.ToSlash(resolved), "/srv/dns-stack/export/") {
-		return errorResult("导入文件必须位于 /srv/dns-stack/export/ 下")
-	}
-	return h.run([]string{h.goBin, "import", resolved}, 600*time.Second, true)
 }
 
 func (h *Helper) migrationInbox() string {
@@ -810,7 +798,6 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"clear_domains_all":   h.opClearDomainsAll,
 		"set_arch_epoch":      h.opSetArchEpoch,
 		"export":              h.opExport,
-		"import":              h.opImport,
 		"migration_restore":   h.opMigrationRestore,
 		"cert_check":          h.opCertCheck,
 		"cert_info":           h.opCertInfo,
