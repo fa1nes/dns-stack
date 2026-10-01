@@ -134,6 +134,15 @@ jobs:
           gate direct4-audit ./dns-stack direct4-audit --state ./state --dry-run --list 0
           ./dns-stack direct4-audit --state ./state --list 0 > /dev/null
           if [ -f state/geoip/qqwry.ipdb ]; then
+            MAX_RSS_KB=262144 gate chnroute ./dns-stack chnroute \
+              --apnic apnic.txt --cnip state/geoip/qqwry.ipdb \
+              --out chnroute-gate.txt --excluded-out chnroute-gate-excluded.txt
+            DNS_STACK_APNIC="$PWD/apnic.txt" DNS_STACK_QQWRY="$PWD/state/geoip/qqwry.ipdb" \
+              go test ./internal/chnroute -run TestPrefilteringForeignSpansByAPNICLosesNothingOnRealData -count=1 -v \
+              | tee chnroute-equiv.txt
+            if ! grep -q -- '--- PASS: TestPrefilteringForeignSpansByAPNICLosesNothingOnRealData' chnroute-equiv.txt; then
+              echo "::error::the real-data pre-filter equivalence test did not actually run and pass"; exit 1
+            fi
             gate ecs-zone ./dns-stack ecs-zone \
               --direct4 state/chnroute/direct4.txt \
               --cnip state/geoip/qqwry.ipdb \

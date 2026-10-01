@@ -153,13 +153,13 @@ func planReverseExclusion(cnSet *ipset.Set, foreign []foreignSpan, maxDropRatio 
 	return plan
 }
 
-func loadCNIP(path string) (cn []ipset.Range, foreign []foreignSpan, err error) {
+func loadCNIP(path string, relevant func(lo, hi uint32) bool) (cn []ipset.Range, foreign []foreignSpan, err error) {
 	reader, err := geoip.OpenIPDB(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer reader.Close()
-	err = reader.WalkV4(func(prefix netip.Prefix, record map[string]string) error {
+	err = reader.WalkV4([]string{"country_code", "country_name"}, func(prefix netip.Prefix, record map[string]string) error {
 		span, ok := ipset.PrefixRange(prefix.Masked())
 		if !ok {
 			return nil
@@ -169,7 +169,7 @@ func loadCNIP(path string) (cn []ipset.Range, foreign []foreignSpan, err error) 
 			cn = append(cn, span)
 			return nil
 		}
-		if code == "" {
+		if code == "" || !relevant(span.Lo, span.Hi) {
 			return nil
 		}
 		name := record["country_name"]
@@ -221,7 +221,10 @@ func Run(opt Options) (Result, error) {
 	var cnipCN []ipset.Range
 	var foreign []foreignSpan
 	if opt.CNIPPath != "" {
-		cnipCN, foreign, err = loadCNIP(opt.CNIPPath)
+		apnicSet := ipset.New(cnRanges)
+		cnipCN, foreign, err = loadCNIP(opt.CNIPPath, func(lo, hi uint32) bool {
+			return opt.ReverseExlude && apnicSet.Overlaps(lo, hi)
+		})
 		if err != nil {
 			warnf(opt.Out, "qqwry 补充失败，仅用 APNIC：%v", err)
 			cnipCN, foreign = nil, nil

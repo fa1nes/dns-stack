@@ -177,7 +177,7 @@ func scan(src Source, direct []ipset.Range) (*scanResult, error) {
 			return nil, err
 		}
 		defer reader.Close()
-		err = reader.WalkV4(func(prefix netip.Prefix, record map[string]string) error {
+		err = reader.WalkV4([]string{"country_code"}, func(prefix netip.Prefix, record map[string]string) error {
 			code := strings.ToUpper(strings.TrimSpace(record["country_code"]))
 			if code == "" {
 				return nil

@@ -1,6 +1,7 @@
 package geoip
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -642,9 +643,51 @@ func (r *IPDBReader) Get(ip string) (map[string]string, error) {
 	return r.decodeNode(node), nil
 }
 
-func (r *IPDBReader) WalkV4(visit func(prefix netip.Prefix, record map[string]string) error) error {
+func (r *IPDBReader) decodeFields(node int, want []int, names []string) map[string]string {
+	off := node - r.nodeCount + r.nodeCount*8
+	base := 4 + r.metaLen + off
+	if base < 0 || base+2 > len(r.data) {
+		return nil
+	}
+	sz := int(binary.BigEndian.Uint16(r.data[base:]))
+	if base+2+sz > len(r.data) {
+		return nil
+	}
+	raw := r.data[base+2 : base+2+sz]
+	out := make(map[string]string, len(want))
+	column := 0
+	for _, target := range want {
+		for column < target {
+			tab := bytes.IndexByte(raw, '\t')
+			if tab < 0 {
+				return out
+			}
+			raw = raw[tab+1:]
+			column++
+		}
+		end := bytes.IndexByte(raw, '\t')
+		if end < 0 {
+			end = len(raw)
+		}
+		if v := strings.TrimSpace(string(raw[:end])); v != "" {
+			out[names[column]] = v
+		}
+	}
+	return out
+}
+
+func (r *IPDBReader) WalkV4(fields []string, visit func(prefix netip.Prefix, record map[string]string) error) error {
 	if r.v4Start == 0 && r.ipVersion != 1 {
 		return nil
+	}
+	var want []int
+	for i, name := range r.Fields {
+		for _, field := range fields {
+			if name == field {
+				want = append(want, i)
+				break
+			}
+		}
 	}
 	type item struct {
 		node   int
@@ -676,7 +719,7 @@ func (r *IPDBReader) WalkV4(visit func(prefix netip.Prefix, record map[string]st
 			}
 			rec, cached := records[child]
 			if !cached {
-				rec = r.decodeNode(child)
+				rec = r.decodeFields(child, want, r.Fields)
 				records[child] = rec
 			}
 			if len(rec) == 0 {

@@ -267,7 +267,7 @@ func Build(opt BuildOptions) ([]Row, BuildStats, error) {
 	if opt.Disputed != nil {
 		cuts = opt.Disputed.Ranges()
 	}
-	err = reader.WalkV4(func(prefix netip.Prefix, record map[string]string) error {
+	err = reader.WalkV4([]string{"country_code", "region_name", "owner_domain", "isp_domain"}, func(prefix netip.Prefix, record map[string]string) error {
 		if record["country_code"] != "CN" {
 			return nil
 		}
