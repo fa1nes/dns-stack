@@ -231,13 +231,12 @@ func (s *Server) ipLookup(w http.ResponseWriter, r *http.Request) {
 	sources = append(sources, online)
 
 	writeJSON(w, 200, map[string]any{
-		"ip":           target,
-		"version":      map[bool]int{true: 4, false: 6}[addr.Is4()],
-		"sources":      sources,
-		"divergences":  divergences(sources),
-		"routing":      s.routingFacts(target),
-		"reverse_dns":  ptr,
-		"geoip_status": s.geoipStatus(),
-		"freshness":    s.databaseFreshness(),
+		"ip":          target,
+		"version":     map[bool]int{true: 4, false: 6}[addr.Is4()],
+		"sources":     sources,
+		"divergences": divergences(sources),
+		"routing":     s.routingFacts(target),
+		"reverse_dns": ptr,
+		"freshness":   s.databaseFreshness(),
 	})
 }

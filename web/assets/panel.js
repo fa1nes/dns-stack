@@ -838,7 +838,6 @@ function routingSummary(rt) {
       + '<span class="note-xs">内网访问取不到公网子网，以下为默认节点</span>')]);
   }
   if (rt.zone) detailRows.push(['直连区域', html`<span class="mono">${rt.zone}</span>`]);
-  if (rt.view_comparison) detailRows.push(['CN / HK 对照', html`<span class="mono">${rt.view_comparison}</span>`]);
 
   const gs = rt.geoip_status;
   if (gs && !gs.available) {

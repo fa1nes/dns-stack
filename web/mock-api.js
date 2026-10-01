@@ -239,7 +239,6 @@
         divergences: [{ field: 'as_org' }],
         routing: { direct4: true, cn_authority: false, shared_anycast: false,
                    polluted: false, global: true },
-        geoip_status: { available: true, degraded: false },
         freshness: {
           cnip: { available: true, build_epoch: now() - 86400 * 2, age_days: 2 },
           asn: { available: true, build_epoch: now() - 86400 * 5, age_days: 5 },
