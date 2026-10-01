@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/alert"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 )
 
@@ -85,6 +87,26 @@ func cmdRoutingWatchdog(args []string) error {
 		}
 		return fmt.Errorf("分流异常：%s", health.Summary())
 	}
-	_, err := watchdog.Check(ctx, rt)
+	health, err := watchdog.Check(ctx, rt)
+	var problems []string
+	if !health.Repaired {
+		problems = append(problems, health.Problems...)
+	}
+	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+	set, metricsErr := metrics.Fetch(probe, metrics.MosproxyURL)
+	cancel()
+	if metricsErr != nil {
+		problems = append(problems, "mosproxy 指标接口无响应（DNS 入口可能已停止）")
+	}
+	for _, tag := range set.OfflineUpstreams() {
+		problems = append(problems, "上游 "+tag+" 离线（mosproxy 健康检查失败）")
+	}
+	host, _ := os.Hostname()
+	if _, alertErr := alert.Notify(ctx, alert.Options{
+		Webhook: cfg.Value("ALERT_WEBHOOK"), StatePath: cfg.Path("alert-state"),
+		Host: host, Problems: problems,
+	}); alertErr != nil {
+		fmt.Fprintf(os.Stderr, "[警告] 告警发送失败，下一轮重试: %v\n", alertErr)
+	}
 	return err
 }
