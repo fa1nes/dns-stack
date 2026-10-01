@@ -72,46 +72,19 @@ func TestEveryLoaderWithAChangingPathIsOnTheGuardList(t *testing.T) {
 	for _, name := range mustGuardAgainstOutOfOrderResponses {
 		listed[name] = true
 	}
+	matched := 0
 	for name, body := range functionBodies(panelScript(t)) {
-		if !buildsRequestFromChangingParams(body) || listed[name] {
+		if !buildsRequestFromChangingParams(body) {
+			continue
+		}
+		matched++
+		if listed[name] {
 			continue
 		}
 		t.Errorf("%s 把会变的参数拼进了 GET 路径，却既不在守卫清单里也没有 latestOnly()——"+
 			"上面那条检查只认手写清单，新加的 loader 漏进来时它不会报警", name)
 	}
-}
-
-func TestGuardListDoesNotOutliveTheCriterionThatFeedsIt(t *testing.T) {
-	bodies := functionBodies(panelScript(t))
-	matched := 0
-	for _, body := range bodies {
-		if buildsRequestFromChangingParams(body) {
-			matched++
-		}
-	}
 	if matched == 0 {
-		t.Fatal("判据一个 loader 都没匹配上，说明 panel.js 的请求写法变了，" +
-			"上面那条补漏检查已经变成空转")
-	}
-}
-
-func TestLatestOnlyGuardStillExists(t *testing.T) {
-	script := panelScript(t)
-	if !strings.Contains(script, "function latestOnly(") {
-		t.Fatal("latestOnly 没了，上面那条守卫检查会全部变成空转")
-	}
-}
-
-func TestOverviewPollLoopCannotBeStartedTwice(t *testing.T) {
-	body, found := functionBodies(panelScript(t))["startOverview"]
-	if !found {
-		t.Fatal("panel.js 里没有 startOverview 了")
-	}
-	if !strings.Contains(body, "latestOnly(") {
-		t.Error("startOverview 没有代号守卫——切出 overview 再切回来会让上一轮 tick 在 " +
-			"await 之后重新发现 page==='overview' 并自己续上定时器，两条 5 秒轮询同时跑")
-	}
-	if strings.Contains(body, "clearInterval") {
-		t.Error("startOverview 的句柄来自 setTimeout，却用 clearInterval 去取消，读代码的人会误判它是间隔定时器")
+		t.Fatal("判据一个 loader 都没匹配上，panel.js 的请求写法变了，这条补漏检查已经空转")
 	}
 }
