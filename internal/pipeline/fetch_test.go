@@ -22,10 +22,17 @@ func TestSlowTrickleIsAbandonedInsteadOfHangingToTimeout(t *testing.T) {
 			if flusher != nil {
 				flusher.Flush()
 			}
-			time.Sleep(30 * time.Millisecond)
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(30 * time.Millisecond):
+			}
 		}
 	}))
 	defer server.Close()
+
+	defer func(saved time.Duration) { SpeedWindow = saved }(SpeedWindow)
+	SpeedWindow = time.Second
 
 	dir := t.TempDir()
 	rt := NewRuntime(Config{StateDir: dir}, io.Discard)
@@ -38,8 +45,9 @@ func TestSlowTrickleIsAbandonedInsteadOfHangingToTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("慢速涓流应当被放弃")
 	}
-	if took := time.Since(started); took > 80*time.Second {
-		t.Errorf("放弃用了 %s，速度下限保护没生效（原 shell 是 20 秒窗口）", took)
+	if took := time.Since(started); took > 5*SpeedWindow {
+		t.Errorf("放弃用了 %s（速度窗口 %s），下载没有经过速度下限保护——"+
+			"原 shell 靠 curl --speed-limit 放弃涓流，移植时丢过一次，生产流水线因此挂死", took, SpeedWindow)
 	}
 }
 

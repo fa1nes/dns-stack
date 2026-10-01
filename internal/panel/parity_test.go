@@ -200,13 +200,15 @@ func TestEveryListedOperationHasASpec(t *testing.T) {
 }
 
 func TestHelperLongOperationAndCancellation(t *testing.T) {
-	t.Run("long", func(t *testing.T) {
-		fakeHelper(t, func(request map[string]any) map[string]any {
-			time.Sleep(26 * time.Second)
-			return map[string]any{"ok": true}
-		})
-		response, err := helperCall(context.Background(), "rebuild_rules", nil)
-		checkedEqual(t, "long operation beyond 25s", map[string]any{"success": err == nil, "response": response}, map[string]any{"success": true, "response": map[string]any{"ok": true}})
+	t.Run("budget", func(t *testing.T) {
+		for op, want := range map[string]time.Duration{
+			"mosproxy_metrics": 30 * time.Second, "set_panel_password": 45 * time.Second,
+			"refresh_routing": 2220 * time.Second, "delete_query": 30 * time.Second,
+		} {
+			if got := helperTimeout(op); got != want {
+				t.Errorf("helperTimeout(%s) = %v，期望 %v——注册表里没写 Timeout 的操作曾拿到 0 秒，上下文一建好就已过期", op, got, want)
+			}
+		}
 	})
 	t.Run("cancel", func(t *testing.T) {
 		fakeHelper(t, func(request map[string]any) map[string]any {

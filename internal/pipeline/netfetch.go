@@ -10,9 +10,11 @@ import (
 	"time"
 )
 
+const MinSpeedBytes = 8192
+
+var SpeedWindow = 20 * time.Second
+
 const (
-	MinSpeedBytes  = 8192
-	SpeedWindow    = 20 * time.Second
 	HeaderTimeout  = 20 * time.Second
 	AttemptTimeout = 5 * time.Minute
 	ConnectTimeout = 10 * time.Second

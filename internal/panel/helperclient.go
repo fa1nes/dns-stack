@@ -40,17 +40,20 @@ func helperError(err error, resp map[string]any) string {
 	return "指标不可用"
 }
 
+func helperTimeout(op string) time.Duration {
+	if op == "set_panel_password" {
+		return 45 * time.Second
+	}
+	if spec, exists := operationSpecs[op]; exists && spec.Timeout > 0 {
+		return time.Duration(spec.Timeout) * time.Second
+	}
+	return 30 * time.Second
+}
+
 func helperCall(ctx context.Context, op string, args map[string]any) (map[string]any, error) {
 	if _, ok := ctx.Deadline(); !ok {
-		timeout := 30 * time.Second
-		if spec, exists := operationSpecs[op]; exists {
-			timeout = time.Duration(spec.Timeout) * time.Second
-		}
-		if op == "set_panel_password" {
-			timeout = 45 * time.Second
-		}
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		ctx, cancel = context.WithTimeout(ctx, helperTimeout(op))
 		defer cancel()
 	}
 	socket := os.Getenv("DNS_STACK_HELPER_SOCK")
