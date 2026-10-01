@@ -410,14 +410,14 @@ func (c *Ctl) PurgeLegacy(ctx context.Context) error {
 	return nil
 }
 
-var keepRe = regexp.MustCompile(`^[0-9]+[dwm]$`)
+var keepRe = regexp.MustCompile(`^[0-9]{1,3}[dw]$`)
 
 func (c *Ctl) VacuumLogs(ctx context.Context, keep string) error {
 	if keep == "" {
 		keep = "7d"
 	}
 	if !keepRe.MatchString(keep) {
-		return fmt.Errorf("保留期格式如 7d / 2w / 1m")
+		return fmt.Errorf("保留期只接受天或周，如 7d / 2w（journalctl 里 m 是分钟，不是月）")
 	}
 	before := journalUsage(ctx)
 	if !c.Confirm(fmt.Sprintf("即将删除 %s 之前的系统日志(当前占用 %s)，确认？", keep, before)) {
