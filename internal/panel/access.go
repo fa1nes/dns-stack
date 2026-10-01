@@ -215,7 +215,8 @@ func (s *Server) aclLockoutCheck(r *http.Request, action string, entries []strin
 		final = current
 	}
 	if len(final) == 0 {
-		return "结果是空白名单——空的白名单会把所有客户端挡在外面，拒绝下发"
+		return "结果是空白名单——清空授权网段会移除访问控制，DoH/DoT 入口将对全网开放；" +
+			"确实要这样做请用「关闭访问控制」，面板不会把删到空当成关闭"
 	}
 	if !cidrutil.NewSet(final).Contains(client) {
 		return "拒绝：改完之后你自己（" + client.String() + "）就不在授权网段里了，" +
