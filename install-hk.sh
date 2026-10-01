@@ -16,10 +16,10 @@ log_err()  { echo "[错误] $*" >&2; }
 
 [ "$(id -u)" -eq 0 ] || { log_err "需要 root 运行"; exit 1; }
 
-log_info "[1/4] 创建目录..."
+log_info "[1/5] 创建目录..."
 mkdir -p "$OPT_DIR/bin" "$STATE_DIR" "$LOG_DIR"
 
-log_info "[2/4] 校验二进制..."
+log_info "[2/5] 校验二进制..."
 if [ ! -x "$GO_BIN" ]; then
     log_err "缺少 $GO_BIN"
     log_err "  从 GitHub Releases 下载对应架构的 dns-stack-linux-<arch> 放到该路径并 chmod +x"
@@ -32,7 +32,7 @@ if ! "$GO_BIN" version >/dev/null 2>&1; then
 fi
 log_ok "$("$GO_BIN" version)"
 
-log_info "[3/4] 检查配置..."
+log_info "[3/5] 检查配置..."
 mkdir -p "$(dirname "$CONFIG_FILE")"
 if [ ! -f "$CONFIG_FILE" ]; then
     printf 'ROLE=offshore\nSTATE_DIR=%s\n' "$STATE_DIR" > "$CONFIG_FILE"
@@ -44,7 +44,7 @@ elif ! grep -q '^ROLE=offshore' "$CONFIG_FILE"; then
     log_ok "$CONFIG_FILE 的 ROLE 已更新为 offshore"
 fi
 
-log_info "[4/4] 写入日志轮转调度..."
+log_info "[4/5] 写入日志轮转调度..."
 apk add -q flock 2>/dev/null || true
 touch "$CRON_FILE"
 sed -i '/# dns-stack begin/,/# dns-stack end/d' "$CRON_FILE"
@@ -59,6 +59,36 @@ rc-service crond status >/dev/null 2>&1 || rc-service crond start
 rc-update add crond default >/dev/null 2>&1 || true
 "$GO_BIN" trim-logs --drop-stale --dir "$LOG_DIR" --keep-bytes "$LOG_KEEP_BYTES" 2>&1 | tee -a "$TRIM_LOG"
 log_ok "每日保留每份日志末尾 $((LOG_KEEP_BYTES/1024/1024))MB"
+
+log_info "[5/5] 让 Unbound 不依赖开机顺序、崩溃后自动拉起..."
+BOOT_CONF=/etc/unbound/unbound.conf.d/00-dns-stack-boot.conf
+mkdir -p "$(dirname "$BOOT_CONF")"
+printf 'server:
+    ip-freebind: yes
+' > "$BOOT_CONF"
+if ! unbound-checkconf >/dev/null 2>&1; then
+    rm -f "$BOOT_CONF"
+    log_err "加入 ip-freebind 后 unbound-checkconf 不通过，已撤回 $BOOT_CONF"
+    exit 1
+fi
+UNBOUND_RC=/etc/conf.d/unbound
+touch "$UNBOUND_RC"
+sed -i '/^#\{0,1\}supervisor=/d' "$UNBOUND_RC"
+echo 'supervisor=supervise-daemon' >> "$UNBOUND_RC"
+rc-update add unbound default >/dev/null 2>&1 || true
+rc-service unbound stop >/dev/null 2>&1 || true
+rc-service unbound zap >/dev/null 2>&1 || true
+start-stop-daemon -K -x /usr/sbin/unbound >/dev/null 2>&1 || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    grep -qx unbound /proc/[0-9]*/comm 2>/dev/null || break
+    sleep 1
+done
+if grep -qx unbound /proc/[0-9]*/comm 2>/dev/null; then
+    log_err "旧的 Unbound 进程 10 秒内没有退出，不在它还占着端口时切换守护方式"
+    exit 1
+fi
+rc-service unbound start
+log_ok "Unbound 已改为 supervise-daemon 守护，监听隧道地址不再要求 wg0 先于它启动"
 
 if dig +short +time=3 +tries=1 @127.0.0.1 -p 5335 www.aliyun.com A 2>/dev/null | grep -q '^[0-9]'; then
     log_ok "本机 Unbound 127.0.0.1:5335 应答正常"
