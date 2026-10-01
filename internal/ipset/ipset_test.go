@@ -98,6 +98,26 @@ func TestEmptySetNeverMatches(t *testing.T) {
 	}
 }
 
+func TestIsGlobalAddrIsTheOneCriterionForEveryFamily(t *testing.T) {
+	for value, want := range map[string]bool{
+		"1.1.1.1": true, "116.1.2.3": true, "10.0.0.1": false, "100.64.0.1": false,
+		"198.18.0.1": false, "192.0.2.1": false, "0.1.2.3": false, "240.0.0.1": false,
+		"::ffff:10.0.0.1": false, "::ffff:1.1.1.1": true,
+		"2606:4700::1": true, "2001:db8::1": false, "2001::1": false, "2002:c000:0204::1": false,
+		"3fff::1": false, "fe80::1": false, "fc00::1": false, "::1": false, "ff02::1": false,
+	} {
+		if got := IsGlobalAddr(netip.MustParseAddr(value)); got != want {
+			t.Errorf("IsGlobalAddr(%s) = %v，期望 %v——面板的「可作为位置证据」与分流管线的「可路由」"+
+				"曾经是两份列表，6to4 等 IPv6 段两边答案相反", value, got, want)
+		}
+	}
+	for _, prefix := range NonGlobalPrefixes4() {
+		if IsGlobalAddr(prefix.Addr()) {
+			t.Errorf("%s 在非全局清单里，IsGlobalAddr 却认为它的首地址是全局的", prefix)
+		}
+	}
+}
+
 func TestGlobalOnlyFiltersRoutingSafeguards(t *testing.T) {
 	input := `1.2.3.0/24
 10.0.0.0/8

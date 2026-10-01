@@ -87,53 +87,9 @@ func LoadDirectIntervals(path string) ([]ipset.Range, error) {
 		if !ok {
 			continue
 		}
-		ranges = append(ranges, globalParts(r)...)
+		ranges = append(ranges, ipset.GlobalParts(r)...)
 	}
 	return ipset.Collapse(ranges), nil
-}
-
-func globalParts(r ipset.Range) []ipset.Range {
-	parts := []ipset.Range{r}
-	for _, excluded := range nonGlobal {
-		var next []ipset.Range
-		for _, part := range parts {
-			if excluded.Hi < part.Lo || excluded.Lo > part.Hi {
-				next = append(next, part)
-				continue
-			}
-			if excluded.Lo > part.Lo {
-				next = append(next, ipset.Range{Lo: part.Lo, Hi: excluded.Lo - 1})
-			}
-			if excluded.Hi < part.Hi {
-				next = append(next, ipset.Range{Lo: excluded.Hi + 1, Hi: part.Hi})
-			}
-		}
-		parts = next
-		if len(parts) == 0 {
-			break
-		}
-	}
-	return parts
-}
-
-var nonGlobal = buildNonGlobal()
-
-func buildNonGlobal() []ipset.Range {
-	values := []string{
-		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
-		"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24",
-		"192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16",
-		"198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
-		"224.0.0.0/4", "240.0.0.0/4",
-	}
-	out := make([]ipset.Range, 0, len(values))
-	for _, value := range values {
-		if r, ok := ipset.PrefixRange(netip.MustParsePrefix(value)); ok {
-			out = append(out, r)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Lo < out[j].Lo })
-	return out
 }
 
 func intersections(lo, hi uint32, intervals []ipset.Range) []ipset.Range {

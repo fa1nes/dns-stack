@@ -165,7 +165,7 @@ func IsGlobalPrefix(p netip.Prefix) bool {
 	if !ok {
 		return false
 	}
-	parts := globalRangeParts(Range{Lo: lo, Hi: hi})
+	parts := GlobalParts(Range{Lo: lo, Hi: hi})
 	return len(parts) == 1 && parts[0].Lo == lo && parts[0].Hi == hi
 }
 
@@ -173,6 +173,7 @@ var nonGlobalPrefixes6 = []netip.Prefix{
 	netip.MustParsePrefix("2001:db8::/32"), netip.MustParsePrefix("2001::/32"),
 	netip.MustParsePrefix("2001:10::/28"), netip.MustParsePrefix("2001:20::/28"),
 	netip.MustParsePrefix("2001:2::/48"), netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("2002::/16"),
 }
 
 func IsGlobalAddr(addr netip.Addr) bool {
@@ -202,6 +203,10 @@ func IsGlobalAddr(addr netip.Addr) bool {
 	return true
 }
 
+func NonGlobalPrefixes4() []netip.Prefix {
+	return append([]netip.Prefix(nil), nonGlobalPrefixes...)
+}
+
 var nonGlobalPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("10.0.0.0/8"),
 	netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("127.0.0.0/8"),
@@ -211,10 +216,6 @@ var nonGlobalPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("198.51.100.0/24"),
 	netip.MustParsePrefix("203.0.113.0/24"), netip.MustParsePrefix("224.0.0.0/4"),
 	netip.MustParsePrefix("240.0.0.0/4"),
-}
-
-func GlobalParts(input Range) []Range {
-	return globalRangeParts(input)
 }
 
 func isNormalized(values []Range) bool {
@@ -271,7 +272,7 @@ func Subtract(base, remove []Range) []Range {
 	return out
 }
 
-func globalRangeParts(input Range) []Range {
+func GlobalParts(input Range) []Range {
 	if input.Lo > input.Hi {
 		return nil
 	}
@@ -305,44 +306,7 @@ func globalRangeParts(input Range) []Range {
 		}
 		return parts[i].Hi < parts[j].Hi
 	})
-	filtered := parts[:0]
-	for _, part := range parts {
-		if isGlobalAddr(fromUint32(part.Lo)) && isGlobalAddr(fromUint32(part.Hi)) {
-			filtered = append(filtered, part)
-		}
-	}
-	return filtered
-}
-
-func isGlobalAddr(a netip.Addr) bool {
-	if !a.Is4() {
-		return false
-	}
-	if a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() ||
-		a.IsLinkLocalMulticast() || a.IsMulticast() || a.IsUnspecified() ||
-		a.IsInterfaceLocalMulticast() {
-		return false
-	}
-	b := a.As4()
-	switch {
-	case b[0] == 100 && b[1] >= 64 && b[1] <= 127:
-		return false
-	case b[0] == 192 && b[1] == 0 && b[2] == 0:
-		return false
-	case b[0] == 192 && b[1] == 0 && b[2] == 2:
-		return false
-	case b[0] == 192 && b[1] == 88 && b[2] == 99:
-		return false
-	case b[0] == 198 && (b[1] == 18 || b[1] == 19):
-		return false
-	case b[0] == 198 && b[1] == 51 && b[2] == 100:
-		return false
-	case b[0] == 203 && b[1] == 0 && b[2] == 113:
-		return false
-	case b[0] >= 240:
-		return false
-	}
-	return true
+	return parts
 }
 
 type LoadOptions struct {
@@ -381,7 +345,7 @@ func LoadReader(r io.Reader, opt LoadOptions) (*LoadResult, error) {
 			continue
 		}
 		if opt.GlobalOnly {
-			parts := globalRangeParts(rg)
+			parts := GlobalParts(rg)
 			if len(parts) == 0 {
 				res.Skipped++
 				continue
