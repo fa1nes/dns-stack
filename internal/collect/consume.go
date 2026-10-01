@@ -130,6 +130,7 @@ type Consumer struct {
 	consecutiveFailures int
 	failureReported     bool
 	nonASCIIDropped     int
+	malformedDropped    int
 	oversized           atomic.Int64
 	oversizedReported   int64
 	readErr             error
@@ -228,6 +229,11 @@ func (c *Consumer) HandleLine(text string) {
 				c.log("warn", "遇到非 ASCII 查询名，已跳过（本实现不做 IDNA 转换）",
 					map[string]any{"dropped": c.nonASCIIDropped})
 			}
+			return
+		}
+		c.malformedDropped++
+		if c.malformedDropped == 1 || c.malformedDropped%nonASCIIReportEvery == 0 {
+			c.log("warn", "遇到不合法的查询名，已跳过", map[string]any{"dropped": c.malformedDropped, "example": rawName})
 		}
 		return
 	}

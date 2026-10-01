@@ -20,7 +20,11 @@ func TestNormalizeDomain(t *testing.T) {
 		".":                               "",
 		"-bad.example.com":                "",
 		"bad-.example.com":                "",
-		"_dmarc.example.com":              "",
+		"_dmarc.example.com":              "_dmarc.example.com",
+		"_dns.resolver.arpa":              "_dns.resolver.arpa",
+		"a_b.example.com":                 "",
+		"_.example.com":                   "",
+		"1.2.3.4":                         "",
 		"a..b.com":                        "",
 		"例子.测试":                           "",
 		strings.Repeat("a", 64) + ".com":  "",
@@ -35,7 +39,7 @@ func TestNormalizeDomain(t *testing.T) {
 	if !NonASCII("例子.测试") {
 		t.Error("非 ASCII 名字未被识别")
 	}
-	if NonASCII("_dmarc.example.com") {
+	if NonASCII("a_b.example.com") {
 		t.Error("纯 ASCII 的非法名字被误判为非 ASCII")
 	}
 }
