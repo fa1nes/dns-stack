@@ -10,6 +10,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/dns-stack/dns-stack/internal/metrics"
 )
 
 const queryCountCap = 10000
@@ -418,10 +420,10 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	go func() { defer fetched.Done(); unbound, unboundErr = helperCall(r.Context(), "unbound_stats", nil) }()
 	fetched.Wait()
 	if mosErr == nil && helperOK(mos) {
-		parsed := parseMetrics(helperStdout(mos))
+		parsed := metrics.Parse(helperStdout(mos))
 		out["upstreams"] = upstreamRows(parsed)
-		queries := metricByLabel(parsed, "upstream_query_total", "upstream")
-		errors := metricByLabel(parsed, "upstream_err_total", "upstream")
+		queries := parsed.ByLabel("upstream_query_total", "upstream")
+		errors := parsed.ByLabel("upstream_err_total", "upstream")
 		cache := metricScalar(parsed, "query_cache_hit_total")
 		total, failed := cache, 0.0
 		for _, value := range queries {
@@ -432,10 +434,10 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		latSum, latCount := 0.0, 0.0
-		for _, value := range metricByLabel(parsed, "upstream_response_latency_millisecond_sum", "upstream") {
+		for _, value := range parsed.ByLabel("upstream_response_latency_millisecond_sum", "upstream") {
 			latSum += value
 		}
-		for _, value := range metricByLabel(parsed, "upstream_response_latency_millisecond_count", "upstream") {
+		for _, value := range parsed.ByLabel("upstream_response_latency_millisecond_count", "upstream") {
 			latCount += value
 		}
 		var avgLatency any

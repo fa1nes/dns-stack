@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dns-stack/dns-stack/internal/metrics"
 )
 
 const productionMetricsSample = `upstream_err_total{upstream="foreign-hk"} 11
@@ -31,7 +33,7 @@ upstream_response_latency_millisecond_count{upstream="local-unbound"} 7359
 `
 
 func TestUpstreamRowsShowAnOfflineFallbackInsteadOfAnEmptyTable(t *testing.T) {
-	rows := upstreamRows(parseMetrics(productionMetricsSample))
+	rows := upstreamRows(metrics.Parse(productionMetricsSample))
 	if len(rows) != 2 {
 		t.Fatalf("得到 %d 行上游，期望 2——这张表曾经从 Go 移植起就一直是空数组，"+
 			"2026-10-01 香港递归离线 11.7 小时，面板上看不到任何迹象", len(rows))
@@ -52,7 +54,7 @@ var mockUpstreamKey = regexp.MustCompile(`\b([a-z_][a-z0-9_]*):`)
 
 func TestUpstreamRowsMatchTheMockAndWhatThePanelReads(t *testing.T) {
 	backend := map[string]bool{}
-	for key := range upstreamRows(parseMetrics(productionMetricsSample))[0] {
+	for key := range upstreamRows(metrics.Parse(productionMetricsSample))[0] {
 		backend[key] = true
 	}
 

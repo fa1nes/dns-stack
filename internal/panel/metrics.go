@@ -2,71 +2,32 @@ package panel
 
 import (
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/metrics"
 )
 
-type metricSample struct {
-	labels map[string]string
-	value  float64
+func metricScalar(s metrics.Set, name string) float64 {
+	value, _ := s.Scalar(name)
+	return value
 }
 
-var metricLine = regexp.MustCompile(`^([A-Za-z_:][A-Za-z0-9_:]*)(?:\{([^}]*)\})?\s+([^\s]+)$`)
-var metricLabel = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"`)
-
-func parseMetrics(text string) map[string][]metricSample {
-	out := map[string][]metricSample{}
-	for _, line := range strings.Split(text, "\n") {
-		m := metricLine.FindStringSubmatch(strings.TrimSpace(line))
-		if len(m) == 0 {
-			continue
-		}
-		value, err := strconv.ParseFloat(m[3], 64)
-		if err != nil {
-			continue
-		}
-		labels := map[string]string{}
-		for _, p := range metricLabel.FindAllStringSubmatch(m[2], -1) {
-			labels[p[1]] = p[2]
-		}
-		out[m[1]] = append(out[m[1]], metricSample{labels: labels, value: value})
-	}
-	return out
-}
-
-func metricScalar(parsed map[string][]metricSample, name string) float64 {
-	if values := parsed[name]; len(values) > 0 {
-		return values[0].value
-	}
-	return 0
-}
-
-func metricByLabel(parsed map[string][]metricSample, name, label string) map[string]float64 {
-	out := map[string]float64{}
-	for _, sample := range parsed[name] {
-		if value, ok := sample.labels[label]; ok {
-			out[value] = sample.value
-		}
-	}
-	return out
-}
-
-func upstreamRows(parsed map[string][]metricSample) []map[string]any {
-	queries := metricByLabel(parsed, "upstream_query_total", "upstream")
-	errs := metricByLabel(parsed, "upstream_err_total", "upstream")
-	offline := metricByLabel(parsed, "upstream_health_check_offline", "upstream")
-	latSum := metricByLabel(parsed, "upstream_response_latency_millisecond_sum", "upstream")
-	latCount := metricByLabel(parsed, "upstream_response_latency_millisecond_count", "upstream")
+func upstreamRows(parsed metrics.Set) []map[string]any {
+	queries := parsed.ByLabel("upstream_query_total", "upstream")
+	errs := parsed.ByLabel("upstream_err_total", "upstream")
+	offline := parsed.ByLabel("upstream_health_check_offline", "upstream")
+	latSum := parsed.ByLabel("upstream_response_latency_millisecond_sum", "upstream")
+	latCount := parsed.ByLabel("upstream_response_latency_millisecond_count", "upstream")
 	buckets := map[string][][2]float64{}
 	for _, sample := range parsed["upstream_response_latency_millisecond_bucket"] {
-		tag := sample.labels["upstream"]
-		le, err := strconv.ParseFloat(sample.labels["le"], 64)
+		tag := sample.Labels["upstream"]
+		le, err := strconv.ParseFloat(sample.Labels["le"], 64)
 		if tag == "" || err != nil {
 			continue
 		}
-		buckets[tag] = append(buckets[tag], [2]float64{le, sample.value})
+		buckets[tag] = append(buckets[tag], [2]float64{le, sample.Value})
 	}
 	tags := make([]string, 0, len(queries))
 	for tag := range queries {

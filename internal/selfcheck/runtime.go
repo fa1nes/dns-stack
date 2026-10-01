@@ -4,14 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/dnswire"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/resolve"
 	"github.com/dns-stack/dns-stack/internal/stack"
@@ -23,7 +22,6 @@ const (
 	offshoreResolver  = "10.100.0.3"
 	recursivePort     = 5335
 	offshoreProbeName = "www.wikipedia.org"
-	mosproxyMetrics   = "http://127.0.0.1:8888/metrics"
 	collectorWindow   = time.Hour
 )
 
@@ -141,44 +139,30 @@ func checkThrottling(ctx context.Context, opt Options, report *Report) {
 	c := &checker{report: report, group: "查询采集"}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mosproxyMetrics, nil)
+	set, err := metrics.Fetch(ctx, metrics.MosproxyURL)
 	if err != nil {
+		c.skip("限流未被打满", "取不到 mosproxy 指标(管理 API 无响应?): %v", err)
+		c.skip("上游全部在线", "取不到 mosproxy 指标")
 		return
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		c.skip("限流未被打满", "取不到 mosproxy 限流指标(管理 API 无响应?)")
-		return
-	}
-	defer resp.Body.Close()
-	buf := make([]byte, 1<<20)
-	n, _ := resp.Body.Read(buf)
-	counters := map[string]int{"rejected_cc_total": -1, "rejected_qps_total": -1}
-	for _, line := range strings.Split(string(buf[:n]), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		if _, want := counters[fields[0]]; !want {
-			continue
-		}
-		value, err := strconv.ParseFloat(fields[1], 64)
-		if err == nil {
-			counters[fields[0]] = int(value)
-		}
-	}
-	cc, qps := counters["rejected_cc_total"], counters["rejected_qps_total"]
-	if cc < 0 && qps < 0 {
+	cc, hasCC := set.Scalar("rejected_cc_total")
+	qps, hasQPS := set.Scalar("rejected_qps_total")
+	switch {
+	case !hasCC && !hasQPS:
 		c.skip("限流未被打满", "指标里没有 rejected_cc_total / rejected_qps_total")
-		return
-	}
-	if cc > 0 || qps > 0 {
+	case cc > 0 || qps > 0:
 		c.warn("限流未被打满",
 			"曾有查询被拒(累计 并发 %d / QPS %d)——limit 是全局配额，打满时自己的查询也会被拒",
-			max(cc, 0), max(qps, 0))
+			int(cc), int(qps))
+	default:
+		c.ok("限流未被打满", "并发/QPS 配额均未触顶")
+	}
+	if offline := set.OfflineUpstreams(); len(offline) > 0 {
+		c.warn("上游全部在线", "mosproxy 健康检查判定离线: %s——本机 Unbound 一旦故障就没有降级目标",
+			strings.Join(offline, ", "))
 		return
 	}
-	c.ok("限流未被打满", "并发/QPS 配额均未触顶")
+	c.ok("上游全部在线", "mosproxy 健康检查未发现离线上游")
 }
 
 func checkBinaryProvenance(opt Options, report *Report) {
