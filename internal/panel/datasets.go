@@ -11,30 +11,22 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 func dataLines(path string) []string {
-	values := []string{}
-	file, err := os.Open(path)
-	if err != nil {
-		return values
+	lines, _ := statefile.Lines(path)
+	if lines == nil {
+		return []string{}
 	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		value := strings.TrimSpace(scanner.Text())
-		if value != "" && !strings.HasPrefix(value, "#") {
-			values = append(values, value)
-		}
-	}
-	return values
+	return lines
 }
 
 func (s *Server) statePath(path string) string { return filepath.Join(s.cfg.StateDir, path) }

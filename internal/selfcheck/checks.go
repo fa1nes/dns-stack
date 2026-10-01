@@ -17,6 +17,8 @@ import (
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/stack"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 func checkModules(ctx context.Context, opt Options, report *Report) {
@@ -64,21 +66,11 @@ type freshness struct {
 }
 
 func countRows(path string) int {
-	file, err := os.Open(path)
+	lines, err := statefile.Lines(path)
 	if err != nil {
 		return -1
 	}
-	defer file.Close()
-	count := 0
-	sc := bufio.NewScanner(file)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line != "" && !strings.HasPrefix(line, "#") {
-			count++
-		}
-	}
-	return count
+	return len(lines)
 }
 
 func checkRoutingData(opt Options, report *Report, now time.Time) {

@@ -15,6 +15,8 @@ import (
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 type Config struct {
@@ -62,19 +64,11 @@ func (c Config) outPath() string {
 }
 
 func dataLines(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+	lines, _ := statefile.Lines(path)
+	for i, line := range lines {
+		lines[i] = strings.Fields(line)[0]
 	}
-	var out []string
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		out = append(out, strings.Fields(line)[0])
-	}
-	return out
+	return lines
 }
 
 func loadDirect4(path string) *ipset.Set {

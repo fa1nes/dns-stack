@@ -3,12 +3,13 @@ package panel
 import (
 	"database/sql"
 	"encoding/json"
-	"github.com/dns-stack/dns-stack/internal/config"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/config"
 
 	_ "modernc.org/sqlite"
 
@@ -94,20 +95,7 @@ func parseRcode(v string) int {
 	return -1
 }
 
-func countLines(path string) int {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			n++
-		}
-	}
-	return n
-}
+func countLines(path string) int { return len(dataLines(path)) }
 
 func percentage(value, total float64) float64 {
 	if total == 0 {

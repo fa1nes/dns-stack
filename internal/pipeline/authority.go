@@ -15,6 +15,8 @@ import (
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -194,21 +196,8 @@ func (r *Runtime) collectAuthorityPairs(ctx context.Context) (string, int, error
 }
 
 func countPrefixes(path string) int {
-	file, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer file.Close()
-	count := 0
-	sc := bufio.NewScanner(file)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		count++
-	}
-	return count
+	lines, _ := statefile.Lines(path)
+	return len(lines)
 }
 
 func loadPrefixes(path string) ([]netip.Prefix, error) {

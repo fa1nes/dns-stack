@@ -1,7 +1,6 @@
 package access
 
 import (
-	"bufio"
 	"fmt"
 	"net/netip"
 	"os"
@@ -12,6 +11,8 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/domain"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -32,25 +33,11 @@ func (s Store) blocklistPath() string { return filepath.Join(s.StateDir, Blockli
 func (s Store) aclPath() string       { return filepath.Join(s.StateDir, ACLFile) }
 
 func readEntries(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
+	lines, err := statefile.Lines(path)
+	if os.IsNotExist(err) {
+		return nil, nil
 	}
-	defer file.Close()
-	var out []string
-	sc := bufio.NewScanner(file)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		out = append(out, line)
-	}
-	return out, sc.Err()
+	return lines, err
 }
 
 func writeEntries(path, header string, entries []string) error {
