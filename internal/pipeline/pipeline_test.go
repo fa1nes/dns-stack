@@ -95,6 +95,31 @@ func TestStepIsSkippedUntilItsPeriodElapses(t *testing.T) {
 	}
 }
 
+func TestAStepThatTakesTimeIsNotSkippedWhenTheTimerFiresOnePeriodLater(t *testing.T) {
+	clock := time.Unix(1_700_000_000, 0)
+	opt := options(t, clock)
+	opt.Now = func() time.Time { return clock }
+	calls := 0
+	steps := []Step{step("cn-authority", 15*time.Minute, nil, func() error {
+		calls++
+		clock = clock.Add(6500 * time.Millisecond)
+		return nil
+	})}
+	start := clock
+	if _, err := Run(context.Background(), opt, nil, steps); err != nil {
+		t.Fatal(err)
+	}
+	clock = start.Add(15 * time.Minute)
+	if _, err := Run(context.Background(), opt, nil, steps); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("定时器正好在上一轮开始后 15 分钟触发，步骤却被跳过了（calls=%d）——"+
+			"时间戳若记成步骤结束时刻，每轮运行时长都会被算进「距上次」里，"+
+			"生产上 7 天里 cn-authority 因此被跳过 6 次，ECS 白名单那一轮就晚刷新 15 分钟", calls)
+	}
+}
+
 func TestForceIgnoresThePeriod(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	opt := options(t, base)

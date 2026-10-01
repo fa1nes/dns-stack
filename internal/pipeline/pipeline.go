@@ -183,7 +183,7 @@ func Run(ctx context.Context, opt Options, rt *Runtime, steps []Step) (Report, e
 			fmt.Fprintf(opt.Out, "[失败] %s：%v\n", step.Label, err)
 		} else {
 			done[step.Name] = true
-			if err := writeStamp(stamp, opt.now()); err != nil {
+			if err := writeStamp(stamp, now); err != nil {
 				fmt.Fprintf(opt.Out, "[警告] %s 时间戳写入失败：%v\n", step.Label, err)
 			}
 			fmt.Fprintf(opt.Out, "[成功] %s（耗时 %s）\n", step.Label, result.Took.Round(time.Millisecond))
