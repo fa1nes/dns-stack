@@ -30,16 +30,6 @@ type authorityPair struct {
 	RTO  int
 }
 
-func (r *Runtime) dumpInfra(ctx context.Context) (infra.Snapshot, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, r.Config.UnboundCtl, "dump_infra").Output()
-	if err != nil {
-		return infra.Snapshot{}, err
-	}
-	return infra.Parse(strings.NewReader(string(out)))
-}
-
 func (r *Runtime) resolver() string {
 	return net.JoinHostPort(r.Config.Resolver, fmt.Sprint(r.Config.ResolverPort))
 }
@@ -136,7 +126,7 @@ func manualZones(path string) []string {
 }
 
 func (r *Runtime) collectAuthorityPairs(ctx context.Context) (string, int, error) {
-	snapshot, err := r.dumpInfra(ctx)
+	snapshot, err := infra.Dump(ctx, r.Config.UnboundCtl)
 	if err != nil {
 		return "", 0, fmt.Errorf("读不到 Unbound infra cache: %w", err)
 	}

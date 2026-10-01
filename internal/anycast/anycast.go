@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -115,13 +114,7 @@ func servesCNZone(zones []string, exact map[string]bool, suffixes []string) stri
 }
 
 func dumpInfra(ctx context.Context, ctl string) (map[string][]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, ctl, "dump_infra").Output()
-	if err != nil {
-		return nil, err
-	}
-	snapshot, err := infra.Parse(strings.NewReader(string(out)))
+	snapshot, err := infra.Dump(ctx, ctl)
 	if err != nil {
 		return nil, err
 	}

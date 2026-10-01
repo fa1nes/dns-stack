@@ -2,12 +2,16 @@ package infra
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/netip"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Entry struct {
@@ -20,6 +24,16 @@ type Entry struct {
 type Snapshot struct {
 	Entries []Entry
 	Skipped int
+}
+
+func Dump(ctx context.Context, unboundCtl string) (Snapshot, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, unboundCtl, "dump_infra").Output()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Parse(bytes.NewReader(out))
 }
 
 func Parse(r io.Reader) (Snapshot, error) {
