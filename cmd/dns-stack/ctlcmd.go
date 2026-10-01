@@ -50,9 +50,7 @@ func ctlDispatch(cmd string, raw []string) (bool, error) {
 		return true, cmdSelfCheck(nil)
 	case "preflight", "check":
 		return true, cmdSelfCheck([]string{"--full"})
-	case "test":
-		return true, ctl.TestDomain(ctx, arg(args, 0), arg(args, 1))
-	case "diag":
+	case "test", "diag":
 		return true, ctl.TestDomain(ctx, arg(args, 0), arg(args, 1))
 	case "reload":
 		return true, ctl.Reload(ctx)
