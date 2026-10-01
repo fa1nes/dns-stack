@@ -230,8 +230,8 @@ func parsePairs(path string) (infra.Snapshot, map[string]map[string]struct{}, er
 
 var ecsLine = regexp.MustCompile(`^\s*send-client-subnet:\s*(\S+)`)
 
-func loadPrevECS(path string) map[netip.Prefix]struct{} {
-	out := map[netip.Prefix]struct{}{}
+func loadPrevECS(path string) map[netip.Prefix]prevECSEntry {
+	out := map[netip.Prefix]prevECSEntry{}
 	lines, err := loadLines(path)
 	if err != nil {
 		return out
@@ -242,15 +242,26 @@ func loadPrevECS(path string) map[netip.Prefix]struct{} {
 			continue
 		}
 		prefix, err := netip.ParsePrefix(m[1])
-		if err != nil {
+		if err != nil || !prefix.Addr().Is4() {
 			continue
 		}
-		if prefix.Addr().Is4() && prefix.Bits() == 32 {
-			out[prefix.Masked()] = struct{}{}
+		if prefix.Bits() == 32 {
+			out[prefix.Masked()] = prevECSEntry{}
+			continue
+		}
+		if prefix.Bits() < minAccumulatedBits {
+			continue
+		}
+		for addr := prefix.Masked().Addr(); prefix.Contains(addr); addr = addr.Next() {
+			out[netip.PrefixFrom(addr, 32)] = prevECSEntry{fromMergedBlock: true}
 		}
 	}
 	return out
 }
+
+const minAccumulatedBits = 28
+
+type prevECSEntry struct{ fromMergedBlock bool }
 
 func loadAccumState(path string) (map[string]int64, bool) {
 	out := map[string]int64{}
@@ -645,7 +656,7 @@ func applyAccumulation(
 	nowTS := now.Unix()
 	expired, accumDisputed := 0, 0
 
-	for prefix := range prev {
+	for prefix, entry := range prev {
 		if live.CoversPrefix(prefix) {
 			continue
 		}
@@ -656,6 +667,9 @@ func applyAccumulation(
 		key := prefix.String()
 		since, ok := accumSince[key]
 		if !ok {
+			if entry.fromMergedBlock {
+				continue
+			}
 			since = nowTS
 		}
 		if stateOK && nowTS-since > int64(opt.AccumTTL.Seconds()) {

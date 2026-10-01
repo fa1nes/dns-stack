@@ -190,6 +190,44 @@ func TestAccumulationKeepsUndisputedAddressesWithinTTL(t *testing.T) {
 	}
 }
 
+func TestAccumulationKeepsAdjacentAuthoritiesThatTheConfigMerged(t *testing.T) {
+	l := newLab(t)
+	l.write("ecs.conf", "server:\n    send-client-subnet: 9.9.9.4/31\n    send-client-subnet: 9.9.9.9/32\n")
+	recent := frozen.Unix() - 3600
+	l.write("ecs-accum-state.tsv", fmt.Sprintf("9.9.9.4/32 %d\n9.9.9.5/32 %d\n9.9.9.9/32 %d\n", recent, recent, recent))
+
+	res, err := l.run()
+	if err != nil {
+		t.Fatalf("执行失败: %v\n%s", err, l.log.String())
+	}
+	if res.AccumKept != 3 {
+		t.Errorf("累积保留 %d 条，期望 3——两个相邻权威在写出时被合并成 9.9.9.4/31，"+
+			"下一轮只从配置里认 /32 就把它们丢了，72 小时的保留窗口对共享 anycast 这类相邻地址完全失效\n%s",
+			res.AccumKept, l.log.String())
+	}
+	for _, want := range []string{"9.9.9.4/31", "9.9.9.9/32"} {
+		if !containsPrefix(l.ecsWhitelist(), want) {
+			t.Errorf("白名单里少了 %s：%v", want, l.ecsWhitelist())
+		}
+	}
+}
+
+func TestMergedBlocksWithoutHistoryDoNotEnterAccumulation(t *testing.T) {
+	l := newLab(t)
+	l.write("ecs.conf", "server:\n    send-client-subnet: 7.7.7.0/28\n")
+	l.write("ecs-accum-state.tsv", "")
+
+	res, err := l.run()
+	if err != nil {
+		t.Fatalf("执行失败: %v\n%s", err, l.log.String())
+	}
+	if res.AccumKept != 0 {
+		t.Errorf("一个从没被累积跟踪过的 /28 展开出 %d 条进了保留——那多半是被挖洞的 direct4 碎片，"+
+			"不是权威；让它从现在起计时保留 72 小时，就等于把本轮判据刚排除的网段又放回白名单\n%s",
+			res.AccumKept, l.log.String())
+	}
+}
+
 func TestAccumulationExpiresBeyondTTL(t *testing.T) {
 	l := newLab(t)
 	l.write("ecs.conf", "server:\n    send-client-subnet: 9.9.9.9/32\n")
