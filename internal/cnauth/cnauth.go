@@ -178,7 +178,7 @@ func loadCross(p printer, path, wantKind string, maxAge time.Duration, now time.
 	snapshot, err := geoaudit.LoadSnapshot(path)
 	if err != nil {
 		p.warnf("读不到多源%s清单 %s：%v", wantKind, path, err)
-		p.warnf("  本轮不做跨库交叉；检查 dns-stack-geo-cross.timer")
+		p.warnf("  本轮不做跨库交叉；排查 journalctl -u dns-stack-routing-data（geo-cross 步骤）")
 		return geoaudit.Snapshot{}, nil
 	}
 	if snapshot.Kind != "" && snapshot.Kind != wantKind {
@@ -350,7 +350,7 @@ func Run(opt Options) (Result, error) {
 		if age > opt.SharedMaxAge {
 			p.warnf("共享 anycast 清单已 %d 小时未更新（阈值 %d 小时），新出现的多租户权威不会被排除",
 				int(age.Hours()), int(opt.SharedMaxAge.Hours()))
-			p.warnf("  检查: systemctl status dns-stack-shared-anycast.timer")
+			p.warnf("  排查 journalctl -u dns-stack-routing-data（anycast 步骤，看「本轮未产出」的原因）")
 		}
 	}
 

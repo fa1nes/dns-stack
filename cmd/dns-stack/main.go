@@ -451,7 +451,7 @@ func loadDisputedForZone(path string, maxAge time.Duration, strict bool) (*ipset
 		if strict {
 			return nil, fmt.Errorf("多源争议清单已陈旧 %v（上限 %v）", age.Round(time.Hour), maxAge)
 		}
-		fmt.Printf("[警告] 多源争议清单已陈旧 %v（上限 %v），仍按旧内容交叉；检查 dns-stack-geo-cross.timer\n",
+		fmt.Printf("[警告] 多源争议清单已陈旧 %v（上限 %v），仍按旧内容交叉；排查 journalctl -u dns-stack-routing-data（geo-cross 步骤）\n",
 			age.Round(time.Hour), maxAge)
 	}
 	fmt.Printf("[信息] 多源争议清单 %d 条前缀 / %d 个地址，来源 %s，agreement=%d\n",

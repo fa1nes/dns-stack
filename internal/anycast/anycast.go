@@ -163,12 +163,12 @@ func Run(ctx context.Context, c Config) (Report, error) {
 
 	if c.GeoIP == nil || !c.GeoIP.HasASN() {
 		report.Note = "geoip-unavailable"
-		return report, c.finish(&report)
+		return report, nil
 	}
 	direct := loadDirect4(c.path("chnroute/direct4.txt"))
 	if direct == nil {
 		report.Note = "direct4-unavailable"
-		return report, c.finish(&report)
+		return report, nil
 	}
 	keep := map[string]bool{}
 	for _, ip := range dataLines(c.path("shared-anycast-keep.txt")) {
@@ -186,7 +186,7 @@ func Run(ctx context.Context, c Config) (Report, error) {
 	exact, suffixes := loadCNZones(c)
 	if len(exact) == 0 && len(suffixes) == 0 {
 		report.Note = "cn-zones-unavailable"
-		return report, c.finish(&report)
+		return report, nil
 	}
 
 	addresses := make([]string, 0, len(ipZones))

@@ -81,9 +81,11 @@ func TestServesCNZoneMatchesExactAndSuffix(t *testing.T) {
 	}
 }
 
-func TestMissingGeoIPFailsOpenAndSaysSo(t *testing.T) {
+func TestMissingGeoIPKeepsThePreviousListInsteadOfPublishingAnEmptyOne(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "shared-anycast.txt")
+	previous := "# generated-at 1700000000\n# count 1\n203.0.113.9\n"
+	seed(t, out, previous)
 	report, err := Run(context.Background(), Config{StateDir: dir, OutPath: out})
 	if err != nil {
 		t.Fatalf("执行失败: %v", err)
@@ -91,15 +93,14 @@ func TestMissingGeoIPFailsOpenAndSaysSo(t *testing.T) {
 	if report.Note != "geoip-unavailable" {
 		t.Errorf("归属库不可用必须写明原因，得到 %q", report.Note)
 	}
-	if len(report.Shared) != 0 {
-		t.Error("护栏自身缺席时不能产出任何排除项")
-	}
 	body, err := os.ReadFile(out)
 	if err != nil {
 		t.Fatalf("读输出失败: %v", err)
 	}
-	if !strings.Contains(string(body), "# note geoip-unavailable") {
-		t.Errorf("空清单必须带上原因注释，否则下游看到的只是「清单为空」:\n%s", body)
+	if string(body) != previous {
+		t.Errorf("判据缺席时改写了清单：\n%s\n——cnauth 只认 generated-at 不读 # note，"+
+			"一份带新时间戳的空清单在它看来是「刚刚确认过没有共享 anycast」，"+
+			"本轮就不再排除任何共享地址，过期告警也不会响", body)
 	}
 }
 
