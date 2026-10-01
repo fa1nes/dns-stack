@@ -114,6 +114,10 @@
     ['vacuum_logs', '清理系统日志(保留7天)', true], ['clear_domains', '清理陈旧域名(7天未出现)', true],
     ['clear_domains_all', '清空全部域名统计', true], ['set_arch_epoch', '重设统计起点', true],
     ['export', '导出迁移包', false],
+    ['set_min_ttl', '调整强制最小 TTL', false], ['flush_cache', '清理解析缓存', true],
+    ['refresh_routing', '刷新递归分流数据', false],
+    ['delete_query', '删除一条查询记录', false], ['delete_domain', '删除一个域名的统计', false],
+    ['delete_audit', '删除一条审计记录', false],
   ];
 
   const MODULES = [
