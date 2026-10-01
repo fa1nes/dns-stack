@@ -133,6 +133,28 @@ func TestBuildQueryCarriesEDNS0(t *testing.T) {
 	}
 }
 
+func TestTypeNamesRoundTripThroughOneTable(t *testing.T) {
+	for code := range typeNames {
+		back, ok := TypeCode(TypeName(code))
+		if !ok || back != code {
+			t.Errorf("%d -> %q -> %d,%v，名字和代码必须能互相还原", code, TypeName(code), back, ok)
+		}
+	}
+	for name, want := range map[string]uint16{"ptr": 12, " PTR ": 12, "TYPE300": 300, "300": 300} {
+		if got, ok := TypeCode(name); !ok || got != want {
+			t.Errorf("TypeCode(%q) = %d,%v，期望 %d", name, got, ok, want)
+		}
+	}
+	for _, bad := range []string{"", "TYPE", "NOPE", "TYPE70000"} {
+		if _, ok := TypeCode(bad); ok {
+			t.Errorf("TypeCode(%q) 不该被接受", bad)
+		}
+	}
+	if got := TypeName(12); got != "PTR" {
+		t.Errorf("TypeName(12) = %q——面板按这张表显示 PTR，query-log 命令行此前却显示 TYPE12", got)
+	}
+}
+
 func TestNameHelpers(t *testing.T) {
 	if got := NormalizeName("  WWW.Example.COM.  "); got != "www.example.com" {
 		t.Fatalf("NormalizeName = %q", got)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"strconv"
 	"strings"
 )
 
@@ -70,24 +71,32 @@ type Msg struct {
 	Additionals []RR
 }
 
+var typeNames = map[uint16]string{
+	1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA",
+	33: "SRV", 35: "NAPTR", 43: "DS", 46: "RRSIG", 47: "NSEC", 48: "DNSKEY", 50: "NSEC3",
+	52: "TLSA", 64: "SVCB", 65: "HTTPS", 99: "SPF", 255: "ANY", 257: "CAA",
+}
+
 func TypeName(t uint16) string {
-	switch t {
-	case TypeA:
-		return "A"
-	case TypeNS:
-		return "NS"
-	case TypeCNAME:
-		return "CNAME"
-	case TypeSOA:
-		return "SOA"
-	case TypeAAAA:
-		return "AAAA"
-	case TypeSVCB:
-		return "SVCB"
-	case TypeHTTPS:
-		return "HTTPS"
+	if name, ok := typeNames[t]; ok {
+		return name
 	}
 	return fmt.Sprintf("TYPE%d", t)
+}
+
+func TypeCode(name string) (uint16, bool) {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	for code, known := range typeNames {
+		if known == upper {
+			return code, true
+		}
+	}
+	digits := strings.TrimPrefix(upper, "TYPE")
+	value, err := strconv.ParseUint(digits, 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(value), true
 }
 
 func NormalizeName(name string) string {

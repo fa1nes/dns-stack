@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/dns-stack/dns-stack/internal/dnswire"
 )
 
 func (s *Server) role() string {
@@ -49,18 +51,11 @@ func parseInt(v string, d int) int {
 	return n
 }
 
-var qtypeNames = map[int64]string{1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 35: "NAPTR", 43: "DS", 46: "RRSIG", 47: "NSEC", 48: "DNSKEY", 50: "NSEC3", 52: "TLSA", 64: "SVCB", 65: "HTTPS", 99: "SPF", 255: "ANY", 257: "CAA"}
-
 var rcodeNames = map[int64]string{0: "NOERROR", 1: "FORMERR", 2: "SERVFAIL", 3: "NXDOMAIN", 4: "NOTIMP", 5: "REFUSED", 6: "YXDOMAIN", 7: "YXRRSET", 8: "NXRRSET", 9: "NOTAUTH", 10: "NOTZONE", 16: "BADVERS"}
 
 var routeNames = map[string]string{"cn": "本机递归", "foreign": "香港递归", "cache": "缓存命中", "recursive": "本机递归", "reject": "已拒绝", "failed": "无人应答", "unknown": "未知"}
 
-func qtypeName(n int64) string {
-	if x := qtypeNames[n]; x != "" {
-		return x
-	}
-	return strconv.FormatInt(n, 10)
-}
+func qtypeName(n int64) string { return dnswire.TypeName(uint16(n)) }
 
 func rcodeName(n int64) string {
 	if x := rcodeNames[n]; x != "" {
@@ -79,22 +74,9 @@ func routeName(v string) string {
 	return v
 }
 
-func routeNameEnrich(v string) string {
-	if x := routeNames[v]; x != "" {
-		return x
-	}
-	return v
-}
-
 func parseType(v string) int {
-	if n, err := strconv.Atoi(v); err == nil {
-		return n
-	}
-	upper := strings.ToUpper(v)
-	for code, name := range qtypeNames {
-		if name == upper {
-			return int(code)
-		}
+	if code, ok := dnswire.TypeCode(v); ok {
+		return int(code)
 	}
 	return -1
 }

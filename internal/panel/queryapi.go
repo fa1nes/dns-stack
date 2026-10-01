@@ -108,7 +108,7 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 }
 
 func enrichItem(id, ts, qt, rc int64, domain, resp, route, tag string, prefetch int64, elapsed sql.NullFloat64, exit sql.NullString) map[string]any {
-	m := map[string]any{"id": id, "ts": ts, "domain": domain, "qtype": qt, "qtype_name": qtypeName(qt), "rcode": rc, "rcode_name": rcodeName(rc), "resp_by": resp, "route": route, "route_name": routeNameEnrich(route), "server_tag": tag, "prefetch": prefetch, "cache_hit": resp == "cache", "elapsed_ms": nil, "exit_path": nil}
+	m := map[string]any{"id": id, "ts": ts, "domain": domain, "qtype": qt, "qtype_name": qtypeName(qt), "rcode": rc, "rcode_name": rcodeName(rc), "resp_by": resp, "route": route, "route_name": routeName(route), "server_tag": tag, "prefetch": prefetch, "cache_hit": resp == "cache", "elapsed_ms": nil, "exit_path": nil}
 	if elapsed.Valid {
 		m["elapsed_ms"] = elapsed.Float64
 	}
