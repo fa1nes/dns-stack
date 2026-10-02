@@ -72,4 +72,4 @@
 | 域名黑名单 | `/var/lib/dns-stack/blocklist.txt` |
 | 访问控制 | `/var/lib/dns-stack/acl.txt` |
 | 人工分流规则 | `/var/lib/dns-stack/manual-cn-zones.txt`、`manual-gfw.txt`、`manual-exclude.txt` |
-| 面板密码与二次认证 | `/etc/dns-stack/secrets/panel/auth.json`，只能经 `dns-stack panel-password` / 面板修改 |
+| 面板用户名、密码与二次认证 | `/etc/dns-stack/secrets/panel/auth.json`，只能经 `dns-stack panel-password` / 面板修改 |

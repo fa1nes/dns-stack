@@ -54,7 +54,7 @@ sudo sh install-hk.sh
 
 它只做三件事：写 `ROLE=offshore`、加一条每日日志瘦身的 cron、让 Unbound 不依赖开机顺序并由 supervise-daemon 守护。香港 Unbound 需要监听 `10.100.0.3:5335` 并放行 `10.100.0.2`。见 [两台节点](/ops/nodes)。
 
-## 三、设置面板密码
+## 三、设置面板用户名和密码
 
 ```bash
 sudo dns-stack panel-password
