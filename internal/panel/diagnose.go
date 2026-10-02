@@ -3,9 +3,11 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +30,7 @@ func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
 		Servers []string `json:"servers"`
 		Subnet  string   `json:"subnet"`
 	}
-	if json.NewDecoder(r.Body).Decode(&p) != nil || strings.TrimSpace(p.Domain) == "" {
+	if json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&p) != nil || strings.TrimSpace(p.Domain) == "" {
 		writeJSON(w, 400, map[string]any{"detail": "请输入要测试的域名"})
 		return
 	}
@@ -59,12 +61,17 @@ func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
 			servers = []string{"local-unbound", "foreign-hk"}
 		}
 	}
+	unique := servers[:0:0]
 	for _, server := range servers {
 		if !dnsTestServers[server] {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的测试目标"})
 			return
 		}
+		if !slices.Contains(unique, server) {
+			unique = append(unique, server)
+		}
 	}
+	servers = unique
 	results := map[string]any{}
 	type probeResult struct {
 		server string
@@ -168,9 +175,10 @@ func (s *Server) probeIPsGeo(ctx context.Context, parsed map[string]any) []map[s
 	for it := range ch {
 		found[it.ip] = it.geo
 	}
+	direct := loadedPrefixes(s.statePath("chnroute/direct4.txt"))
 	out := make([]map[string]any, 0, limit)
 	for _, ip := range ips[:limit] {
-		out = append(out, map[string]any{"ip": ip, "geo": found[ip]})
+		out = append(out, map[string]any{"ip": ip, "in_cn": prefixContains(direct, ip), "geo": found[ip]})
 	}
 	return out
 }

@@ -48,6 +48,7 @@ func BenchmarkStaticHandler(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		request := httptest.NewRequest("GET", "/assets/panel.js", nil)
 		request.RemoteAddr = "127.0.0.1:1000"
+		request.Host = "127.0.0.1:8080"
 		request.Header.Set("Accept-Encoding", "gzip")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)

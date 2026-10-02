@@ -182,6 +182,7 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logsStream(w http.ResponseWriter, r *http.Request) {
+	extendReadDeadline(w, 0)
 	unit := r.URL.Query().Get("unit")
 	if unit == "" {
 		unit = "mosproxy"

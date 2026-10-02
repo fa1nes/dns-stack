@@ -47,6 +47,7 @@ func exportRequest(t *testing.T, server *Server, target string) *httptest.Respon
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, target, nil)
 	request.RemoteAddr = "127.0.0.1:4321"
+	request.Host = "127.0.0.1:8080"
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	return response

@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -196,21 +198,39 @@ func RestoreMigrationBundle(r io.Reader, cfg Config, opt RestoreOptions) (Restor
 	return report, nil
 }
 
+func readRegular(path string) ([]byte, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s 不是普通文件（%s），拒绝跟随", path, before.Mode().Type())
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	after, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(before, after) {
+		return nil, fmt.Errorf("%s 在读取时被替换，拒绝继续", path)
+	}
+	return io.ReadAll(file)
+}
+
 func sameContent(path string, data []byte) (bool, error) {
-	existing, err := os.ReadFile(path)
+	existing, err := readRegular(path)
 	if err != nil {
 		return false, err
 	}
-	if len(existing) != len(data) {
-		return false, nil
-	}
-	a := sha256.Sum256(existing)
-	b := sha256.Sum256(data)
-	return a == b, nil
+	return sha256.Sum256(existing) == sha256.Sum256(data), nil
 }
 
 func backupExisting(source, backupDir, archive string) error {
-	data, err := os.ReadFile(source)
+	data, err := readRegular(source)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -218,23 +238,15 @@ func backupExisting(source, backupDir, archive string) error {
 		return err
 	}
 	dest := filepath.Join(backupDir, filepath.FromSlash(archive))
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(dest, data, 0o644)
+	return statefile.WriteAtomic(dest, data, 0o600)
 }
 
 func writeRestored(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("%s 不是普通文件（%s），拒绝覆盖", path, info.Mode().Type())
 	}
-	temp := path + ".restore.tmp"
-	if err := os.WriteFile(temp, data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
+	return statefile.WriteAtomic(path, data, 0o644)
 }

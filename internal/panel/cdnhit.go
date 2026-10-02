@@ -65,6 +65,11 @@ func (s *Server) cdnHit(w http.ResponseWriter, r *http.Request) {
 	}
 	refresh := r.URL.Query().Get("refresh") == "1"
 	fresh := r.URL.Query().Get("fresh") == "1"
+	if fresh && r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"error": "清缓存重查会改动解析缓存，只接受 POST"})
+		return
+	}
 
 	s.cdnHits.mu.Lock()
 	defer s.cdnHits.mu.Unlock()

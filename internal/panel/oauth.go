@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 )
+
+const maxOAuthStates = 64
 
 func oauthUsers(rec authRecord) []string {
 	users := []string{}
@@ -65,10 +68,16 @@ func (s *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
 	if s.oauthStates == nil {
 		s.oauthStates = map[string]time.Time{}
 	}
+	oldest, oldestAt := "", time.Now()
 	for key, created := range s.oauthStates {
 		if time.Since(created) > 10*time.Minute {
 			delete(s.oauthStates, key)
+		} else if created.Before(oldestAt) {
+			oldest, oldestAt = key, created
 		}
+	}
+	if len(s.oauthStates) >= maxOAuthStates {
+		delete(s.oauthStates, oldest)
 	}
 	s.oauthStates[state] = time.Now()
 	s.pendingMu.Unlock()
@@ -152,9 +161,10 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, _ = s.loadAuth()
+	login = strings.ToLower(strings.TrimSpace(login))
 	allowed := false
 	for _, user := range oauthUsers(rec) {
-		if strings.ToLower(strings.TrimSpace(login)) == user {
+		if login == user {
 			allowed = true
 		}
 	}
@@ -162,8 +172,20 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		fail("GitHub 账号 " + login + " 不在允许列表内")
 		return
 	}
-	if !boolValue(rec.OAuth["verified_once"]) {
-		s.commitAuthUpdateRaw(r.Context(), map[string]any{"oauth": map[string]any{"verified_once": true}}, "mark_oauth_verified")
+	accountID := fmt.Sprint(data["id"])
+	bound, _ := rec.OAuth["bound_ids"].(map[string]any)
+	if previous, ok := bound[login].(string); ok && previous != accountID {
+		fail("GitHub 账号 " + login + " 已不是当初绑定的那个账号（用户名可能被改名后重新注册），请在面板里重新配置允许的用户")
+		return
+	}
+	if _, ok := bound[login]; !ok || !boolValue(rec.OAuth["verified_once"]) {
+		ids := map[string]any{login: accountID}
+		for key, value := range bound {
+			if key != login {
+				ids[key] = value
+			}
+		}
+		s.commitAuthUpdateRaw(r.Context(), map[string]any{"oauth": map[string]any{"verified_once": true, "bound_ids": ids}}, "mark_oauth_verified")
 	}
 	rec, configured := s.loadAuth()
 	if !configured {

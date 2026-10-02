@@ -15,6 +15,7 @@ func postAction(t *testing.T, server *Server, op, body string) map[string]any {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/api/action/"+op, strings.NewReader(body))
 	request.RemoteAddr = "127.0.0.1:4321"
+	request.Host = "127.0.0.1:8080"
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

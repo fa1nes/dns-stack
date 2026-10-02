@@ -66,6 +66,7 @@ func TestStaleListsDoNotProveDomesticRouting(t *testing.T) {
 	server := New(Config{DBPath: filepath.Join(root, "absent.db"), StateDir: root, AuthPath: filepath.Join(root, "absent-auth.json")})
 	request := httptest.NewRequest("GET", "/api/domain/WWW.Foreign.com.?live=true", nil)
 	request.RemoteAddr = "127.0.0.1:1000"
+	request.Host = "127.0.0.1:8080"
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	var out map[string]any

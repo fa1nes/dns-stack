@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const gzipMinSize = 512
@@ -28,7 +29,7 @@ func (s *Server) gzipMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		buf := &gzipBuffer{header: http.Header{}}
+		buf := &gzipBuffer{header: http.Header{}, raw: w}
 		next.ServeHTTP(buf, r)
 		status := buf.status
 		if status == 0 {
@@ -68,6 +69,17 @@ type gzipBuffer struct {
 	header http.Header
 	status int
 	body   bytes.Buffer
+	raw    http.ResponseWriter
+}
+
+func (b *gzipBuffer) Unwrap() http.ResponseWriter { return b.raw }
+
+func extendReadDeadline(w http.ResponseWriter, d time.Duration) {
+	deadline := time.Time{}
+	if d > 0 {
+		deadline = time.Now().Add(d)
+	}
+	_ = http.NewResponseController(w).SetReadDeadline(deadline)
 }
 
 func (b *gzipBuffer) Header() http.Header { return b.header }

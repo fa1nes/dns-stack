@@ -2,8 +2,8 @@ package panel
 
 import (
 	"context"
-	"github.com/dns-stack/dns-stack/internal/geoip"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
-
+	"github.com/dns-stack/dns-stack/internal/geoip"
 	webfs "github.com/dns-stack/dns-stack/web"
+	_ "modernc.org/sqlite"
 )
 
 type Config struct {
@@ -31,9 +31,8 @@ type Config struct {
 
 type Server struct {
 	cfg          Config
-	authMu       sync.RWMutex
-	auth         authRecord
 	authLimit    authLimiter
+	revoked      sync.Map
 	pendingMu    sync.Mutex
 	pendingTOTP  string
 	pendingAt    time.Time
@@ -74,7 +73,7 @@ func New(cfg Config) *Server {
 		cfg.StateDir = "/var/lib/dns-stack"
 	}
 	if cfg.TOTPStepPath == "" {
-		cfg.TOTPStepPath = "/run/dns-stack/panel-totp-step"
+		cfg.TOTPStepPath = "/run/dns-stack-panel/totp-step"
 	}
 	if cfg.CertPath == "" {
 		cfg.CertPath = DefaultCertPath
@@ -139,11 +138,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/access", s.access)
 	mux.HandleFunc("/", s.static)
 
-	return s.gzipMiddleware(s.corsMiddleware(s.originMiddleware(s.authMiddleware(mux))))
+	return securityHeaders(s.gzipMiddleware(s.corsMiddleware(s.originMiddleware(s.authMiddleware(mux)))))
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func loopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func (s *Server) ListenAndServe() error {
-	s.http = &http.Server{Addr: s.cfg.Addr, Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	s.http = &http.Server{Addr: s.cfg.Addr, Handler: s.Handler(),
+		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: time.Minute,
+		IdleTimeout: 90 * time.Second, MaxHeaderBytes: 64 << 10}
 	if !isLoopbackListen(s.cfg.Addr) {
 
 		return s.http.ListenAndServeTLS(s.cfg.CertPath, s.cfg.KeyPath)
@@ -286,8 +307,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec, ok := s.loadAuth()
 		if !ok {
-			if !isLocal(r) {
-				writeJSON(w, http.StatusForbidden, map[string]any{"error": "面板尚未设置访问密码"})
+			if !isLocal(r) || !loopbackHost(r.Host) {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "面板尚未设置访问密码，只接受经 localhost / 127.0.0.1 的访问"})
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -298,7 +319,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if validSession(r, rec) {
+		if s.validSession(r, rec) {
 			next.ServeHTTP(w, r)
 			return
 		}

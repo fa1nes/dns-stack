@@ -28,6 +28,7 @@ func newOpenServer(t *testing.T) *Server {
 func localRequest(method, path string) *http.Request {
 	request := httptest.NewRequest(method, path, nil)
 	request.RemoteAddr = "127.0.0.1:1000"
+	request.Host = "127.0.0.1:8080"
 	return request
 }
 

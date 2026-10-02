@@ -47,15 +47,15 @@ func (s *Server) loadAuth() (authRecord, bool) {
 	if json.Unmarshal(b, &rec) != nil {
 		return authRecord{}, false
 	}
-	s.authMu.Lock()
-	s.auth = rec
-	s.authMu.Unlock()
 	return rec, rec.Hash != ""
 }
 
-func validSession(r *http.Request, rec authRecord) bool {
+func (s *Server) validSession(r *http.Request, rec authRecord) bool {
 	c, err := r.Cookie("dns_stack_session")
 	if err != nil {
+		return false
+	}
+	if _, gone := s.revoked.Load(c.Value); gone {
 		return false
 	}
 	parts := strings.Split(c.Value, ".")
@@ -119,6 +119,28 @@ func verifyPassword(password string, rec authRecord) bool {
 	return err == nil && hmac.Equal(derived, expected)
 }
 
+var scryptSlots = make(chan struct{}, 2)
+
+func (s *Server) verifyGuarded(ip, password string, rec authRecord) (bool, int) {
+	if wait := s.authWait(ip); wait > 0 {
+		return false, wait
+	}
+	select {
+	case scryptSlots <- struct{}{}:
+	default:
+		return false, 1
+	}
+	defer func() { <-scryptSlots }()
+	s.authFailure(ip)
+	return verifyPassword(password, rec), 0
+}
+
+func writeThrottled(w http.ResponseWriter, wait int) {
+	w.Header().Set("Retry-After", strconv.Itoa(wait))
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{"ok": false,
+		"message": fmt.Sprintf("尝试过于频繁，请 %d 秒后再试", wait), "retry_after": wait})
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
@@ -133,12 +155,6 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 403, map[string]any{"ok": false, "message": "密码登录已关闭，请使用 GitHub 登录"})
 		return
 	}
-	ip := remoteIP(r)
-	if wait := s.authWait(ip); wait > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(wait))
-		writeJSON(w, 429, map[string]any{"ok": false, "message": fmt.Sprintf("尝试过于频繁，请 %d 秒后再试", wait), "retry_after": wait})
-		return
-	}
 	var p struct {
 		Password string `json:"password"`
 		Code     string `json:"totp_code"`
@@ -147,14 +163,18 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"ok": false, "message": "请求参数无效"})
 		return
 	}
-	passwordOK := verifyPassword(p.Password, rec)
+	ip := remoteIP(r)
+	passwordOK, wait := s.verifyGuarded(ip, p.Password, rec)
+	if wait > 0 {
+		writeThrottled(w, wait)
+		return
+	}
 	totpOK := true
 	if boolValue(rec.TOTP["enabled"]) {
 		secret, _ := rec.TOTP["secret"].(string)
 		totpOK = s.checkTOTPCode(p.Code, secret, true)
 	}
 	if !passwordOK || !totpOK {
-		s.authFailure(ip)
 		message := "密码错误"
 		if boolValue(rec.TOTP["enabled"]) {
 			message = "密码或动态验证码错误"
@@ -177,7 +197,17 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 405, map[string]any{"detail": "Method Not Allowed"})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "dns_stack_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: os.Getenv("PANEL_COOKIE_SECURE") != "0"})
+	if c, err := r.Cookie("dns_stack_session"); err == nil && c.Value != "" {
+		now := time.Now()
+		s.revoked.Range(func(key, value any) bool {
+			if value.(time.Time).Before(now) {
+				s.revoked.Delete(key)
+			}
+			return true
+		})
+		s.revoked.Store(c.Value, now.Add(13*time.Hour))
+	}
+	http.SetCookie(w, &http.Cookie{Name: "dns_stack_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -193,13 +223,13 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"oauth_enabled":     configured && oauthReady(rec),
 		"password_disabled": configured && rec.PasswordDisabled,
 	}
-	if configured && !validSession(r, rec) {
+	if configured && !s.validSession(r, rec) {
 		writeJSON(w, 200, out)
 		return
 	}
 	out["role"] = s.role()
 
-	roleName := "规则构建服务器"
+	roleName := "香港境外出口"
 	if s.role() == "cn-resolver" {
 		roleName = "国内 DNS 服务器"
 	}

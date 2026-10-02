@@ -98,6 +98,7 @@ func TestExportReachesTheSocketBeforeTheLastRowIsRead(t *testing.T) {
 	for _, encoding := range []string{"", "gzip"} {
 		request := httptest.NewRequest(http.MethodGet, "/api/export?dataset=queries&format=csv", nil)
 		request.RemoteAddr = "127.0.0.1:4321"
+		request.Host = "127.0.0.1:8080"
 		if encoding != "" {
 			request.Header.Set("Accept-Encoding", encoding)
 		}
@@ -121,6 +122,7 @@ func TestExportStaysDecodableWhenTheClientAsksForGzip(t *testing.T) {
 	server := newExportServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/export?dataset=queries&format=csv", nil)
 	request.RemoteAddr = "127.0.0.1:4321"
+	request.Host = "127.0.0.1:8080"
 	request.Header.Set("Accept-Encoding", "gzip")
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
@@ -168,6 +170,7 @@ func TestExportTruncatedMidStreamAbortsInsteadOfLookingComplete(t *testing.T) {
 		ConfigPath: filepath.Join(dir, "config.env"), AuthPath: filepath.Join(dir, "auth.json")})
 	request := httptest.NewRequest(http.MethodGet, "/api/export?dataset=queries&format=csv", nil)
 	request.RemoteAddr = "127.0.0.1:4321"
+	request.Host = "127.0.0.1:8080"
 
 	defer func() {
 		if recovered := recover(); recovered != http.ErrAbortHandler {

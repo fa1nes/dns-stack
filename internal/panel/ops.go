@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/dns-stack/dns-stack/internal/domain"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +19,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/domain"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 type operationSpec struct {
@@ -279,6 +281,7 @@ func minInt(a, b int) int {
 func (s *Server) writeAudit(operation string, args map[string]any, ok bool, message string) {
 	db, err := s.openRW()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[警告] 审计记录写不进去（%s）: %v\n", operation, err)
 		return
 	}
 	defer db.Close()
@@ -287,7 +290,9 @@ func (s *Server) writeAudit(operation string, args map[string]any, ok bool, mess
 	if ok {
 		flag = 1
 	}
-	_, _ = db.Exec("INSERT INTO audit_log(ts,actor,operation,args,ok,message) VALUES (?,?,?,?,?,?)", time.Now().Unix(), "panel", operation, safeAuditArgs(args), flag, message[:minInt(len(message), 500)])
+	if _, err := db.Exec("INSERT INTO audit_log(ts,actor,operation,args,ok,message) VALUES (?,?,?,?,?,?)", time.Now().Unix(), "panel", operation, safeAuditArgs(args), flag, message[:minInt(len(message), 500)]); err != nil {
+		fmt.Fprintf(os.Stderr, "[警告] 审计记录写不进去（%s）: %v\n", operation, err)
+	}
 }
 
 func (s *Server) passwordChange(w http.ResponseWriter, r *http.Request) {
@@ -309,13 +314,12 @@ func (s *Server) passwordChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := remoteIP(r)
-	if wait := s.authWait(ip); wait > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(wait))
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"ok": false, "message": fmt.Sprintf("尝试过于频繁，请 %d 秒后再试", wait), "retry_after": wait})
+	ok, wait := s.verifyGuarded(ip, p.Old, rec)
+	if wait > 0 {
+		writeThrottled(w, wait)
 		return
 	}
-	if !verifyPassword(p.Old, rec) {
-		s.authFailure(ip)
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "message": "当前密码不正确"})
 		return
 	}
@@ -535,12 +539,12 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := remoteIP(r)
-	if wait := s.authWait(ip); wait > 0 {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"ok": false, "message": fmt.Sprintf("尝试过于频繁，请 %d 秒后再试", wait), "retry_after": wait})
+	passwordOK, wait := s.verifyGuarded(ip, p.Password, rec)
+	if wait > 0 {
+		writeThrottled(w, wait)
 		return
 	}
-	if !verifyPassword(p.Password, rec) {
-		s.authFailure(ip)
+	if !passwordOK {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "message": "密码不正确"})
 		return
 	}
@@ -581,13 +585,8 @@ func (s *Server) checkTOTPCode(code, secret string, consume bool) bool {
 					return false
 				}
 				s.totpLastStep = now + drift
-				if temporary, err := os.CreateTemp(filepath.Dir(s.cfg.TOTPStepPath), ".totp-step-*"); err == nil {
-					_, writeErr := temporary.WriteString(strconv.FormatInt(s.totpLastStep, 10))
-					closeErr := temporary.Close()
-					if writeErr == nil && closeErr == nil {
-						_ = os.Rename(temporary.Name(), s.cfg.TOTPStepPath)
-					}
-					_ = os.Remove(temporary.Name())
+				if err := statefile.WriteAtomic(s.cfg.TOTPStepPath, []byte(strconv.FormatInt(s.totpLastStep, 10)), 0o600); err != nil {
+					fmt.Fprintf(os.Stderr, "[警告] 记不下已用过的验证码时间步（%v），面板重启后同一个验证码在 90 秒内还能再用一次\n", err)
 				}
 				s.pendingMu.Unlock()
 			}

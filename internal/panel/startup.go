@@ -16,7 +16,6 @@ const (
 	DefaultCertPath    = "/etc/dns-stack/secrets/panel/cert.pem"
 	DefaultKeyPath     = "/etc/dns-stack/secrets/panel/key.pem"
 	DefaultStateDir    = "/var/lib/dns-stack"
-	DefaultDBPath      = "/var/lib/dns-stack/collector.db"
 	DefaultECSConfPath = "/etc/unbound/unbound.conf.d/dns-stack-ecs.conf"
 )
 

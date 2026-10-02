@@ -20,6 +20,7 @@ func (s *Server) migrationImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
 		return
 	}
+	extendReadDeadline(w, 15*time.Minute)
 	r.Body = http.MaxBytesReader(w, r.Body, MigrationMaxBundleBytes+(1<<20))
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "读取上传失败: " + err.Error()})
