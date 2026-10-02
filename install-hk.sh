@@ -45,10 +45,8 @@ elif ! grep -q '^ROLE=offshore' "$CONFIG_FILE"; then
 fi
 
 log_info "[4/5] 写入日志轮转调度..."
-apk add -q flock 2>/dev/null || true
 touch "$CRON_FILE"
 sed -i '/# dns-stack begin/,/# dns-stack end/d' "$CRON_FILE"
-sed -i '/# dns-stack-classifier begin/,/# dns-stack-classifier end/d' "$CRON_FILE"
 TRIM_LOG="$LOG_DIR/trim-logs.log"
 cat >> "$CRON_FILE" <<EOF
 # dns-stack begin

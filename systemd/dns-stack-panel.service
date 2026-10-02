@@ -11,6 +11,10 @@ WorkingDirectory=/opt/dns-stack
 ExecStart=/opt/dns-stack/bin/dns-stack-go panel
 Restart=on-failure
 RestartSec=3
+RuntimeDirectory=dns-stack-panel
+RuntimeDirectoryMode=0700
+MemoryHigh=192M
+MemoryMax=256M
 
 NoNewPrivileges=true
 ProtectSystem=strict
