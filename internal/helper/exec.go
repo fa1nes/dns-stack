@@ -33,6 +33,7 @@ func (h *Helper) run(args []string, timeout time.Duration, sanitize bool) result
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr []byte
 	stdoutPipe, stderrPipe := &captureBuffer{}, &captureBuffer{}
 	cmd.Stdout, cmd.Stderr = stdoutPipe, stderrPipe

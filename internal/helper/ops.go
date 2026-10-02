@@ -8,10 +8,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
 	"github.com/dns-stack/dns-stack/internal/stack"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 	"github.com/dns-stack/dns-stack/unbound"
 )
 
@@ -187,7 +189,7 @@ func (h *Helper) opSetPanelPassword(args map[string]any) result {
 	if len([]rune(password)) > maxPasswordLen {
 		return rejectResult("密码过长(上限 256 字符)")
 	}
-	record, err := HashPassword(password)
+	record, err := passwordRecord(h.authPath, password, false)
 	if err != nil {
 		return failure("生成密码哈希失败: " + err.Error())
 	}
@@ -496,7 +498,11 @@ func (h *Helper) opCacheInfo(map[string]any) result {
 	return result{"ok": true, "returncode": 0, "stdout": string(encoded), "stderr": ""}
 }
 
+var configEditMu sync.Mutex
+
 func replaceIntField(path, key string, value int) (bool, error) {
+	configEditMu.Lock()
+	defer configEditMu.Unlock()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
@@ -505,13 +511,12 @@ func replaceIntField(path, key string, value int) (bool, error) {
 	if !pattern.Match(data) {
 		return false, nil
 	}
-	updated := pattern.ReplaceAll(data, []byte("${1}"+strconv.Itoa(value)))
 	info, err := os.Stat(path)
 	mode := os.FileMode(0o644)
 	if err == nil {
 		mode = info.Mode().Perm()
 	}
-	if err := os.WriteFile(path, updated, mode); err != nil {
+	if err := statefile.WriteAtomic(path, pattern.ReplaceAll(data, []byte("${1}"+strconv.Itoa(value))), mode); err != nil {
 		return false, err
 	}
 	return true, nil

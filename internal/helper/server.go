@@ -21,7 +21,6 @@ const (
 	DefaultAuthPath     = "/etc/dns-stack/secrets/panel/auth.json"
 	DefaultCLIPath      = "/usr/local/bin/dns-stack"
 	DefaultGoBin        = "/opt/dns-stack/bin/dns-stack-go"
-	DefaultLockPath     = "/run/lock/dns-stack-classifier.lock"
 	DefaultMosproxyConf = "/etc/dns-stack/mosproxy/config.yaml"
 	DefaultUnboundConf  = "/etc/unbound/unbound.conf.d/dns-stack.conf"
 	DefaultStateDir     = "/var/lib/dns-stack"
@@ -36,11 +35,9 @@ type Config struct {
 	SocketPath   string
 	LogPath      string
 	ConfigPath   string
-	StackRoot    string
 	AuthPath     string
 	CLIPath      string
 	GoBin        string
-	LockPath     string
 	MosproxyConf string
 	UnboundConf  string
 	StateDir     string
@@ -52,7 +49,6 @@ type Helper struct {
 	authPath     string
 	cli          string
 	goBin        string
-	lockPath     string
 	mosproxyConf string
 	unboundConf  string
 	stateDir     string
@@ -78,7 +74,6 @@ func New(cfg Config) *Helper {
 		authPath:     fallback(cfg.AuthPath, DefaultAuthPath),
 		cli:          fallback(cfg.CLIPath, DefaultCLIPath),
 		goBin:        fallback(cfg.GoBin, DefaultGoBin),
-		lockPath:     fallback(cfg.LockPath, DefaultLockPath),
 		mosproxyConf: fallback(cfg.MosproxyConf, DefaultMosproxyConf),
 		unboundConf:  fallback(cfg.UnboundConf, DefaultUnboundConf),
 		stateDir:     fallback(cfg.StateDir, DefaultStateDir),

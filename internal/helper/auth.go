@@ -22,7 +22,7 @@ const (
 
 var (
 	panelWritableKeys = map[string]bool{"oauth": true, "password_disabled": true, "totp": true}
-	oauthWritableKeys = map[string]bool{"client_id": true, "client_secret": true, "allowed_users": true, "verified_once": true}
+	oauthWritableKeys = map[string]bool{"client_id": true, "client_secret": true, "allowed_users": true, "verified_once": true, "bound_ids": true}
 	totpWritableKeys  = map[string]bool{"secret": true, "enabled": true}
 )
 
@@ -63,11 +63,28 @@ func SetPanelPassword(authPath, password string) error {
 	case length > MaxPanelPasswordLen:
 		return errors.New("面板密码过长（上限 256 字符）")
 	}
-	record, err := HashPassword(password)
+	record, err := passwordRecord(authPath, password, true)
 	if err != nil {
 		return err
 	}
 	return writeAuthRecord(authPath, record, false, 0o640)
+}
+
+func passwordRecord(authPath, password string, reenablePasswordLogin bool) (map[string]any, error) {
+	record, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	previous := loadAuthRecord(authPath)
+	for _, key := range []string{"totp", "oauth"} {
+		if value, ok := previous[key]; ok {
+			record[key] = value
+		}
+	}
+	if !reenablePasswordLogin && truthy(previous["password_disabled"]) {
+		record["password_disabled"] = true
+	}
+	return record, nil
 }
 
 func DisableTOTP(authPath string) (bool, error) {
@@ -199,11 +216,14 @@ func writeAuthRecord(path string, record map[string]any, indent bool, mode os.Fi
 	if err != nil {
 		return err
 	}
-	temp := strings.TrimSuffix(path, filepath.Ext(path)) + ".tmp"
-	if err := os.WriteFile(temp, data, mode); err != nil {
+	file, err := os.CreateTemp(filepath.Dir(path), ".auth-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(temp, mode); err != nil {
+	temp := file.Name()
+	_, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, closeErr, os.Chmod(temp, mode)); err != nil {
 		os.Remove(temp)
 		return err
 	}

@@ -35,7 +35,6 @@ func newTestHelper(t *testing.T) *Helper {
 		SocketPath: filepath.Join(root, "helper.sock"),
 		LogPath:    filepath.Join(root, "helper.log"),
 		ConfigPath: config,
-		StackRoot:  root,
 		AuthPath:   filepath.Join(root, "secrets", "auth.json"),
 	})
 	t.Cleanup(func() { h.Close() })

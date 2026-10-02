@@ -119,13 +119,9 @@ func (h *Helper) opACLDisable(map[string]any) result {
 }
 
 func (h *Helper) opACLStatus(map[string]any) result {
-	table := stack.DefaultNFTTable
-	if value := h.configValue("NFT_TABLE"); value != "" {
-		table = value
-	}
-	probe := h.run([]string{"nft", "list", "chain", "inet", table, stack.ACLChain}, 15*time.Second, true)
+	probe := h.run([]string{"nft", "list", "table", "inet", stack.ACLTable}, 15*time.Second, true)
 	code, _ := probe["returncode"].(int)
-	encoded, err := json.Marshal(map[string]any{"installed": code == 0, "table": table})
+	encoded, err := json.Marshal(map[string]any{"installed": code == 0, "table": stack.ACLTable})
 	if err != nil {
 		return failure("序列化访问控制状态失败")
 	}
