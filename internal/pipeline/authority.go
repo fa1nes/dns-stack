@@ -285,9 +285,12 @@ func (r *Runtime) commitECSConf(ctx context.Context, staged string) error {
 		r.Warnf("现网 unbound 配置本身就没通过 checkconf，跳过 ECS 白名单更新")
 		return nil
 	}
-	backup := live + ".prev"
-	if data, err := os.ReadFile(live); err == nil {
-		os.WriteFile(backup, data, 0o644)
+	previous, readErr := os.ReadFile(live)
+	if readErr == nil {
+		if err := statefile.WriteAtomic(live+".prev", previous, 0o644); err != nil {
+			os.Remove(staged)
+			return fmt.Errorf("写不出回滚点 %s.prev，本轮不更新 ECS 白名单: %w", live, err)
+		}
 	}
 	if err := os.Chmod(staged, 0o644); err != nil {
 		os.Remove(staged)
@@ -298,10 +301,12 @@ func (r *Runtime) commitECSConf(ctx context.Context, staged string) error {
 		return err
 	}
 	if err := unboundCheckConf(ctx); err != nil {
-		if data, readErr := os.ReadFile(backup); readErr == nil {
-			os.WriteFile(live, data, 0o644)
-		} else {
-			os.Remove(live)
+		restore := os.Remove(live)
+		if readErr == nil {
+			restore = statefile.WriteAtomic(live, previous, 0o644)
+		}
+		if restore != nil {
+			return fmt.Errorf("新的 ECS 白名单没通过 unbound-checkconf，回滚也失败了（%v）: %w", restore, err)
 		}
 		return fmt.Errorf("新的 ECS 白名单没通过 unbound-checkconf，已回滚: %w", err)
 	}

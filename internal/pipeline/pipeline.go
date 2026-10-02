@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 type Status string
@@ -66,7 +68,6 @@ type Options struct {
 	Only     []string
 	Force    bool
 	DryRun   bool
-	Preview  bool
 	Out      io.Writer
 	Now      func() time.Time
 }
@@ -95,15 +96,7 @@ func readStamp(path string) time.Time {
 }
 
 func writeStamp(path string, at time.Time) error {
-	temp := path + ".tmp"
-	if err := os.WriteFile(temp, []byte(strconv.FormatInt(at.Unix(), 10)+"\n"), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
+	return statefile.WriteAtomic(path, []byte(strconv.FormatInt(at.Unix(), 10)+"\n"), 0o644)
 }
 
 func selected(only []string, name string) bool {

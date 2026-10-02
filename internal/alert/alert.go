@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 type Options struct {
@@ -21,6 +23,9 @@ type Options struct {
 }
 
 func Notify(ctx context.Context, opt Options) (bool, error) {
+	if opt.Webhook == "" {
+		return false, nil
+	}
 	problems := append([]string(nil), opt.Problems...)
 	sort.Strings(problems)
 	current := strings.Join(problems, "\n")
@@ -28,12 +33,10 @@ func Notify(ctx context.Context, opt Options) (bool, error) {
 	if string(previous) == current {
 		return false, nil
 	}
-	if opt.Webhook != "" {
-		if err := send(ctx, opt, problems); err != nil {
-			return false, err
-		}
+	if err := send(ctx, opt, problems); err != nil {
+		return false, err
 	}
-	return opt.Webhook != "", os.WriteFile(opt.StatePath, []byte(current), 0o644)
+	return true, statefile.WriteAtomic(opt.StatePath, []byte(current), 0o644)
 }
 
 func send(ctx context.Context, opt Options, problems []string) error {

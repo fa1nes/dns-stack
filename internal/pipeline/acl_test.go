@@ -8,7 +8,7 @@ import (
 
 func aclFixture(t *testing.T, values ...string) ACLConfig {
 	t.Helper()
-	cfg := ACLConfig{Table: "dns_route", DoHPort: 443, DoTPort: 853}
+	cfg := ACLConfig{DoHPort: 443, DoTPort: 853}
 	for _, v := range values {
 		prefix, err := netip.ParsePrefix(v)
 		if err != nil {
@@ -62,16 +62,16 @@ func TestACLKeepsFamiliesSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(script, "ip saddr @"+ACLSet4) {
+	if !strings.Contains(script, "ip saddr @"+aclSet4) {
 		t.Error("缺少 v4 白名单匹配")
 	}
-	if !strings.Contains(script, "ip6 saddr @"+ACLSet6) {
+	if !strings.Contains(script, "ip6 saddr @"+aclSet6) {
 		t.Error("缺少 v6 白名单匹配")
 	}
-	if !strings.Contains(script, "add element inet dns_route "+ACLSet4+" { 203.0.113.0/24 }") {
+	if !strings.Contains(script, "add element inet dns_acl "+aclSet4+" { 203.0.113.0/24 }") {
 		t.Error("v4 前缀没进 v4 集合")
 	}
-	if !strings.Contains(script, "add element inet dns_route "+ACLSet6+" { 2001:db8::/32 }") {
+	if !strings.Contains(script, "add element inet dns_acl "+aclSet6+" { 2001:db8::/32 }") {
 		t.Error("v6 前缀没进 v6 集合")
 	}
 }
@@ -91,14 +91,17 @@ func TestACLDropsDuplicatePorts(t *testing.T) {
 	}
 }
 
-func TestACLNeverTouchesTheRoutingChains(t *testing.T) {
+func TestACLLivesInItsOwnTableAndReplacesItAtomically(t *testing.T) {
 	script, err := aclFixture(t, "203.0.113.0/24").Render()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"direct4", "cn_authority", "tunnel_endpoints", "postrouting"} {
-		if strings.Contains(script, forbidden) {
-			t.Errorf("访问控制脚本不该碰出口分流的 %q——两者共用一张表，串了会互相清空", forbidden)
-		}
+	if strings.Contains(script, "dns_route") {
+		t.Errorf("访问控制不能放进分流的 dns_route 表：分流服务随 wg0 停止时会整表删除，"+
+			"入口就在隧道断开的那一刻对全网敞开\n%s", script)
+	}
+	lines := strings.Split(strings.TrimSpace(script), "\n")
+	if len(lines) < 3 || lines[0] != "add table inet dns_acl" || lines[1] != "delete table inet dns_acl" {
+		t.Errorf("应当在同一个 nft 事务里先删后建，旧规则才不会和新规则叠加\n%s", script)
 	}
 }

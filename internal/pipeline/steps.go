@@ -16,6 +16,8 @@ import (
 	"github.com/dns-stack/dns-stack/internal/geoaudit"
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+	"github.com/dns-stack/dns-stack/internal/metrics"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -289,12 +291,14 @@ func stepGeoCross(ctx context.Context, rt *Runtime) error {
 	}
 	if rt.Preview {
 		rt.Infof("预览模式：没有覆盖争议/晋级清单")
-	} else if err := geoaudit.WriteSnapshots(
-		cfg.Chnroute("geo-disputed.txt"), cfg.Chnroute("geo-promoted.txt"), report); err != nil {
-		return err
-	}
-	if report.FailOpen != "" {
-		rt.Warnf("交叉判据 fail-open：%s", report.FailOpen)
+	} else {
+		kept, err := geoaudit.WriteSnapshots(cfg.Chnroute("geo-disputed.txt"), cfg.Chnroute("geo-promoted.txt"), report)
+		for _, line := range kept {
+			rt.Warnf("%s（保留上一版，消费侧按新鲜度判据告警）", line)
+		}
+		if err != nil {
+			return err
+		}
 	}
 	rt.Infof("争议 %d 段（%d 地址）、晋级 %d 段（%d 地址），可用源 %s",
 		len(report.Disputed), report.DisputedTotal,
@@ -341,7 +345,7 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		return nil
 	}
 	pairsPath := cfg.Chnroute(".pairs.tmp")
-	if err := os.WriteFile(pairsPath, []byte(pairs), 0o644); err != nil {
+	if err := statefile.WriteAtomic(pairsPath, []byte(pairs), 0o644); err != nil {
 		return err
 	}
 	defer os.Remove(pairsPath)
@@ -349,6 +353,20 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 	resultPath := cfg.Chnroute("cn-authority.txt")
 	tempResult := resultPath + ".new"
 	tempECS := cfg.ECSConfPath + ".new"
+	sideOutput := cfg.Chnroute
+	if rt.Preview {
+		dir, err := os.MkdirTemp("", "dns-stack-preview-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		if state, err := os.ReadFile(cfg.Chnroute("ecs-accum-state.tsv")); err == nil {
+			if err := os.WriteFile(filepath.Join(dir, "ecs-accum-state.tsv"), state, 0o600); err != nil {
+				return err
+			}
+		}
+		sideOutput = func(name string) string { return filepath.Join(dir, name) }
+	}
 
 	_, err = cnauth.Run(cnauth.Options{
 		Direct4Path:       cfg.Chnroute("direct4.txt"),
@@ -358,12 +376,12 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		DisputedPath:      cfg.Chnroute("geo-disputed.txt"),
 		PromotedPath:      cfg.Chnroute("geo-promoted.txt"),
 		ResultPath:        tempResult,
-		MatchedPath:       cfg.Chnroute("cn-zones-matched.txt"),
+		MatchedPath:       sideOutput("cn-zones-matched.txt"),
 		ECSOutPath:        tempECS,
 		PrevECSPath:       cfg.ECSConfPath,
-		ECSStatePath:      cfg.Chnroute("ecs-accum-state.tsv"),
-		SharedExcludedOut: cfg.Chnroute("shared-excluded.txt"),
-		SteeredOutPath:    cfg.Chnroute("cdn-steered-zones.txt"),
+		ECSStatePath:      sideOutput("ecs-accum-state.tsv"),
+		SharedExcludedOut: sideOutput("shared-excluded.txt"),
+		SteeredOutPath:    sideOutput("cdn-steered-zones.txt"),
 		CDNRulesPath:      cfg.Path(cdnrules.FileName),
 		Aggregate:         cfg.Aggregate,
 		AccumTTL:          cfg.Duration("ECS_ACCUM_TTL_SEC", cnauth.DefaultAccumTTL),
@@ -409,22 +427,19 @@ func stepECSZone(ctx context.Context, rt *Runtime) error {
 		return err
 	}
 	merged, clipped := ecszone.MergeRows(rows)
-	if len(merged) == 0 {
-		return fmt.Errorf("分片表为空，保留现有表不变")
+	out := cfg.Path("ecs-ip-zone.txt")
+	if err := ecszone.CheckPublishable(out, merged); err != nil {
+		return fmt.Errorf("%w，保留现有表不变", err)
 	}
 	covered, total := ecszone.DirectCoverage(merged, direct)
-	out := cfg.Path("ecs-ip-zone.txt")
 	if rt.Preview {
 		rt.Infof("预览：分片表 %d -> %d 行，未覆盖 %s", ecszone.CountDataLines(out), len(merged), out)
 	} else {
-		temp := out + ".new"
-		if err := os.WriteFile(temp, []byte(ecszone.Render(merged)), 0o644); err != nil {
+		message, err := ecszone.Publish(out, merged, func() int { return metrics.Reload(ctx) })
+		if err != nil {
 			return err
 		}
-		if err := os.Rename(temp, out); err != nil {
-			os.Remove(temp)
-			return err
-		}
+		rt.Infof("%s", message)
 	}
 	percent := 0.0
 	if total > 0 {
@@ -437,7 +452,7 @@ func stepECSZone(ctx context.Context, rt *Runtime) error {
 	unidentified := cfg.Chnroute("ecs-zone-unidentified.txt")
 	if rt.Preview {
 		rt.Infof("预览：待识别网段 %d 个地址（未落盘）", stats.UnidentifiedCN)
-	} else if err := os.WriteFile(unidentified,
+	} else if err := statefile.WriteAtomic(unidentified,
 		[]byte(ecszone.RenderUnidentified(stats.Unidentified, stats.UnidentifiedCN)), 0o644); err != nil {
 		rt.Warnf("待识别网段清单写入失败：%v", err)
 	} else if stats.UnidentifiedCN > 0 && !rt.Preview {

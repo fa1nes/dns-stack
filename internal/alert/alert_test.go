@@ -82,4 +82,10 @@ func TestWithoutAWebhookNothingIsSentAndNoErrorIsRaised(t *testing.T) {
 	if sent || err != nil {
 		t.Fatalf("没配告警通道时应当静默跳过，sent=%v err=%v", sent, err)
 	}
+	box := &inbox{}
+	opt.Webhook = box.server(t).URL
+	if sent, err := Notify(context.Background(), opt); !sent || err != nil || len(box.messages) != 1 {
+		t.Fatalf("后来配上告警通道，已经存在的异常应当马上补发一条，sent=%v err=%v 收到 %d 条——"+
+			"没通道时也记下状态的话，这条异常就被当成「已经通知过」永远不发了", sent, err, len(box.messages))
+	}
 }

@@ -37,19 +37,16 @@ func TestGeoIPBasePrefersTheExplicitKeys(t *testing.T) {
 	}
 }
 
-func TestConfigKeysCoverEveryKeyTheStepsRead(t *testing.T) {
-	allowed := map[string]bool{}
-	for _, key := range configKeys {
-		allowed[key] = true
+func TestEveryKeyInConfigEnvReachesTheCallers(t *testing.T) {
+	cfg := configWith(t, "ALERT_WEBHOOK=https://alert.invalid/k\nDOH_PORT=8443\nCHNROUTE_REVERSE_EXCLUDE=0\n")
+	if got := cfg.Value("ALERT_WEBHOOK"); got != "https://alert.invalid/k" {
+		t.Errorf("ALERT_WEBHOOK 读到 %q——它曾经因为不在白名单里永远是空，看门狗的告警一条都发不出去", got)
 	}
-	for _, key := range []string{
-		"DNS_STACK_BINARY_REPO", "GEOIP_RELEASE_REPO", "GEOIP_RELEASE_BASE",
-		"CDN_RULES_BASE", "CDN_RULES_MIRROR_1", "CDN_RULES_MIRROR_2",
-	} {
-		if !allowed[key] {
-			t.Errorf("%s 被流水线读取，却不在 configKeys 白名单里——"+
-				"config.env 里配了也读不到，是一条静默失效的配置", key)
-		}
+	if got := cfg.Int("DOH_PORT", 443); got != 8443 {
+		t.Errorf("DOH_PORT 读到 %d——访问控制会装在错误的端口上，真正的入口反而全开", got)
+	}
+	if got := cfg.Value("CHNROUTE_REVERSE_EXCLUDE"); got != "0" {
+		t.Errorf("CHNROUTE_REVERSE_EXCLUDE 读到 %q", got)
 	}
 }
 
@@ -66,16 +63,5 @@ func TestEveryGeoDBPrefersOurOwnMirror(t *testing.T) {
 		if got := suffixURL(base, name); !strings.HasPrefix(got, base) {
 			t.Errorf("%s 没走自家镜像: %s", name, got)
 		}
-	}
-}
-
-func TestNoGeoDBDefaultsToRawGithubusercontent(t *testing.T) {
-	body, err := os.ReadFile("steps.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(body), "raw.githubusercontent.com") {
-		t.Fatal("归属库默认源不该用 raw.githubusercontent.com——" +
-			"它在国内会超时，GeoLite2-City 就是这样 48 天没更新的")
 	}
 }

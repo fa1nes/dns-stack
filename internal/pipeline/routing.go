@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
@@ -76,6 +75,11 @@ func (rc RoutingConfig) Apply(ctx context.Context, rt *Runtime) error {
 			return fmt.Errorf("缺少 %s 命令", tool)
 		}
 	}
+	if restored, err := RestoreACL(ctx, rc.Config); err != nil {
+		rt.Warnf("访问控制恢复失败，入口正对全网开放: %v", err)
+	} else if restored {
+		rt.Infof("访问控制已按 acl.txt 恢复")
+	}
 	if _, err := run(ctx, "ip", "link", "show", rc.Config.TunnelIf); err != nil {
 		return fmt.Errorf("隧道接口 %s 不存在", rc.Config.TunnelIf)
 	}
@@ -129,7 +133,6 @@ func (rc RoutingConfig) Apply(ctx context.Context, rt *Runtime) error {
 	if len(authority) > 0 {
 		rt.Infof("墙内权威集合已从历史记录恢复（%d 条）", len(authority))
 	}
-	rc.restoreACL(ctx, rt)
 	rt.Infof("分流链已安装（正向匹配 uid=%s）", account.Uid)
 	rt.Infof("源地址改写已安装（出隧道包 → %s）", rc.Config.TunnelAddr)
 	rt.Infof("递归出口分流已生效")
@@ -318,24 +321,6 @@ func (rc RoutingConfig) ensureSetLoaded(ctx context.Context, rt *Runtime) {
 		return
 	}
 	rt.Infof("已恢复 %d 条", rt.NFTSetCount(ctx, rc.Config.DirectSet))
-}
-
-func (rc RoutingConfig) restoreACL(ctx context.Context, rt *Runtime) {
-	prefixes, err := access.Store{StateDir: rc.Config.StateDir}.EnforcedACL()
-	if err != nil {
-		rt.Warnf("读不到访问控制清单，入口保持对全网开放: %v", err)
-		return
-	}
-	if len(prefixes) == 0 {
-		return
-	}
-	acl := ACLConfig{Table: rc.Config.NFTTable, DoHPort: rc.Config.Int("DOH_PORT", 443),
-		DoTPort: rc.Config.Int("DOT_PORT", 853), Prefixes: prefixes}
-	if err := acl.Apply(ctx); err != nil {
-		rt.Warnf("访问控制恢复失败，入口正对全网开放: %v", err)
-		return
-	}
-	rt.Infof("访问控制已恢复（%d 个授权网段）", len(prefixes))
 }
 
 var nonGlobalProbes = []string{

@@ -34,7 +34,6 @@ type CertStatus struct {
 	DaysLeft int
 	SANHasIP bool
 	KeyMatch bool
-	PublicIP string
 }
 
 func parsePEMCert(path string) (*x509.Certificate, error) {
@@ -103,7 +102,6 @@ func InspectCert(certPath, keyPath, publicIP string, now time.Time) (CertStatus,
 	status := CertStatus{
 		NotAfter: cert.NotAfter,
 		DaysLeft: int(cert.NotAfter.Sub(now).Hours() / 24),
-		PublicIP: publicIP,
 	}
 	if publicIP != "" {
 		want := net.ParseIP(publicIP)

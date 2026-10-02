@@ -54,12 +54,6 @@ func productionShapedTable(direct, authority int) string {
 		"\t\toifname \"wg0\" meta mark 0x000001d5 counter packets 3355882 bytes 282090211 masquerade\n\t}\n}\n"
 }
 
-func withACLChain(table string) string {
-	return strings.TrimSuffix(table, "}\n") +
-		"\n\tchain dns_acl {\n\t\ttype filter hook input priority filter; policy accept;\n" +
-		"\t\tiif \"lo\" accept\n\t\tmeta l4proto { tcp, udp } th dport { 443, 853 } counter packets 0 bytes 0 drop\n\t}\n}\n"
-}
-
 const productionIPRules = "0:\tfrom all lookup local\n100:\tfrom 10.100.0.2 lookup 100\n101:\tfrom all fwmark 0x1d5 lookup 100\n102:\tfrom all fwmark 0x1d5 prohibit\n32766:\tfrom all lookup main\n"
 
 func TestNFTTableBlocksCountEachSetOnItsOwn(t *testing.T) {
@@ -84,20 +78,16 @@ func TestWatchdogJudgesOneSnapshotTheWayItJudgedSixCommands(t *testing.T) {
 		snap  routingSnapshot
 		wants []string
 	}{
-		{"健康", routingSnapshot{productionShapedTable(4256, 120), productionIPRules, 150, false}, nil},
-		{"整张表被清空", routingSnapshot{"", productionIPRules, 150, false},
+		{"健康", routingSnapshot{productionShapedTable(4256, 120), productionIPRules, 150}, nil},
+		{"整张表被清空", routingSnapshot{"", productionIPRules, 150},
 			[]string{"分流链缺失", "NAT 源地址改写链缺失", "大陆 IP 集合过小", "墙内权威集合过小"}},
-		{"大陆集合只剩一点", routingSnapshot{productionShapedTable(12, 120), productionIPRules, 150, false},
+		{"大陆集合只剩一点", routingSnapshot{productionShapedTable(12, 120), productionIPRules, 150},
 			[]string{"大陆 IP 集合过小"}},
-		{"权威集合不到基线的四成", routingSnapshot{productionShapedTable(4256, 50), productionIPRules, 150, false},
+		{"权威集合不到基线的四成", routingSnapshot{productionShapedTable(4256, 50), productionIPRules, 150},
 			[]string{"墙内权威集合过小"}},
-		{"基线太小时不判权威集合", routingSnapshot{productionShapedTable(4256, 0), productionIPRules, 10, false}, nil},
-		{"策略路由规则丢了", routingSnapshot{productionShapedTable(4256, 120), "0:\tfrom all lookup local\n", 150, false},
+		{"基线太小时不判权威集合", routingSnapshot{productionShapedTable(4256, 0), productionIPRules, 10}, nil},
+		{"策略路由规则丢了", routingSnapshot{productionShapedTable(4256, 120), "0:\tfrom all lookup local\n", 150},
 			[]string{"fwmark 策略路由规则缺失"}},
-		{"配了访问控制但链不在", routingSnapshot{productionShapedTable(4256, 120), productionIPRules, 150, true},
-			[]string{"访问控制链缺失"}},
-		{"访问控制链在", routingSnapshot{withACLChain(productionShapedTable(4256, 120)), productionIPRules, 150, true}, nil},
-		{"没配访问控制时不看这条链", routingSnapshot{productionShapedTable(4256, 120), productionIPRules, 150, false}, nil},
 	} {
 		got := w.problems(tc.snap)
 		if len(got) != len(tc.wants) {

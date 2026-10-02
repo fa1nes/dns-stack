@@ -11,7 +11,6 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/domain"
-
 	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
@@ -41,7 +40,7 @@ func (s Store) ACLDisabled() bool {
 
 func (s Store) SetACLDisabled(disabled bool) error {
 	if disabled {
-		return os.WriteFile(s.aclOffPath(), []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644)
+		return statefile.WriteAtomic(s.aclOffPath(), []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644)
 	}
 	if err := os.Remove(s.aclOffPath()); err != nil && !os.IsNotExist(err) {
 		return err
@@ -75,15 +74,7 @@ func writeEntries(path, header string, entries []string) error {
 		b.WriteString(entry)
 		b.WriteByte('\n')
 	}
-	temp := path + ".new"
-	if err := os.WriteFile(temp, []byte(b.String()), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
+	return statefile.WriteAtomic(path, []byte(b.String()), 0o644)
 }
 
 func (s Store) EnsureFiles() error {

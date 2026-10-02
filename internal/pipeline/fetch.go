@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const stepFetchBudget = 12 * time.Minute
@@ -150,7 +152,7 @@ func (r *Runtime) Fetch(ctx context.Context, spec fetchSpec) (FetchResult, error
 			return FetchResult{}, err
 		}
 		if freshTag != "" {
-			os.WriteFile(etagPath(spec.Dest), []byte(freshTag), 0o644)
+			_ = statefile.WriteAtomic(etagPath(spec.Dest), []byte(freshTag), 0o644)
 		} else {
 			os.Remove(etagPath(spec.Dest))
 		}

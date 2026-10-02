@@ -37,19 +37,6 @@ const (
 	DefaultAPNICURL   = "https://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest"
 )
 
-var configKeys = []string{
-	"TUNNEL_IF", "TUNNEL_ADDR", "NFT_TABLE", "PUBLIC_IPV4",
-	"ROUTE_TABLE", "FWMARK", "UNBOUND_USER", "WG_CONF",
-	"TUNNEL_FAIL_MODE", "MIN_SET_ENTRIES", "NFT_ENDPOINT_SET",
-	"CHNROUTE_MIN_ENTRIES", "CHNROUTE_MIN_ADDRESSES", "CHNROUTE_EXCLUDE_MAX_RATIO",
-	"CN_AUTHORITY_AGGREGATE", "GEO_CROSS_MAX_AGE_SEC", "ECS_ACCUM_TTL_SEC",
-	"SHARED_ANYCAST_MAX_AGE_SEC", "GUARD_MIN_RATIO", "APNIC_URL",
-	"GEOIP_ENABLE_CITY", "GEOIP_RELEASE_REPO", "GEOIP_RELEASE_BASE", "DNS_STACK_BINARY_REPO",
-	"GEOIP_ASN_URL", "GEOIP_CITY_URL", "GEOIP_CNIP_URL",
-	"GEOIP_DBIP_ASN_URL", "GEOIP_DBIP_CITY_URL",
-	"CDN_RULES_BASE", "CDN_RULES_MIRROR_1", "CDN_RULES_MIRROR_2",
-}
-
 func LoadConfig(stateDir, configFile string) Config {
 	if stateDir == "" {
 		stateDir = DefaultStateDir
@@ -57,7 +44,7 @@ func LoadConfig(stateDir, configFile string) Config {
 	if configFile == "" {
 		configFile = DefaultConfigFile
 	}
-	values := config.ReadKeys(configFile, configKeys...)
+	values := config.Read(configFile)
 	cfg := Config{
 		StateDir:     stateDir,
 		ConfigFile:   configFile,
