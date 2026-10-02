@@ -142,6 +142,15 @@ cfg_or_default() {
     echo "$def"
 }
 
+keep_tuned_values() {
+    local file="$1" key value
+    while read -r key value; do
+        [[ -n "$key" && -n "$value" ]] || continue
+        sed -i -E "s|^([[:space:]]*${key})[[:space:]]*[0-9]+[[:space:]]*$|\1 ${value}|" "$file"
+        log_info "  保留面板调过的 ${key} ${value}"
+    done <<< "$2"
+}
+
 ensure_config_env() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
     if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -278,17 +287,23 @@ step7_deploy_unbound() {
     log_info "[7/17] 部署 Unbound..."
     mkdir -p /etc/unbound/unbound.conf.d /etc/apparmor.d/local
 
-    local wg_block=""
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        local wg_self wg_peer
-        wg_self="$(cfg_or_default CN_SERVER_WG_IP 10.100.0.2)"
-        wg_peer="$(cfg_or_default GLOBAL_SERVER_WG_IP 10.100.0.3)"
-        wg_block=$'\n    # 国内专用递归接口：仅对 WireGuard 隧道内的规则构建节点开放\n'
-        wg_block+="    interface: ${wg_self}@5335"$'\n'
-        wg_block+="    access-control: ${wg_peer}/32 allow"
+    local wg_self wg_peer wg_block
+    wg_self="$(cfg_or_default CN_SERVER_WG_IP 10.100.0.2)"
+    wg_peer="$(cfg_or_default GLOBAL_SERVER_WG_IP 10.100.0.3)"
+    wg_block="    interface: ${wg_self}@5335"$'\n'"    access-control: ${wg_peer}/32 allow"
+    local live=/etc/unbound/unbound.conf.d/dns-stack.conf kept="" line
+    if [[ -f "$live" ]]; then
+        kept="$(grep -E '^[[:space:]]*(serve-expired-ttl|cache-min-ttl):[[:space:]]*[0-9]+[[:space:]]*$' "$live" || true)"
+        while IFS= read -r line; do
+            grep -qxF "$line" "$SCRIPT_DIR/unbound/unbound.template.conf" && continue
+            [[ "$wg_block" == *"$line"* ]] && continue
+            wg_block+=$'\n'"$line"
+            log_info "  保留手工放行的${line#*access-control:}"
+        done < <(sed -nE 's#^[[:space:]]*access-control:[[:space:]]*([0-9A-Fa-f:.]+/[0-9]+)[[:space:]]+allow[[:space:]]*$#    access-control: \1 allow#p' "$live")
     fi
     awk -v blk="$wg_block" '{ gsub(/\{\{CN_WG_INTERFACE\}\}/, blk); print }' \
-        "$SCRIPT_DIR/unbound/unbound.template.conf" > /etc/unbound/unbound.conf.d/dns-stack.conf
+        "$SCRIPT_DIR/unbound/unbound.template.conf" > "$live"
+    keep_tuned_values "$live" "$kept"
 
     if [[ -f /etc/apparmor.d/usr.sbin.unbound ]]; then
         cp -a "$SCRIPT_DIR/systemd/apparmor-local-usr.sbin.unbound" /etc/apparmor.d/local/usr.sbin.unbound
@@ -406,9 +421,7 @@ install_go_runtime() {
 
     log_ok "  管理助手已切到一体化 Go 二进制"
 
-    if [[ "$ROLE" == "cn-resolver" ]]; then
-        log_ok "  查询采集器已切到一体化 Go 二进制"
-    fi
+    log_ok "  查询采集器已切到一体化 Go 二进制"
     systemctl daemon-reload
     GO_RUNTIME_DONE=1
 }
@@ -535,7 +548,7 @@ step8_deploy_mosproxy() {
     if [[ -f /etc/dns-stack/mosproxy/config.yaml && "$cur_rev" == "$tpl_rev" && "$tpl_rev" != "0" ]]; then
         log_info "  mosproxy 配置已是 rev ${tpl_rev}，保留不动"
     else
-        local doh_port dot_port doh_path ub_port cert key cc qps old_cfg
+        local doh_port dot_port doh_path ub_port cert key cc qps old_cfg kept
         doh_port="$(cfg_or_default DOH_PORT 443)"
         dot_port="$(cfg_or_default DOT_PORT 853)"
         doh_path="$(cfg_or_default DOH_PATH "")"
@@ -552,11 +565,12 @@ step8_deploy_mosproxy() {
         cert="$SECRETS_DIR/doh-dot.pem"
         key="$SECRETS_DIR/doh-dot.key"
         cc=$(( $(nproc) * 250 )); qps=$(( $(nproc) * 1000 ))
-        old_cfg=""
+        old_cfg="" kept=""
         if [[ -f /etc/dns-stack/mosproxy/config.yaml ]]; then
             old_cfg="/etc/dns-stack/mosproxy/config.yaml.pre-routing-upgrade-$(date '+%Y%m%d%H%M%S')"
             cp -a /etc/dns-stack/mosproxy/config.yaml "$old_cfg"
             log_warn "  检测到旧路由配置，已备份: $old_cfg"
+            kept="$(grep -E '^[[:space:]]*optimistic_ttl:[[:space:]]*[0-9]+[[:space:]]*$' "$old_cfg" || true)"
         fi
         sed -e "s|{{DOH_PORT}}|${doh_port}|g" \
             -e "s|{{DOT_PORT}}|${dot_port}|g" \
@@ -567,6 +581,7 @@ step8_deploy_mosproxy() {
             -e "s|{{LIMIT_CONCURRENT}}|${cc}|g" \
             -e "s|{{LIMIT_QPS}}|${qps}|g" \
             "$SCRIPT_DIR/mosproxy/config.template.yaml" > /etc/dns-stack/mosproxy/config.yaml
+        keep_tuned_values /etc/dns-stack/mosproxy/config.yaml "$kept"
         log_ok "  已生成 /etc/dns-stack/mosproxy/config.yaml (rev ${tpl_rev})"
     fi
 
@@ -706,10 +721,6 @@ step13_deploy_cli() {
 }
 
 step15_cert() {
-    if [[ "$ROLE" != "cn-resolver" ]]; then
-        log_info "[15/17] 规则构建节点不对外提供 DoH/DoT，跳过 TLS 证书管理"
-        return 0
-    fi
     log_info "[15/17] 配置 TLS 证书(DoH 公网入口需要)..."
     ensure_tls_cert
 

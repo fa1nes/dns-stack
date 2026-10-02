@@ -100,4 +100,4 @@ echo
 log_ok "境外递归节点安装完成。这台机器的职责只有两项："
 echo "  1) 本机 Unbound 作为国内节点走隧道过来的递归出口"
 echo "  2) 作为 mosproxy 的降级上游 foreign-hk (10.100.0.3:5335)"
-echo "确认 CN 的 Unbound access-control 放行本机到 5335。"
+echo "确认本机 Unbound 监听 10.100.0.3:5335，并且 access-control 放行国内节点 10.100.0.2。"
