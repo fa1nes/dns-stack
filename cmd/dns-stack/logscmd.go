@@ -22,7 +22,7 @@ func cmdQueryLog(args []string) error {
 	kind := fs.String("kind", "", "递归类型: blocked|refused|cache|forward|recursive")
 	domain := fs.String("domain", "", "域名模糊匹配")
 	subnet := fs.String("subnet", "", "来源子网模糊匹配")
-	exitPath := fs.String("exit", "", "出口路径: direct|tunnel|hongkong")
+	exitPath := fs.String("exit", "", "出口路径: recursive|hongkong|cache|failed")
 	limit := fs.Int("limit", collect.DefaultLogLimit, "返回条数上限")
 	asJSON := fs.Bool("json", false, "输出 JSON")
 	csvOut := fs.String("csv", "", "导出 CSV 到指定文件")

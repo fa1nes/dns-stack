@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	BlocklistFile = "blocklist.txt"
-	ACLFile       = "acl.txt"
+	BlocklistFile   = "blocklist.txt"
+	ACLFile         = "acl.txt"
+	ACLDisabledFile = "acl.disabled"
 
 	blocklistHeader = "# dns-stack 域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机\n" +
 		"# 每行一个域名，匹配包含其全部子域。# 开头为注释。\n"
@@ -31,6 +32,29 @@ type Store struct {
 
 func (s Store) blocklistPath() string { return filepath.Join(s.StateDir, BlocklistFile) }
 func (s Store) aclPath() string       { return filepath.Join(s.StateDir, ACLFile) }
+func (s Store) aclOffPath() string    { return filepath.Join(s.StateDir, ACLDisabledFile) }
+
+func (s Store) ACLDisabled() bool {
+	_, err := os.Stat(s.aclOffPath())
+	return err == nil
+}
+
+func (s Store) SetACLDisabled(disabled bool) error {
+	if disabled {
+		return os.WriteFile(s.aclOffPath(), []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644)
+	}
+	if err := os.Remove(s.aclOffPath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (s Store) EnforcedACL() ([]netip.Prefix, error) {
+	if s.ACLDisabled() {
+		return nil, nil
+	}
+	return s.ACL()
+}
 
 func readEntries(path string) ([]string, error) {
 	lines, err := statefile.Lines(path)

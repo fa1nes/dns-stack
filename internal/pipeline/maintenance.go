@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -213,33 +214,20 @@ func SyncPanelCert(ctx context.Context, rt *Runtime) error {
 	return nil
 }
 
-func ReloadMosproxyCert(ctx context.Context, rt *Runtime) error {
-	const hotReloadSincePatch = 14
-	data, err := os.ReadFile("/opt/dns-stack/bin/mosproxy.build-id")
-	if err == nil && buildPatchLevel(string(data)) >= hotReloadSincePatch {
-		rt.Infof("mosproxy 支持证书热重载，无需重启(新证书将在 10 秒内生效)")
-		return nil
-	}
-	rt.Infof("mosproxy 二进制未含热重载补丁(p%d+)，回退为重启", hotReloadSincePatch)
-	return exec.CommandContext(ctx, "systemctl", "restart", "mosproxy.service").Run()
+var forkReleaseRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func mosproxyHotReloadsCerts(buildID string) bool {
+	return forkReleaseRe.MatchString(strings.TrimSpace(buildID))
 }
 
-func buildPatchLevel(text string) int {
-	level := -1
-	for i := 0; i+1 < len(text); i++ {
-		if text[i] != '-' || text[i+1] != 'p' {
-			continue
-		}
-		value, digits := 0, 0
-		for j := i + 2; j < len(text) && text[j] >= '0' && text[j] <= '9'; j++ {
-			value = value*10 + int(text[j]-'0')
-			digits++
-		}
-		if digits > 0 && value > level {
-			level = value
-		}
+func ReloadMosproxyCert(ctx context.Context, rt *Runtime) error {
+	data, err := os.ReadFile("/opt/dns-stack/bin/mosproxy.build-id")
+	if err == nil && mosproxyHotReloadsCerts(string(data)) {
+		rt.Infof("mosproxy %s 会在 10 秒内自行加载新证书，不重启（保住缓存与在途连接）", strings.TrimSpace(string(data)))
+		return nil
 	}
-	return level
+	rt.Infof("认不出 mosproxy 的版本，回退为重启")
+	return exec.CommandContext(ctx, "systemctl", "restart", "mosproxy.service").Run()
 }
 
 func stepBackup(ctx context.Context, rt *Runtime) error {

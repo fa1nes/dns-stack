@@ -181,7 +181,10 @@ func cmdACL(args []string) error {
 		if err := pipeline.ACLDisable(ctx, table); err != nil {
 			return err
 		}
-		fmt.Println("访问控制链已移除，入口恢复对全网开放（acl.txt 保留，用 apply 可再次启用）")
+		if err := store.SetACLDisabled(true); err != nil {
+			return err
+		}
+		fmt.Println("访问控制链已移除，入口恢复对全网开放（acl.txt 保留，用 apply 可再次启用；在此之前看门狗与重启都不会把它装回来）")
 		return nil
 	case "apply":
 	default:
@@ -197,7 +200,7 @@ func cmdACL(args []string) error {
 			return err
 		}
 		fmt.Println("授权网段已清空，访问控制链已移除，入口对全网开放")
-		return nil
+		return store.SetACLDisabled(false)
 	}
 	cfg := pipeline.ACLConfig{
 		Table:    table,
@@ -227,6 +230,9 @@ func cmdACL(args []string) error {
 		}
 	}
 	if err := cfg.Apply(ctx); err != nil {
+		return err
+	}
+	if err := store.SetACLDisabled(false); err != nil {
 		return err
 	}
 	fmt.Printf("访问控制已生效：%d 个授权网段，保护端口 %d/%d\n", len(entries), cfg.DoHPort, cfg.DoTPort)

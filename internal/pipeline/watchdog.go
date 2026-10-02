@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dns-stack/dns-stack/internal/access"
 )
 
 const (
@@ -98,6 +100,7 @@ type routingSnapshot struct {
 	NFTTable          string
 	IPRules           string
 	AuthorityBaseline int
+	ACLWanted         bool
 }
 
 func (w WatchdogConfig) sizes(snap routingSnapshot) SetSizes {
@@ -130,12 +133,17 @@ func (w WatchdogConfig) problems(snap routingSnapshot) []string {
 	if w.AuthorityTooSmall(sizes) {
 		problems = append(problems, "墙内权威集合过小或为空(国内域名会走隧道拿境外节点)")
 	}
+	if snap.ACLWanted && blocks["chain "+ACLChain] == "" {
+		problems = append(problems, "访问控制链缺失(acl.txt 有授权网段，入口正对全网开放)")
+	}
 	return problems
 }
 
 func (w WatchdogConfig) snapshot(ctx context.Context, withRules bool) routingSnapshot {
 	table, _ := run(ctx, "nft", "list", "table", "inet", w.Config.NFTTable)
-	snap := routingSnapshot{NFTTable: table, AuthorityBaseline: countPrefixes(w.Config.Chnroute("cn-authority.txt"))}
+	acl, _ := access.Store{StateDir: w.Config.StateDir}.EnforcedACL()
+	snap := routingSnapshot{NFTTable: table, AuthorityBaseline: countPrefixes(w.Config.Chnroute("cn-authority.txt")),
+		ACLWanted: len(acl) > 0}
 	if withRules {
 		snap.IPRules, _ = run(ctx, "ip", "rule", "show")
 	}

@@ -184,6 +184,7 @@ func ctlUsage() string {
   logs [单元]     查看最近 100 行日志
   cert-check      检查 TLS 证书
   cert-renew      续签 TLS 证书
+  doh-path [--rotate|--set 路径]  打印 DoH 接入地址 / 轮换私密路径
   routing-status  查看递归出口分流现状
   routing-refresh 重建全部分流数据
   backup / export / import / verify / list-packages   备份与迁移包
