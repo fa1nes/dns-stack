@@ -117,38 +117,19 @@
 
 ## 快速开始
 
-### 一、拿到二进制
-
-```bash
-# 从 Release 下载（GitHub Actions 构建，带 sha256）
-curl -fsSLO https://github.com/fa1nes/dns-stack/releases/latest/download/dns-stack-linux-amd64
-curl -fsSLO https://github.com/fa1nes/dns-stack/releases/latest/download/dns-stack-linux-amd64.sha256
-sha256sum -c dns-stack-linux-amd64.sha256
-chmod +x dns-stack-linux-amd64
-```
-
-也可以自己编译（无 CGO，无第三方 DNS 库）：
-
-```bash
-CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o dns-stack ./cmd/dns-stack
-```
-
-### 二、部署
-
 ```bash
 git clone https://github.com/fa1nes/dns-stack.git && cd dns-stack
-cp config.example.env /etc/dns-stack/config.env   # 按注释填写
+sudo mkdir -p /etc/dns-stack
+sudo cp config.example.env /etc/dns-stack/config.env   # 至少填 PUBLIC_IPV4 与 DNS_STACK_BINARY_REPO
 sudo ./install.sh
+sudo dns-stack panel-password
+sudo dns-stack preflight
 ```
 
-`install.sh` 会按 `ROLE` 部署对应角色，并用 systemd drop-in 把面板、采集器、
-管理助手都指向同一个 Go 二进制。
-
-### 三、访问面板
-
-```bash
-sudo dns-stack panel-password    # 设置访问密码
-```
+`install.sh` 从 `binaries-latest` 下载 CI 构建的二进制并核对 sha256，部署全部模块；
+重复运行是安全的，已有配置与面板里调过的值都会保留。香港节点用 `install-hk.sh`。
+完整步骤、两台机器的准备工作与每个配置项的含义见文档站的
+[快速开始](site/guide/quick-start.md) 与 [配置项](site/reference/config.md)。
 
 面板默认监听 `127.0.0.1:8080`；改成非回环地址时**必须**同时配好密码与
 TLS 证书，否则拒绝启动（宁可起不来，也不裸奔）。
@@ -212,11 +193,16 @@ dns-stack version
 
 ## 文档
 
-| 文件 | 内容 |
+文档是 `site/` 下的 VitePress 站点，Markdown 在 GitHub 上也能直接读：
+
+| 入口 | 内容 |
 |---|---|
-| [`docs/技术详解.md`](docs/技术详解.md) | 分层架构、一次解析的旅程、降级与自愈、负载画像、演进方向 |
-| [`docs/使用指南.md`](docs/使用指南.md) | 日常运维操作 |
-| [`docs/故障模式.md`](docs/故障模式.md) | **反复出现的故障模式**——每一条都是实际踩出来的，多数不止一次 |
+| [`site/index.md`](site/index.md) | 技术详解：四层分工、一次解析的旅程、降级与自愈、负载画像 |
+| [`site/guide/`](site/guide/) | 快速开始、客户端接入、面板、加密入口、出口分流、ECS、缓存、黑名单、访问控制、查询日志 |
+| [`site/ops/`](site/ops/) | 两台节点、数据流水线、健康检查与告警、证书、备份与迁移、故障排查 |
+| [`site/reference/`](site/reference/) | 命令、配置项、**故障模式**——每一条都是实际踩出来的，多数不止一次 |
 | [`fa1nes/mosproxy` 的 FORK-NOTES](https://github.com/fa1nes/mosproxy/blob/dev/FORK-NOTES.zh-CN.md) | mosproxy fork 改了什么、为什么 |
 
-新接手先读 `docs/故障模式.md`：这个项目最贵的经验都在那里。
+本地预览：`cd site && npm ci && npm run dev`。
+
+新接手先读 [故障模式](site/reference/failure-modes.md)：这个项目最贵的经验都在那里。
