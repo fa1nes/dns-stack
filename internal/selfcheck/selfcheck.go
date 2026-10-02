@@ -201,6 +201,7 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 	}
 	if opt.Full {
 		checkBackupFreshness(opt, &report, now)
+		checkUnboundDrift(ctx, opt, &report)
 		checkEntrypoints(ctx, opt, &report)
 		checkSecretsPermissions(opt, &report)
 		checkConntrack(opt, &report)

@@ -255,9 +255,11 @@ func checkAccessFiles(opt Options, report *Report) {
 		c.skip("访问控制", "未启用，入口对全网开放")
 	case len(entries) == 0 && installed:
 		c.fail("访问控制", "acl.txt 为空但内核里仍有访问控制链——执行 dns-stack acl disable 清理")
+	case !installed && store.ACLDisabled():
+		c.warn("访问控制", "已手动关闭（acl.txt 保留 %d 条），入口对全网开放——dns-stack acl apply 重新启用", len(entries))
 	case !installed:
-		c.fail("访问控制", "acl.txt 有 %d 条授权网段，但内核里没有对应的链——改动从未下发，入口其实对全网开放",
-			len(entries))
+		c.fail("访问控制", "acl.txt 有 %d 条授权网段，但内核里没有对应的链——入口其实对全网开放。"+
+			"看门狗每分钟会把它装回来，持续失败就看 journalctl -u dns-stack-routing-watchdog", len(entries))
 	default:
 		c.ok("访问控制", "%d 个授权网段已下发到内核", len(entries))
 	}
