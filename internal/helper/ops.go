@@ -201,6 +201,28 @@ func (h *Helper) opSetPanelPassword(args map[string]any) result {
 	return result{"ok": true, "returncode": 0, "stdout": "密码已更新", "stderr": ""}
 }
 
+func (h *Helper) opSetPanelUsername(args map[string]any) result {
+	raw, _ := args["username"].(string)
+	if _, err := NormalizeUsername(raw); err != nil {
+		return rejectResult(err.Error())
+	}
+	if err := SetPanelUsername(h.authPath, raw); err != nil {
+		return failure("写入用户名失败: " + err.Error())
+	}
+	h.restorePanelAuthOwnership()
+	h.log("面板用户名已更新")
+	return result{"ok": true, "returncode": 0, "stdout": "用户名已更新", "stderr": ""}
+}
+
+func (h *Helper) opRotateSessionKey(map[string]any) result {
+	if err := RotateSessionKey(h.authPath); err != nil {
+		return failure("轮换会话密钥失败: " + err.Error())
+	}
+	h.restorePanelAuthOwnership()
+	h.log("面板会话密钥已轮换，所有设备上的登录全部失效")
+	return result{"ok": true, "returncode": 0, "stdout": "所有会话已失效", "stderr": ""}
+}
+
 func (h *Helper) opUpdatePanelAuth(args map[string]any) result {
 	update, ok := args["update"].(map[string]any)
 	if !ok {
@@ -795,6 +817,8 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"rotate_doh_path":     h.opRotateDoHPath,
 		"set_panel_password":  h.opSetPanelPassword,
 		"update_panel_auth":   h.opUpdatePanelAuth,
+		"rotate_session_key":  h.opRotateSessionKey,
+		"set_panel_username":  h.opSetPanelUsername,
 		"refresh_routing":     h.opRefreshRouting,
 		"backup":              h.opBackup,
 		"purge_legacy":        h.opPurgeLegacy,

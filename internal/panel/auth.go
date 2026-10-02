@@ -3,6 +3,7 @@ package panel
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ type authRecord struct {
 	R                int            `json:"r"`
 	P                int            `json:"p"`
 	SessionKey       string         `json:"session_key"`
+	Username         string         `json:"username"`
 	PasswordDisabled bool           `json:"password_disabled"`
 	TOTP             map[string]any `json:"totp"`
 	OAuth            map[string]any `json:"oauth"`
@@ -83,6 +85,48 @@ func (s *Server) validSession(r *http.Request, rec authRecord) bool {
 		return false
 	}
 	return p.Exp > time.Now().Unix()
+}
+
+func sessionExpiry(r *http.Request) int64 {
+	c, err := r.Cookie("dns_stack_session")
+	if err != nil {
+		return 0
+	}
+	body, _, _ := strings.Cut(c.Value, ".")
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil {
+		return 0
+	}
+	var p struct {
+		Exp int64 `json:"exp"`
+	}
+	if json.Unmarshal(raw, &p) != nil {
+		return 0
+	}
+	return p.Exp
+}
+
+func (s *Server) revokeSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	if _, ok := s.loadAuth(); !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "面板尚未设置密码，没有会话可以作废"})
+		return
+	}
+	resp, err := helperCall(r.Context(), "rotate_session_key", map[string]any{})
+	if status, message := helperOutcome(resp, err, "作废会话失败"); status != 0 {
+		s.writeAudit("revoke_sessions", nil, false, message)
+		writeJSON(w, status, map[string]any{"ok": false, "message": message})
+		return
+	}
+	s.writeAudit("revoke_sessions", nil, true, "其它设备上的登录已全部失效")
+	rec, _ := s.loadAuth()
+	if token, err := issueSession(rec); err == nil {
+		setSessionCookie(w, token)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "其它设备上的登录已全部失效，这台设备已续上新的会话"})
 }
 
 func issueSession(rec authRecord) (string, error) {
@@ -156,6 +200,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 		Code     string `json:"totp_code"`
 	}
@@ -169,17 +214,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeThrottled(w, wait)
 		return
 	}
+	userOK := rec.Username == "" ||
+		subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(p.Username))), []byte(rec.Username)) == 1
 	totpOK := true
 	if boolValue(rec.TOTP["enabled"]) {
 		secret, _ := rec.TOTP["secret"].(string)
 		totpOK = s.checkTOTPCode(p.Code, secret, true)
 	}
-	if !passwordOK || !totpOK {
-		message := "密码错误"
-		if boolValue(rec.TOTP["enabled"]) {
-			message = "密码或动态验证码错误"
-		}
-		writeJSON(w, 401, map[string]any{"ok": false, "message": message})
+	if !userOK || !passwordOK || !totpOK {
+		writeJSON(w, 401, map[string]any{"ok": false, "message": loginFailure(rec)})
 		return
 	}
 	s.authSuccess(ip)
@@ -190,6 +233,77 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	setSessionCookie(w, token)
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func loginFailure(rec authRecord) string {
+	fields := []string{"密码"}
+	if rec.Username != "" {
+		fields = []string{"用户名", "密码"}
+	}
+	if boolValue(rec.TOTP["enabled"]) {
+		fields = append(fields, "动态验证码")
+	}
+	last := len(fields) - 1
+	if last == 0 {
+		return fields[0] + "错误"
+	}
+	return strings.Join(fields[:last], "、") + "或" + fields[last] + "错误"
+}
+
+func helperOutcome(resp map[string]any, err error, fallback string) (int, string) {
+	if err != nil {
+		return http.StatusInternalServerError, err.Error()
+	}
+	if message, _ := resp["message"].(string); message != "" {
+		return http.StatusBadRequest, message
+	}
+	data := helperData(resp)
+	if boolValue(resp["ok"]) && numberValue(data["returncode"]) == 0 {
+		return 0, ""
+	}
+	if stderr, _ := data["stderr"].(string); stderr != "" {
+		return http.StatusInternalServerError, stderr
+	}
+	return http.StatusInternalServerError, fallback
+}
+
+func (s *Server) authUsername(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	rec, ok := s.loadAuth()
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "面板尚未设置密码"})
+		return
+	}
+	var p struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 16*1024)).Decode(&p) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "请求参数无效"})
+		return
+	}
+	ip := remoteIP(r)
+	passwordOK, wait := s.verifyGuarded(ip, p.Password, rec)
+	if wait > 0 {
+		writeThrottled(w, wait)
+		return
+	}
+	if !passwordOK {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "message": "当前密码不正确"})
+		return
+	}
+	s.authSuccess(ip)
+	resp, err := helperCall(r.Context(), "set_panel_username", map[string]any{"username": p.Username})
+	if status, message := helperOutcome(resp, err, "写入用户名失败"); status != 0 {
+		s.writeAudit("set_panel_username", nil, false, message)
+		writeJSON(w, status, map[string]any{"ok": false, "message": message})
+		return
+	}
+	s.writeAudit("set_panel_username", nil, true, "面板用户名已更新")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "用户名已更新，下次登录时和密码一起填"})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +333,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	rec, configured := s.loadAuth()
 	out := map[string]any{
 		"auth_enabled":      configured,
+		"username_required": configured && rec.Username != "",
 		"totp_enabled":      configured && rec.TOTP["enabled"] == true,
 		"oauth_enabled":     configured && oauthReady(rec),
 		"password_disabled": configured && rec.PasswordDisabled,
@@ -243,5 +358,7 @@ func (s *Server) authConfig(w http.ResponseWriter, r *http.Request) {
 	clientID, _ := rec.OAuth["client_id"].(string)
 	secret, _ := rec.OAuth["client_secret"].(string)
 	oauth := map[string]any{"client_id": clientID, "secret_set": secret != "", "allowed_users": oauthUsers(rec), "verified_once": boolValue(rec.OAuth["verified_once"]), "ready": oauthReady(rec)}
-	writeJSON(w, 200, map[string]any{"oauth": oauth, "password_disabled": ok && rec.PasswordDisabled, "totp_enabled": ok && rec.TOTP["enabled"] == true})
+	writeJSON(w, 200, map[string]any{"oauth": oauth, "password_disabled": ok && rec.PasswordDisabled,
+		"totp_enabled": ok && rec.TOTP["enabled"] == true, "auth_enabled": ok, "username": rec.Username,
+		"session_expires_at": sessionExpiry(r)})
 }

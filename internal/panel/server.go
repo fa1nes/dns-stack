@@ -124,6 +124,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/totp/setup", s.totpSetup)
 	mux.HandleFunc("/api/auth/totp/enable", s.totpEnable)
 	mux.HandleFunc("/api/auth/totp/disable", s.totpDisable)
+	mux.HandleFunc("/api/auth/sessions/revoke", s.revokeSessions)
+	mux.HandleFunc("/api/auth/username", s.authUsername)
 	mux.HandleFunc("/api/action/", s.action)
 	mux.HandleFunc("/api/rules", s.rules)
 	mux.HandleFunc("/api/cert", s.cert)

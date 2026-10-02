@@ -8,7 +8,7 @@ import (
 func TestChangingThePasswordKeepsTheOtherFactors(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
 	seed := map[string]any{
-		"hash": "old", "session_key": "old",
+		"hash": "old", "session_key": "old", "username": "owner",
 		"totp":              map[string]any{"secret": "JBSWY3DPEHPK3PXP", "enabled": true},
 		"oauth":             map[string]any{"client_id": "cid", "allowed_users": []any{"owner"}},
 		"password_disabled": true,
@@ -24,6 +24,9 @@ func TestChangingThePasswordKeepsTheOtherFactors(t *testing.T) {
 	if !truthy(objectValue(fromPanel["totp"])["enabled"]) || len(objectValue(fromPanel["oauth"])) == 0 {
 		t.Fatalf("面板里改密码之后二次认证或 GitHub 登录没了：%v——"+
 			"管理员以为两步验证还开着，实际只凭密码就能登录", fromPanel)
+	}
+	if fromPanel["username"] != "owner" {
+		t.Errorf("改密码把用户名弄丢了：%v——之后登录要的用户名突然变成「不需要」", fromPanel["username"])
 	}
 	if !truthy(fromPanel["password_disabled"]) {
 		t.Error("面板里改密码不该顺手重新打开已关闭的密码登录")

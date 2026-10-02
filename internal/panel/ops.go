@@ -333,19 +333,9 @@ func (s *Server) passwordChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := helperCall(r.Context(), "set_panel_password", map[string]any{"password": p.New})
-	data := helperData(resp)
-	if err != nil || !boolValue(resp["ok"]) || numberValue(data["returncode"]) != 0 {
-		message := "写入密码失败"
-		if raw, ok := resp["message"].(string); ok && raw != "" {
-			message = raw
-		} else if raw, ok := data["stderr"].(string); ok && raw != "" {
-			message = raw
-		}
-		if err != nil {
-			message = err.Error()
-		}
+	if status, message := helperOutcome(resp, err, "写入密码失败"); status != 0 {
 		s.writeAudit("set_panel_password", nil, false, message)
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "message": message})
+		writeJSON(w, status, map[string]any{"ok": false, "message": message})
 		return
 	}
 	s.writeAudit("set_panel_password", nil, true, "面板访问密码已更新")
@@ -388,6 +378,11 @@ func (s *Server) authOAuth(w http.ResponseWriter, r *http.Request) {
 			cleaned = append(cleaned, user)
 		}
 	}
+	if rec, _ := s.loadAuth(); rec.PasswordDisabled && (len(cleaned) == 0 || strings.TrimSpace(p.ClientID) == "") {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false,
+			"message": "密码登录已关闭，GitHub 登录是唯一的入口：Client ID 不能清空，允许的账号至少保留一个。要改成这样，先重新启用密码登录"})
+		return
+	}
 	update := map[string]any{"oauth": map[string]any{"client_id": strings.TrimSpace(p.ClientID), "client_secret": strings.TrimSpace(p.ClientSecret), "allowed_users": cleaned}}
 	s.commitAuthUpdate(w, r, update, "set_oauth_config", "已保存 GitHub OAuth 配置")
 }
@@ -428,19 +423,9 @@ func (s *Server) passwordToggle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) commitAuthUpdate(w http.ResponseWriter, r *http.Request, update map[string]any, operation, success string) {
 	resp, err := helperCall(r.Context(), "update_panel_auth", map[string]any{"update": update})
-	data := helperData(resp)
-	if err != nil || !boolValue(resp["ok"]) || numberValue(data["returncode"]) != 0 {
-		message := "写入认证配置失败"
-		if raw, ok := resp["message"].(string); ok && raw != "" {
-			message = raw
-		} else if raw, ok := data["stderr"].(string); ok && raw != "" {
-			message = raw
-		}
-		if err != nil {
-			message = err.Error()
-		}
+	if status, message := helperOutcome(resp, err, "写入认证配置失败"); status != 0 {
 		s.writeAudit(operation, nil, false, message)
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "message": message})
+		writeJSON(w, status, map[string]any{"ok": false, "message": message})
 		return
 	}
 	s.writeAudit(operation, nil, true, "认证配置已更新")

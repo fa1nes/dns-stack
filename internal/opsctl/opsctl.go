@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/helper"
 	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/stack"
 	"github.com/dns-stack/dns-stack/internal/statefile"
@@ -174,7 +176,39 @@ func (c *Ctl) RoutingRefresh(ctx context.Context) error {
 	return c.Go(ctx, "routing-data", "--force")
 }
 
+func panelUsername() string {
+	body, err := os.ReadFile(panelAuthFile)
+	if err != nil {
+		return ""
+	}
+	var record struct {
+		Username string `json:"username"`
+	}
+	_ = json.Unmarshal(body, &record)
+	return record.Username
+}
+
 func (c *Ctl) PanelPassword(ctx context.Context) error {
+	current := panelUsername()
+	prompt := "面板用户名: "
+	if current != "" {
+		prompt = "面板用户名(直接回车保持 " + current + "): "
+	}
+	fmt.Fprint(c.Out, prompt)
+	line, err := bufio.NewReader(c.In).ReadString('\n')
+	if err != nil && line == "" {
+		return err
+	}
+	username := strings.TrimSpace(line)
+	if username == "" {
+		username = current
+	}
+	if username == "" {
+		return fmt.Errorf("用户名不能为空：登录时要和密码一起填")
+	}
+	if username, err = helper.NormalizeUsername(username); err != nil {
+		return err
+	}
 	password, err := readSecret(c.Out, c.In, "请输入新的面板密码(至少 12 位): ")
 	if err != nil {
 		return err
@@ -190,13 +224,13 @@ func (c *Ctl) PanelPassword(ctx context.Context) error {
 		return fmt.Errorf("两次输入不一致")
 	}
 	cmd := exec.CommandContext(ctx, c.GoBin, "panel-auth", "set-password")
-	cmd.Env = append(os.Environ(), "PW="+password)
+	cmd.Env = append(os.Environ(), "PW="+password, "PANEL_USER="+username)
 	cmd.Stderr = c.Out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("写入密码失败: %w", err)
 	}
 	hardenPanelAuth()
-	c.Okf("密码已设置(存的是 scrypt 哈希，不是明文)")
+	c.Okf("用户名 %s 和密码已设置(密码存的是 scrypt 哈希，不是明文)", username)
 	c.Infof("改密码会让所有已登录会话立即失效")
 	if c.systemctl(ctx, "restart", "dns-stack-panel") == nil {
 		c.Okf("面板已重启")

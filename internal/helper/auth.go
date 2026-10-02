@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,15 +25,32 @@ var (
 	panelWritableKeys = map[string]bool{"oauth": true, "password_disabled": true, "totp": true}
 	oauthWritableKeys = map[string]bool{"client_id": true, "client_secret": true, "allowed_users": true, "verified_once": true, "bound_ids": true}
 	totpWritableKeys  = map[string]bool{"secret": true, "enabled": true}
+	usernamePattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,31}$`)
 )
+
+func NormalizeUsername(raw string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(raw))
+	if !usernamePattern.MatchString(name) {
+		return "", errors.New("用户名要 2–32 位，只能用字母、数字和 . _ -，并以字母或数字开头")
+	}
+	return name, nil
+}
+
+func newSessionKey() (string, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(key), nil
+}
 
 func HashPassword(password string) (map[string]any, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, err
 	}
-	sessionKey := make([]byte, 32)
-	if _, err := rand.Read(sessionKey); err != nil {
+	sessionKey, err := newSessionKey()
+	if err != nil {
 		return nil, err
 	}
 	derived, err := scrypt.Key([]byte(password), salt, scryptN, scryptR, scryptP, scryptKeyLen)
@@ -46,7 +64,7 @@ func HashPassword(password string) (map[string]any, error) {
 		"p":           scryptP,
 		"salt":        base64.StdEncoding.EncodeToString(salt),
 		"hash":        base64.StdEncoding.EncodeToString(derived),
-		"session_key": base64.StdEncoding.EncodeToString(sessionKey),
+		"session_key": sessionKey,
 		"created_at":  time.Now().Unix(),
 	}, nil
 }
@@ -56,7 +74,7 @@ const (
 	MaxPanelPasswordLen = 256
 )
 
-func SetPanelPassword(authPath, password string) error {
+func SetPanelPassword(authPath, username, password string) error {
 	switch length := len([]rune(password)); {
 	case length < MinPanelPasswordLen:
 		return errors.New("面板密码至少 12 位：它能重启服务、导出含密钥的备份")
@@ -67,7 +85,27 @@ func SetPanelPassword(authPath, password string) error {
 	if err != nil {
 		return err
 	}
+	if username != "" {
+		name, err := NormalizeUsername(username)
+		if err != nil {
+			return err
+		}
+		record["username"] = name
+	}
 	return writeAuthRecord(authPath, record, false, 0o640)
+}
+
+func SetPanelUsername(authPath, username string) error {
+	name, err := NormalizeUsername(username)
+	if err != nil {
+		return err
+	}
+	record := loadAuthRecord(authPath)
+	if len(record) == 0 {
+		return errors.New("面板尚未设置密码")
+	}
+	record["username"] = name
+	return writeAuthRecord(authPath, record, true, 0o600)
 }
 
 func passwordRecord(authPath, password string, reenablePasswordLogin bool) (map[string]any, error) {
@@ -76,7 +114,7 @@ func passwordRecord(authPath, password string, reenablePasswordLogin bool) (map[
 		return nil, err
 	}
 	previous := loadAuthRecord(authPath)
-	for _, key := range []string{"totp", "oauth"} {
+	for _, key := range []string{"username", "totp", "oauth"} {
 		if value, ok := previous[key]; ok {
 			record[key] = value
 		}
@@ -172,6 +210,9 @@ func MergeAuthUpdate(authPath string, update map[string]any) map[string]any {
 			if secret, _ := incoming["client_secret"].(string); strings.TrimSpace(secret) == "" {
 				merged["client_secret"] = old["client_secret"]
 			}
+			if users, listed := incoming["allowed_users"].([]any); listed {
+				merged["bound_ids"] = boundIDsFor(users, objectValue(old["bound_ids"]))
+			}
 			if oauthCredentialReplaced(old, incoming) {
 				merged["verified_once"] = false
 			} else {
@@ -200,6 +241,31 @@ func MergeAuthUpdate(authPath string, update map[string]any) map[string]any {
 		}
 	}
 	return record
+}
+
+func boundIDsFor(users []any, bound map[string]any) map[string]any {
+	kept := map[string]any{}
+	for _, raw := range users {
+		user, _ := raw.(string)
+		user = strings.ToLower(strings.TrimSpace(user))
+		if id, ok := bound[user]; ok && user != "" {
+			kept[user] = id
+		}
+	}
+	return kept
+}
+
+func RotateSessionKey(authPath string) error {
+	record := loadAuthRecord(authPath)
+	if len(record) == 0 {
+		return errors.New("面板尚未设置密码，没有会话可以作废")
+	}
+	key, err := newSessionKey()
+	if err != nil {
+		return err
+	}
+	record["session_key"] = key
+	return writeAuthRecord(authPath, record, true, 0o600)
 }
 
 func writeAuthRecord(path string, record map[string]any, indent bool, mode os.FileMode) error {
