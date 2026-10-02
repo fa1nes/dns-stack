@@ -40,3 +40,6 @@ bin/*.build-id
 memory.md
 .spec-workflow/
 agent.md
+site/node_modules/
+site/.vitepress/cache/
+site/.vitepress/dist/
