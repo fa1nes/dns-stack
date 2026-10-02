@@ -138,6 +138,7 @@
 
     '/api/bootstrap': () => ({
       auth_enabled: true,
+      username_required: true,
       totp_enabled: false,
       role: 'cn-resolver',
       role_name: '国内 DNS 服务器（示例）',
@@ -412,9 +413,11 @@
       ops: OPS.map(([op, label, dangerous]) => ({ op, label, dangerous, timeout: 60 })) }),
 
     '/api/auth/config': () => ({
+      auth_enabled: true, username: 'admin',
       password_disabled: false, totp_enabled: false,
-      oauth: { client_id: '', allowed_users: [], ready: false,
-               secret_set: false, verified_once: false },
+      session_expires_at: now() + 11 * 3600 + 1260,
+      oauth: { client_id: 'Iv1.0123456789abcdef', allowed_users: ['octocat'], ready: true,
+               secret_set: true, verified_once: true },
     }),
 
     '/api/logs': (q) => {

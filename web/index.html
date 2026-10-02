@@ -38,6 +38,7 @@
       <button data-page="queries" title="查询"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><span class="lbl">查询</span></button>
       <button data-page="tools" title="工具"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="3" x2="15" y2="3"/><path d="M10 3v5.2l-5.5 9.9A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.9L14 8.2V3"/><line x1="7.2" y1="14.5" x2="16.8" y2="14.5"/></svg></span><span class="lbl">工具</span></button>
       <button data-page="settings" title="设置"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="lbl">设置</span></button>
+      <button data-page="account" title="账号"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="lbl">账号</span></button>
     </nav>
     <div class="sidebar-foot">
       <div class="row">
@@ -326,33 +327,63 @@
         </div>
       </section>
 
-      <section class="page" id="page-settings">
-        <div class="tabs main-tabs" id="settingTabs">
-          <button data-stab="security" class="active">安全</button>
-          <button data-stab="rules">数据与证书</button>
-          <button data-stab="access">递归管控</button>
-          <button data-stab="services">服务与备份</button>
-          <button data-stab="audit">审计</button>
+      <section class="page" id="page-account">
+        <div class="callout err" id="acctNoAuth" hidden>
+          面板还没有设置密码：能连到这个端口的人都能直接操作它。在服务器上执行
+          <code>sudo dns-stack panel-password</code> 设好用户名和密码，再回到这里管理二次认证和 GitHub 登录。
         </div>
+        <div class="callout row" id="acctNoUser" hidden>
+          <span class="grow-1">还没有设置用户名，现在登录只要密码。设一个之后，登录要用户名和密码一起填。</span>
+          <button class="sm" id="btnSetUser">现在设置</button>
+        </div>
+        <div class="posture" id="posture" aria-label="账号安全概况"></div>
 
-        <div class="tab-panel active" id="stab-security">
-          <div class="posture" id="posture" aria-label="安全态势总览"></div>
-
+        <div id="acctManaged">
           <div class="sec-label">登录方式</div>
           <div class="sec-grid">
             <div class="card">
-              <h3>密码登录 <span id="pwBadge"></span></h3>
-              <details class="sec-fold">
+              <h3>用户名与密码 <span id="pwBadge"></span></h3>
+              <div class="acct-id">
+                <span class="acct-avatar" id="acctAvatar" aria-hidden="true"></span>
+                <div class="grow-1">
+                  <div class="acct-name mono" id="acctName">—</div>
+                  <div class="note-xs" id="acctNameHint"></div>
+                </div>
+              </div>
+              <details class="sec-fold" id="userFold">
+                <summary>修改用户名</summary>
+                <div class="sec-fold-body">
+                  <form id="userForm" autocomplete="off">
+                    <label class="f-label" for="userNew">新用户名</label>
+                    <input type="text" id="userNew" class="w-full" autocomplete="username" autocapitalize="none"
+                           spellcheck="false" maxlength="32" enterkeyhint="next">
+                    <div class="hint">2–32 位，字母、数字和 . _ -，以字母或数字开头；不区分大小写。</div>
+                    <label class="f-label mt-8" for="userPw">当前密码</label>
+                    <input type="password" id="userPw" class="w-full" autocomplete="current-password" enterkeyhint="go">
+                    <button type="submit" class="primary sm mt-10" id="btnUser">保存用户名</button>
+                  </form>
+                  <div class="login-msg" id="userMsg" role="alert"></div>
+                </div>
+              </details>
+              <details class="sec-fold" id="pwFold">
                 <summary>修改密码</summary>
                 <div class="sec-fold-body">
                   <form id="pwForm" autocomplete="off">
                     <label class="f-label" for="pwOld">当前密码</label>
-                    <input type="password" id="pwOld" class="w-full" autocomplete="current-password" enterkeyhint="next">
-                    <label class="f-label mt-8" for="pwNew">新密码（至少 12 位）</label>
-                    <input type="password" id="pwNew" class="w-full" autocomplete="new-password" enterkeyhint="next">
+                    <input type="password" id="pwOld" class="w-full pw-input" autocomplete="current-password" enterkeyhint="next">
+                    <label class="f-label mt-8" for="pwNew">新密码</label>
+                    <input type="password" id="pwNew" class="w-full pw-input" autocomplete="new-password" enterkeyhint="next">
                     <label class="f-label mt-8" for="pwNew2">再输入一次</label>
-                    <input type="password" id="pwNew2" class="w-full" autocomplete="new-password" enterkeyhint="go">
-                    <button type="submit" class="primary mt-10" id="btnPw">修改密码</button>
+                    <input type="password" id="pwNew2" class="w-full pw-input" autocomplete="new-password" enterkeyhint="go">
+                    <div class="sec-chips" id="pwChecks" aria-live="polite">
+                      <span class="sec-chip is-idle" data-check="len">至少 12 位</span>
+                      <span class="sec-chip is-idle" data-check="diff">和当前密码不同</span>
+                      <span class="sec-chip is-idle" data-check="match">两次一致</span>
+                    </div>
+                    <div class="row mt-10">
+                      <button type="submit" class="primary sm" id="btnPw" disabled>修改密码</button>
+                      <label class="check"><input type="checkbox" id="pwShow"> 显示密码</label>
+                    </div>
                   </form>
                   <div class="login-msg" id="pwMsg" role="alert"></div>
                 </div>
@@ -365,77 +396,116 @@
 
             <div class="card">
               <h3>二次认证 <span class="mono sec-sub">TOTP</span> <span id="totpBadge"></span></h3>
-              <div id="totpSetup" hidden class="sec-fold-body">
-                <label class="f-label" for="totpSecret">密钥</label>
-                <input type="text" id="totpSecret" class="w-full mono" readonly onclick="this.select()">
-                <label class="f-label mt-8" for="totpUri">otpauth 链接</label>
-                <input type="text" id="totpUri" class="w-full mono" readonly onclick="this.select()"
-                       title="otpauth:// 链接，可粘贴进支持导入的验证器">
-                <label class="f-label mt-8" for="totpCode">验证器上的 6 位数字</label>
-                <div class="row mt-4">
-                  <input type="text" id="totpCode" class="grow-1" inputmode="numeric" maxlength="6"
-                         autocomplete="one-time-code" enterkeyhint="done">
-                  <button class="primary sm" id="btnTotpEnable">验证并启用</button>
-                  <button class="sm" id="btnTotpCancel">取消</button>
+              <p class="card-lead">登录时除了密码，还要填验证器 App 上每 30 秒变一次的 6 位数字。</p>
+              <ol class="steps" id="totpSetup" hidden>
+                <li>
+                  <div class="step-title">把密钥添加到验证器</div>
+                  <div class="note-xs">Google Authenticator、Microsoft Authenticator、1Password 都可以：选「手动输入密钥」粘贴这串，或导入 otpauth 链接。</div>
+                  <div class="copy-field mt-8">
+                    <code id="totpSecret" class="mono"></code>
+                    <button type="button" class="sm" data-copy-target="totpSecret" data-copy-what="密钥">复制</button>
+                  </div>
+                  <div class="copy-field mt-8">
+                    <code id="totpUri" class="mono clip"></code>
+                    <button type="button" class="sm" data-copy-target="totpUri" data-copy-what="otpauth 链接">复制</button>
+                  </div>
+                </li>
+                <li>
+                  <div class="step-title">填入验证器上显示的 6 位数字</div>
+                  <div class="row mt-8">
+                    <input type="text" id="totpCode" class="totp-code" inputmode="numeric" maxlength="6"
+                           autocomplete="one-time-code" enterkeyhint="done" placeholder="000000" aria-label="6 位验证码">
+                    <button class="primary sm" id="btnTotpEnable">验证并启用</button>
+                    <button class="sm" id="btnTotpCancel">取消</button>
+                  </div>
+                  <div class="note-xs mt-8">密钥 10 分钟内有效，过期了点「取消」重新生成。</div>
+                </li>
+              </ol>
+              <form id="totpOff" hidden>
+                <label class="f-label" for="totpOffPw">输入面板密码确认停用</label>
+                <div class="row">
+                  <input type="password" id="totpOffPw" class="grow-1" autocomplete="current-password" enterkeyhint="done">
+                  <button type="submit" class="danger sm" id="btnTotpOffConfirm">确认停用</button>
+                  <button type="button" class="sm" id="btnTotpOffCancel">取消</button>
                 </div>
-              </div>
-              <div class="sec-act">
+              </form>
+              <div class="sec-act" id="totpActs">
                 <button class="primary sm" id="btnTotpSetup">启用二次认证</button>
                 <button class="danger sm" id="btnTotpDisable" hidden>停用二次认证</button>
               </div>
               <div class="sec-note">
-                启用后登录页会多出一个 6 位验证码输入框。
-              </div>
-              <div class="sec-note">
-                万一验证器丢了登不进来：在服务器执行
-                <code>sudo dns-stack panel-2fa-reset</code> 关闭。
+                验证器丢了登不进来：在服务器执行 <code>sudo dns-stack panel-2fa-reset</code> 关闭。
               </div>
             </div>
           </div>
 
           <div class="card">
             <h3>GitHub 联合登录 <span id="oauthBadge"></span></h3>
+            <p class="card-lead">登录页会多一个「使用 GitHub 登录」。只有下面列出的账号进得来；每个账号第一次登录时会记下它的数字 ID，之后改名、或别人注册同名账号都进不来。</p>
             <div class="sec-chips" id="oauthChips"></div>
-            <details class="sec-fold">
-              <summary>配置 OAuth 应用</summary>
+            <div class="f-label mt-12">允许登录的账号</div>
+            <div class="user-chips" id="oaUsers"></div>
+            <form class="row mt-8 oa-add" id="oaUserForm">
+              <input type="text" id="oaUserAdd" class="grow-1" placeholder="GitHub 用户名" autocomplete="off"
+                     autocapitalize="none" spellcheck="false" maxlength="39" enterkeyhint="done"
+                     aria-label="要添加的 GitHub 用户名">
+              <button type="submit" class="sm" id="btnOaUserAdd">添加</button>
+            </form>
+            <details class="sec-fold" id="oaFold">
+              <summary>OAuth 应用</summary>
               <div class="sec-fold-body">
                 <div class="sec-form-grid">
                   <div>
                     <label class="f-label" for="oaClientId">Client ID</label>
-                    <input type="text" id="oaClientId" class="w-full" autocomplete="off">
+                    <input type="text" id="oaClientId" class="w-full" autocomplete="off" spellcheck="false">
                   </div>
                   <div>
                     <label class="f-label" for="oaSecret">Client Secret</label>
                     <input type="password" id="oaSecret" class="w-full" placeholder="留空表示不修改"
                            autocomplete="new-password">
                   </div>
-                  <div class="sec-form-wide">
-                    <label class="f-label" for="oaUsers">允许登录的 GitHub 用户名</label>
-                    <input type="text" id="oaUsers" class="w-full" placeholder="多个用户名用空格或逗号分隔"
-                           autocomplete="off">
-                  </div>
+                </div>
+                <div class="f-label mt-10">回调地址（填进 GitHub OAuth App 的 Authorization callback URL）</div>
+                <div class="copy-field">
+                  <code id="oaCallback" class="mono"></code>
+                  <button type="button" class="sm" data-copy-target="oaCallback" data-copy-what="回调地址">复制</button>
                 </div>
                 <div class="row mt-10">
                   <button class="primary sm" id="btnSaveOAuth">保存</button>
                 </div>
-                <div class="hint mt-8">
-                  回调地址：<code id="oaCallback" class="mono"></code>。
-                  Secret 只写不回显，保存后这里始终显示为空。
-                </div>
+                <div class="hint">Secret 只写不回显。换了 Client ID 或 Secret，要再用 GitHub 成功登录一次，才能关闭密码登录。</div>
               </div>
             </details>
           </div>
+        </div>
 
-          <div class="sec-label">访问地址</div>
-          <div class="sec-grid">
-            <div class="card">
-              <h3>DNS 接入地址 <span id="dohBadge"></span></h3>
-              <div id="dohBox"><div class="state"><span class="spinner"></span> 加载中…</div></div>
-            </div>
-            <div class="card">
-              <h3>面板访问 <span id="accessBadge"></span></h3>
-              <div id="accessBox"></div>
-            </div>
+        <div class="sec-label">这台设备</div>
+        <div class="card">
+          <h3>当前会话 <span id="accessBadge"></span></h3>
+          <div id="accessBox"></div>
+          <div class="sec-act" id="sessionActs">
+            <button class="sm" id="btnAcctLogout">退出登录</button>
+            <button class="danger sm" id="btnRevokeOthers">退出其它所有设备</button>
+          </div>
+          <div class="sec-note" id="sessionNote">
+            「退出其它所有设备」让其它浏览器、手机上的登录立即失效，这台设备换一张新凭证继续用。改密码也有同样的效果。
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="tabs main-tabs" id="settingTabs">
+          <button data-stab="entry" class="active">接入</button>
+          <button data-stab="rules">数据与证书</button>
+          <button data-stab="access">递归管控</button>
+          <button data-stab="services">服务与备份</button>
+          <button data-stab="audit">审计</button>
+        </div>
+
+        <div class="tab-panel active" id="stab-entry">
+          <div class="card">
+            <h3>DNS 接入地址 <span id="dohBadge"></span></h3>
+            <div id="dohBox"><div class="state"><span class="spinner"></span> 加载中…</div></div>
           </div>
         </div>
 

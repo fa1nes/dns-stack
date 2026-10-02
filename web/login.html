@@ -37,10 +37,12 @@ try {
 
         <form id="loginForm">
 
-          <input type="text" name="username" autocomplete="username"
-                 value="admin" readonly tabindex="-1" aria-hidden="true"
-                 style="position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;opacity:0;pointer-events:none;overflow:hidden">
-          <label class="f-label" for="pw">访问密码</label>
+          <div id="userField" hidden>
+            <label class="f-label" for="user">用户名</label>
+            <input type="text" id="user" name="username" autocomplete="username" autocapitalize="none"
+                   spellcheck="false" enterkeyhint="next">
+          </div>
+          <label class="f-label" for="pw">密码</label>
           <div class="pw-field">
             <input type="password" id="pw" name="password" autocomplete="current-password"
                    spellcheck="false" enterkeyhint="go" autofocus aria-describedby="msg">
@@ -92,7 +94,7 @@ try {
       </div>
     </div>
     <div class="login-tip">
-      登录后会话有效期 12 小时 · 修改密码后所有会话立即失效
+      会话有效期 12 小时 · 改密码会让其它设备退出
       <br><a href="#" id="btnDiag" class="diag-link">显示环境诊断</a>
     </div>
 
@@ -104,6 +106,8 @@ try {
 <script>
 (function () {
   var form = document.getElementById('loginForm');
+  var user = document.getElementById('user');
+  var userField = document.getElementById('userField');
   var pw = document.getElementById('pw');
   var btn = document.getElementById('btnLogin');
   var msg = document.getElementById('msg');
@@ -121,6 +125,11 @@ try {
     fetch(apiUrl('/api/bootstrap'), { credentials: 'include' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (d.username_required) {
+          userField.hidden = false;
+          user.required = true;
+          if (!pw.value) { user.focus(); }
+        }
         if (d.totp_enabled) {
           totpField.hidden = false;
           totp.required = true;
@@ -184,6 +193,7 @@ try {
   function busy(on, label) {
     btn.disabled = on;
     pw.disabled = on;
+    user.disabled = on;
     btn.innerHTML = '';
     if (on) {
       var s = document.createElement('span');
@@ -214,7 +224,8 @@ try {
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     if (btn.disabled) return;
-    if (!pw.value) { show('请输入访问密码'); pw.focus(); return; }
+    if (!userField.hidden && !user.value.trim()) { show('请输入用户名'); user.focus(); return; }
+    if (!pw.value) { show('请输入密码'); pw.focus(); return; }
 
     clear();
     busy(true, '登录中…');
@@ -224,6 +235,7 @@ try {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
+        username: user.value,
         password: pw.value,
         totp_code: (document.getElementById('totp') || {}).value || ''
       })

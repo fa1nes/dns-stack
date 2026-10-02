@@ -776,6 +776,8 @@ pre.block {
   padding: 9px; font-size: var(--fs-base); font-weight: 500;
 }
 
+#userField { margin-bottom: 14px; }
+#userField input { width: 100%; padding: 9px 11px; }
 #totpField { margin-top: 14px; }
 #totpField input {
   width: 100%; padding: 9px 11px;
@@ -918,6 +920,61 @@ button.primary:disabled, button.danger:disabled {
 .sec-note code { font-size: var(--fs-sm); }
 
 .sec-fold + .sec-act { border-top: none; margin-top: 10px; padding-top: 0; }
+
+#page-account > .callout { margin: 0 0 14px; }
+.card-lead { margin: -4px 0 12px; font-size: var(--fs-sm); line-height: 1.65; color: var(--text-muted); }
+
+.acct-id { display: flex; align-items: center; gap: 12px; }
+.acct-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  font-size: var(--fs-lg); font-weight: 600; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.acct-name { font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
+.acct-name.dim { font-weight: 400; }
+
+.check {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  font-size: var(--fs-sm); color: var(--text-muted);
+}
+.check input { margin: 0; accent-color: var(--accent); }
+
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 16px; }
+.steps > li { counter-increment: step; position: relative; padding-left: 32px; min-width: 0; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: -1px;
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: var(--fs-xs); font-weight: 600; color: var(--accent); background: var(--accent-soft);
+}
+.step-title { font-size: var(--fs-base); font-weight: 600; margin-bottom: 4px; }
+
+.copy-field { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.copy-field > code {
+  flex: 1; min-width: 0; padding: 5px 10px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border-soft);
+  font-size: var(--fs-sm); line-height: 1.5;
+}
+.copy-field > code.clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copy-field > button { flex: none; }
+
+.totp-code { width: 8.5em; font-family: var(--mono); letter-spacing: 4px; text-align: center; }
+.totp-code::placeholder { color: var(--text-dim); opacity: .6; }
+
+.user-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.user-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 3px 2px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+}
+.user-chip button {
+  display: grid; place-items: center; min-height: 0; padding: 4px;
+  border: none; background: none; border-radius: 50%; color: var(--text-dim);
+}
+.user-chip button svg { width: 12px; height: 12px; }
+.user-chip button:hover:not(:disabled) { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.oa-add { max-width: 420px; }
 
 @media (max-width: 560px) {
   .posture-item:last-child:nth-child(odd) { grid-column: 1 / -1; }
