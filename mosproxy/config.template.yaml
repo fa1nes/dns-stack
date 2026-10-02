@@ -1,3 +1,4 @@
+# template-rev: 9
 
 log:
   queries: true
@@ -58,7 +59,7 @@ servers:
       max_streams: 100
 
 cache:
-  mem_size: 67108864     # 64MB 内存缓存
+  mem_size: 67108864
   maximum_ttl: 3600
   prefetch_threshold: 0.25
   optimistic_ttl: 604800
@@ -86,7 +87,7 @@ upstreams:
 
 load_balancers:
   - tag: "recursive-lb"
-    method: "fall_through"   # 有超时/故障自动切下一个
+    method: "fall_through"
     backends:
       - tag: "local-unbound"
         weight: 1
