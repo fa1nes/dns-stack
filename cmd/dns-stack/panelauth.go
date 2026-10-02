@@ -35,10 +35,10 @@ func cmdPanelAuth(args []string) error {
 		if password == "" {
 			return fmt.Errorf("未提供密码：用 PW 环境变量传入，或从 stdin 读入")
 		}
-		if err := helper.SetPanelPassword(*authPath, password); err != nil {
+		if err := helper.SetPanelPassword(*authPath, os.Getenv("PANEL_USER"), password); err != nil {
 			return err
 		}
-		fmt.Println("面板密码已更新（存的是 scrypt 哈希；会话密钥同时轮换，旧会话立即失效）")
+		fmt.Println("面板用户名与密码已更新（密码存的是 scrypt 哈希；会话密钥同时轮换，旧会话立即失效）")
 		return nil
 
 	case "disable-totp":
