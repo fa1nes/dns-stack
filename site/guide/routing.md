@@ -60,7 +60,7 @@ echo "example.cn" | sudo tee -a /var/lib/dns-stack/manual-cn-zones.txt
 sudo dns-stack routing-refresh     # 立即重建分流数据，不必等定时器
 
 echo "example.com" | sudo tee -a /var/lib/dns-stack/manual-gfw.txt
-sudo dns-stack reload              # 重载 mosproxy 域名表，不中断解析
+sudo dns-stack reload              # 重载 mosproxy 域名表，Unbound 用 reload_keep_cache，缓存保留
 ```
 
 匹配是域匹配：写 `example.com` 就覆盖 `www.example.com` 等全部子域。

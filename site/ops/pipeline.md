@@ -61,8 +61,12 @@ qqwry 只在 CN / HK / TW / MO 范围内可信，这一条要贯彻到**全部**
 sudo dns-stack routing-refresh                       # 忽略周期，全部重跑
 sudo dns-stack routing-data --only chnroute --force  # 只重跑某几步
 sudo dns-stack routing-data --dry-run                # 只列出这一轮会跑哪些步骤
-sudo dns-stack routing-data --preview                # 全部算一遍，但不动 nft、不写 ECS 配置、不重载 Unbound
+sudo dns-stack routing-data --preview                # 全部算一遍，线上文件一个都不写：不动 nft、不改 ECS 配置、不重载 Unbound
 ```
+
+同一时间只会有一轮在跑（`/run/lock/dns-stack-routing-data.lock`）。定时器撞上正在进行的一轮会直接跳过；手动 `--force` 撞上会报错，等那一轮结束再试。
+
+分片表写出后会让 mosproxy 热加载一次；mosproxy 拒绝新表时，自动换回这次覆盖掉的内容。
 
 面板「设置 → 服务与备份 → 递归分流数据」有同样的刷新按钮。
 
