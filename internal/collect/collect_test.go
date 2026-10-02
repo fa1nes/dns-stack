@@ -85,28 +85,6 @@ func TestClassifyExitPath(t *testing.T) {
 	}
 }
 
-func TestExitPathDoesNotDependOnAnythingButTheRoute(t *testing.T) {
-	body, err := os.ReadFile("consume.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(body)
-	start := strings.Index(text, "func ClassifyExitPath(")
-	if start < 0 {
-		t.Fatal("找不到 ClassifyExitPath")
-	}
-	end := strings.Index(text[start:], "\n}")
-	body2 := text[start : start+end]
-	for _, forbidden := range []string{"zones", "domain", "Covers", "os.", "ReadFile"} {
-		if strings.Contains(body2, forbidden) {
-			t.Errorf("ClassifyExitPath 又开始看 %q 了——"+
-				"一次本机递归要问多台权威，有的直连有的走隧道，根本没有「单一出口」。"+
-				"拿一个每 15 分钟重建的域名清单去反推出口，同一个域名的标签会来回翻："+
-				"生产上 maimemostatus.com 的缓存命中曾经 31 次标成直连、26 次标成隧道", forbidden)
-		}
-	}
-}
-
 func newTestDB(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "collector.db")

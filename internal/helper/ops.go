@@ -12,6 +12,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/config"
 	"github.com/dns-stack/dns-stack/internal/stack"
+	"github.com/dns-stack/dns-stack/unbound"
 )
 
 const (
@@ -468,9 +469,9 @@ func (h *Helper) cacheHitRate() map[string]any {
 }
 
 func (h *Helper) opCacheInfo(map[string]any) result {
-	unbound := map[string]any{}
+	settings := map[string]any{}
 	for _, option := range []string{
-		"serve-expired-ttl", "serve-expired-client-timeout", "cache-max-ttl", "cache-min-ttl",
+		unbound.ServeExpiredTTL, "serve-expired-client-timeout", "cache-max-ttl", unbound.CacheMinTTL,
 	} {
 		r := h.unboundControl(10*time.Second, "get_option", option)
 		if code, _ := r["returncode"].(int); code != 0 {
@@ -478,9 +479,9 @@ func (h *Helper) opCacheInfo(map[string]any) result {
 		}
 		text := strings.TrimSpace(r["stdout"].(string))
 		if number, err := strconv.Atoi(text); err == nil {
-			unbound[option] = number
+			settings[option] = number
 		} else {
-			unbound[option] = text
+			settings[option] = text
 		}
 	}
 	info := map[string]any{
@@ -488,7 +489,7 @@ func (h *Helper) opCacheInfo(map[string]any) result {
 			"optimistic_ttl": readYAMLInt(h.mosproxyConf, "optimistic_ttl"),
 			"maximum_ttl":    readYAMLInt(h.mosproxyConf, "maximum_ttl"),
 		},
-		"unbound": unbound,
+		"unbound": settings,
 		"hit":     h.cacheHitRate(),
 	}
 	encoded, _ := json.Marshal(info)
@@ -548,13 +549,13 @@ func (h *Helper) opSetCacheTTL(args map[string]any) result {
 			"stderr": "ttl 超出允许范围 0~" + strconv.Itoa(cacheTTLMax) + " 秒"}
 	}
 
-	r := h.unboundControl(15*time.Second, "set_option", "serve-expired-ttl:", strconv.Itoa(ttl))
+	r := h.unboundControl(15*time.Second, "set_option", unbound.ServeExpiredTTL+":", strconv.Itoa(ttl))
 	if code, _ := r["returncode"].(int); code != 0 {
 		return unboundFailure("Unbound 设置失败: ", r)
 	}
 	lines := []string{"Unbound serve-expired-ttl 已即时生效: " + strconv.Itoa(ttl)}
 
-	if changed, err := replaceIntField(h.unboundConf, "serve-expired-ttl", ttl); err != nil {
+	if changed, err := replaceIntField(h.unboundConf, unbound.ServeExpiredTTL, ttl); err != nil {
 		lines = append(lines, "警告: Unbound 配置文件未能同步("+err.Error()+")，重启后会恢复旧值")
 	} else if changed {
 		lines = append(lines, "Unbound 配置文件已同步")
@@ -583,12 +584,12 @@ func (h *Helper) opSetMinTTL(args map[string]any) result {
 				"上限刻意压得低：强制最小 TTL 会一并抬高 CDN 那些几十秒的短 TTL，" +
 				"而 CDN 正是靠短 TTL 做故障转移与就近调度的，抬太高等于用命中率换调度精度"}
 	}
-	r := h.unboundControl(15*time.Second, "set_option", "cache-min-ttl:", strconv.Itoa(ttl))
+	r := h.unboundControl(15*time.Second, "set_option", unbound.CacheMinTTL+":", strconv.Itoa(ttl))
 	if code, _ := r["returncode"].(int); code != 0 {
 		return unboundFailure("Unbound 设置失败: ", r)
 	}
 	lines := []string{"Unbound cache-min-ttl 已即时生效: " + strconv.Itoa(ttl)}
-	if changed, err := replaceIntField(h.unboundConf, "cache-min-ttl", ttl); err != nil {
+	if changed, err := replaceIntField(h.unboundConf, unbound.CacheMinTTL, ttl); err != nil {
 		lines = append(lines, "警告: Unbound 配置文件未能同步("+err.Error()+")，重启后会恢复旧值")
 	} else if !changed {
 		lines = append(lines, "警告: 配置文件里没有 cache-min-ttl 这一行，重启后会恢复旧值")

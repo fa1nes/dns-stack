@@ -58,7 +58,7 @@ func KindLabel(kind string) string {
 	case KindBlocked:
 		return "域名黑名单"
 	case KindRefused:
-		return "访问控制拦截"
+		return "限流拒绝"
 	case KindCache:
 		return "缓存"
 	case KindForward:
