@@ -37,7 +37,6 @@ func cmdSelfCheck(args []string) error {
 		Role:       *role,
 		Quick:      *quick,
 		Full:       *full,
-		Out:        os.Stdout,
 	})
 	if err != nil {
 		return err

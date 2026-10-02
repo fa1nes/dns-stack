@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/dns-stack/dns-stack/internal/pipeline"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 func cmdRoutingData(args []string) error {
@@ -39,6 +41,21 @@ func cmdRoutingData(args []string) error {
 		}
 	}
 
+	if !*dryRun {
+		unlock, err := statefile.TryLock("/run/lock/dns-stack-routing-data.lock")
+		if errors.Is(err, statefile.ErrLocked) {
+			if *force {
+				return fmt.Errorf("另一轮 routing-data 正在运行（定时器或面板刚触发过），等它结束再试")
+			}
+			fmt.Println("[信息] 另一轮 routing-data 正在运行，本轮跳过")
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+
 	out := os.Stdout
 	cfg := pipeline.LoadConfig(*state, *conf)
 	rt := pipeline.NewRuntime(cfg, out)
@@ -48,7 +65,6 @@ func cmdRoutingData(args []string) error {
 		Only:     selected,
 		Force:    *force,
 		DryRun:   *dryRun,
-		Preview:  *preview,
 		Out:      out,
 	}, rt, steps)
 

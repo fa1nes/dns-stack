@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
+	"io"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -18,11 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"io"
-
 	"github.com/dns-stack/dns-stack/internal/anycast"
 	"github.com/dns-stack/dns-stack/internal/authority"
-	"github.com/dns-stack/dns-stack/internal/cidrutil"
 	"github.com/dns-stack/dns-stack/internal/cnauth"
 	"github.com/dns-stack/dns-stack/internal/collect"
 	"github.com/dns-stack/dns-stack/internal/domain"
@@ -32,6 +29,7 @@ import (
 	"github.com/dns-stack/dns-stack/internal/helper"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/panel"
 	"github.com/dns-stack/dns-stack/internal/resolve"
 )
@@ -182,7 +180,7 @@ func usage() {
   migration-restore 从面板导出的迁移包恢复数据(按清单白名单写入，可 --dry-run)
   direct4-audit   多个归属库交叉验证 direct4，产出争议(不发 ECS)与晋级(可作大陆证据)清单
   ecs-orphans     审计 ECS 白名单孤儿：区分 TTL 内累积保留与真孤儿，按境外归属计数并卡阈值
-  ecs-audit       ECS 全链路 A/B 审计：A 类国内域名权威漏发、B 类境外域名权威误入白名单
+  ecs-audit       审计国内域名的权威是否都在 ECS 白名单里（漏发会让 CDN 按解析器位置调度）
   ecs-forward     直查 mosproxy DoT，验证客户端子网是否真的转发给上游（分片表内外对照）
   doh-probe       向本机 DoH 入口发一个真实查询，输出 ok/bad
   helper-probe    经 helper socket 取日志，数出其中未脱敏的全局 IPv4 个数（-1 表示查不了）
@@ -393,42 +391,6 @@ func cmdInfraCheck(args []string) error {
 	return nil
 }
 
-func mosproxyReload(api string) int {
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get("http://" + api + "/ctl/reload")
-	if err != nil {
-		return 0
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode
-}
-
-func verifyWithReload(api, outPath, backup string, hadOld bool) error {
-	switch code := mosproxyReload(api); {
-	case code == 0:
-		fmt.Println("[信息] mosproxy 管理接口连不上（服务未运行？），本次跳过 reload 验证。文件已落盘，下次启动时生效")
-		return nil
-	case code == 200:
-		fmt.Println("[成功] mosproxy 已热加载新的分片表（reload 通过 = 文件可被正确解析）")
-		return nil
-	default:
-		fmt.Fprintf(os.Stderr, "[错误] mosproxy reload 返回 %d，新分片表可能无法解析。正在回滚\n", code)
-		if !hadOld {
-			os.Remove(outPath)
-			return fmt.Errorf("首次生成即失败，已移除新文件")
-		}
-		if err := os.Rename(backup, outPath); err != nil {
-			return err
-		}
-		if recheck := mosproxyReload(api); recheck == 200 {
-			return fmt.Errorf("已回滚到上一版分片表，reload 恢复正常，确认是本次生成的内容有问题")
-		} else {
-			return fmt.Errorf("回滚后 reload 仍返回 %d，问题不在本次生成的分片表，请立即检查 mosproxy 日志", recheck)
-		}
-	}
-}
-
 func loadDisputedForZone(path string, maxAge time.Duration, strict bool) (*ipset.Set, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
@@ -465,7 +427,6 @@ func cmdECSZone(args []string) error {
 	direct := fs.String("direct4", envOr("DIRECT_LIST", "/var/lib/dns-stack/chnroute/direct4.txt"), "direct4 列表")
 	cnip := fs.String("cnip", envOr("CNIP_DB", "/var/lib/dns-stack/geoip/qqwry.ipdb"), "qqwry 归属库")
 	out := fs.String("out", envOr("ECS_ZONE_FILE", "/var/lib/dns-stack/ecs-ip-zone.txt"), "输出文件")
-	api := fs.String("api", envOr("MOSPROXY_API", "127.0.0.1:8888"), "mosproxy 管理接口")
 	disputedPath := fs.String("disputed", envOr("GEO_DISPUTED_FILE",
 		"/var/lib/dns-stack/chnroute/geo-disputed.txt"), "多源争议网段文件，不打标这些段")
 	requireCross := fs.Bool("require-cross", false, "争议清单缺失或陈旧时直接失败，而不是降级为不交叉")
@@ -503,19 +464,11 @@ func cmdECSZone(args []string) error {
 		return fmt.Errorf("没有任何网段被打标，拒绝生成空文件")
 	}
 	merged, clipped := ecszone.MergeRows(rows)
-	if index, bad := ecszone.FirstOverlap(merged); bad {
-		a, b := merged[index], merged[index+1]
-		return fmt.Errorf("自检发现重叠区间，拒绝写入: %s-%s[%s] vs %s-%s[%s]",
-			cidrutil.FormatAddr4(a.Lo), cidrutil.FormatAddr4(a.Hi), a.Zone,
-			cidrutil.FormatAddr4(b.Lo), cidrutil.FormatAddr4(b.Hi), b.Zone)
+	if err := ecszone.CheckPublishable(*out, merged); err != nil {
+		return err
 	}
 	if clipped > 0 {
 		fmt.Printf("[警告] 裁剪了 %d 处跨 zone 重叠（保留起点更早的一条）。数量持续偏高说明归属库的分段出了问题\n", clipped)
-	}
-
-	old := ecszone.CountDataLines(*out)
-	if old >= 100 && len(merged) < old*6/10 {
-		return fmt.Errorf("打标网段从 %d 条骤降到 %d 条，拒绝覆盖，多半是归属库出了问题", old, len(merged))
 	}
 
 	zones := map[string]int{}
@@ -528,25 +481,11 @@ func cmdECSZone(args []string) error {
 		return nil
 	}
 
-	_, hadOld := os.Stat(*out)
-	backup := *out + ".prev"
-	if hadOld == nil {
-		data, err := os.ReadFile(*out)
-		if err == nil {
-			os.WriteFile(backup, data, 0o644)
-		}
-	}
-	temp := *out + ".tmp"
-	if err := os.WriteFile(temp, []byte(ecszone.Render(merged)), 0o644); err != nil {
+	message, err := ecszone.Publish(*out, merged, func() int { return metrics.Reload(context.Background()) })
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(temp, *out); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	if err := verifyWithReload(*api, *out, backup, hadOld == nil); err != nil {
-		return err
-	}
+	fmt.Println("[信息] " + message)
 
 	fmt.Printf("[成功] 已打标 %d 段（合并前 %d），覆盖 %d 个 zone\n", len(merged), raw, len(zones))
 	fmt.Printf("[信息] 跳过 %d 段：云厂商/企业段没有接入运营商，缓存分片退回按 /24\n", skipped)
@@ -681,10 +620,9 @@ func cmdHelper(args []string) error {
 	fs := flag.NewFlagSet("helper", flag.ContinueOnError)
 	sock := fs.String("socket", "", "unix socket 路径")
 	config := fs.String("config", "", "配置文件路径")
-	root := fs.String("stack-root", "", "源码树根目录")
 	auth := fs.String("auth", "", "面板认证文件路径")
 	cli := fs.String("cli", "", "dns-stack CLI 路径")
-	goBin := fs.String("go-bin", "", "dns-stack Go 二进制路径（分类、ECS 分片等子命令都由它执行）")
+	goBin := fs.String("go-bin", "", "dns-stack Go 二进制路径（面板调用的子命令都由它执行）")
 	logPath := fs.String("log", "", "审计日志路径")
 	sanitizeOnly := fs.Bool("sanitize", false, "从 stdin 读文本，按面板展示前的规则脱敏后写 stdout，然后退出")
 	if err := fs.Parse(args); err != nil {
@@ -702,7 +640,7 @@ func cmdHelper(args []string) error {
 		return fmt.Errorf("helper 必须以 root 运行：它代面板执行特权操作，非 root 下每个写操作都会失败，而失败点分散在各个操作里、很难指回权限")
 	}
 	return helper.New(helper.Config{
-		SocketPath: *sock, ConfigPath: *config, StackRoot: *root, AuthPath: *auth,
+		SocketPath: *sock, ConfigPath: *config, AuthPath: *auth,
 		CLIPath: *cli, GoBin: *goBin, LogPath: *logPath,
 	}).Serve()
 }

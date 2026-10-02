@@ -88,24 +88,11 @@ func cmdDirect4Audit(args []string) error {
 	if *dryRun {
 		return nil
 	}
-	if report.DisputeRejected != "" {
-		fmt.Println("[警告] 争议清单本轮不更新，消费侧会按新鲜度判据告警")
-	} else if err := geoaudit.Write(*disputedOut, geoaudit.KindDisputed,
-		report.DisputeNeed, report.Sources, report.Disputed); err != nil {
-		return err
-	} else {
-		fmt.Printf("已写出 %s\n", *disputedOut)
+	kept, err := geoaudit.WriteSnapshots(*disputedOut, *promotedOut, report)
+	for _, line := range kept {
+		fmt.Println("[警告] " + line + "，消费侧会按新鲜度判据告警")
 	}
-	if report.PromoteRejected != "" {
-		fmt.Println("[警告] 晋级清单本轮不更新，消费侧会按新鲜度判据告警")
-		return nil
-	}
-	if err := geoaudit.Write(*promotedOut, geoaudit.KindPromoted,
-		report.PromoteNeed, report.Sources, report.Promoted); err != nil {
-		return err
-	}
-	fmt.Printf("已写出 %s\n", *promotedOut)
-	return nil
+	return err
 }
 
 func printSpans(spans []geoaudit.Span, limit int) {

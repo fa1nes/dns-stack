@@ -4,12 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 )
 
@@ -89,23 +89,14 @@ func cmdBlocklist(args []string) error {
 }
 
 func reloadForAccess() error {
-	ctx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:8888/ctl/reload", nil)
-	if err != nil {
-		return err
+	switch code := metrics.Reload(context.Background()); code {
+	case 200:
+		fmt.Println("mosproxy 已重载，改动即刻生效")
+	case 0:
+		fmt.Println("[警告] mosproxy 管理接口连不上，改动下次重载后生效")
+	default:
+		fmt.Printf("[警告] mosproxy 重载返回 HTTP %d，改动下次重载后生效\n", code)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("[警告] mosproxy 重载失败，改动下次重载后生效: %v\n", err)
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("[警告] mosproxy 重载返回 HTTP %d，改动下次重载后生效\n", resp.StatusCode)
-		return nil
-	}
-	fmt.Println("mosproxy 已重载，改动即刻生效")
 	return nil
 }
 
@@ -128,11 +119,6 @@ func cmdACL(args []string) error {
 	}
 	rest := fs.Args()
 	ctx := context.Background()
-	keys := config.ReadKeys(*configPath, "DOH_PORT", "DOT_PORT", "NFT_TABLE")
-	table := keys["NFT_TABLE"]
-	if table == "" {
-		table = "dns_route"
-	}
 
 	switch sub {
 	case "", "list", "status":
@@ -140,20 +126,20 @@ func cmdACL(args []string) error {
 		if err != nil {
 			return err
 		}
-		installed := pipeline.ACLInstalled(ctx, table)
+		installed := pipeline.ACLInstalled(ctx)
 		switch {
 		case len(entries) == 0 && !installed:
 			fmt.Println("访问控制未启用：授权网段为空，入口对全网开放")
 		case len(entries) == 0 && installed:
-			fmt.Println("[警告] acl.txt 为空但内核里仍有访问控制链——执行 dns-stack acl disable 清理")
+			fmt.Println("[警告] acl.txt 为空但内核里仍有访问控制表——执行 dns-stack acl disable 清理")
 		default:
 			for _, prefix := range entries {
 				fmt.Println(prefix)
 			}
-			fmt.Printf("\n共 %d 条授权网段，内核链: %s\n", len(entries), installedText(installed))
+			fmt.Printf("\n共 %d 条授权网段，内核规则: %s\n", len(entries), installedText(installed))
 		}
 		if sub == "status" && installed {
-			if text, err := pipeline.ACLStatus(ctx, table); err == nil {
+			if text, err := pipeline.ACLStatus(ctx); err == nil {
 				fmt.Println()
 				fmt.Println(strings.TrimRight(text, "\n"))
 			}
@@ -178,13 +164,13 @@ func cmdACL(args []string) error {
 			return err
 		}
 	case "disable":
-		if err := pipeline.ACLDisable(ctx, table); err != nil {
+		if err := pipeline.ACLDisable(ctx); err != nil {
 			return err
 		}
 		if err := store.SetACLDisabled(true); err != nil {
 			return err
 		}
-		fmt.Println("访问控制链已移除，入口恢复对全网开放（acl.txt 保留，用 apply 可再次启用；在此之前看门狗与重启都不会把它装回来）")
+		fmt.Println("访问控制已移除，入口恢复对全网开放（acl.txt 保留，用 apply 可再次启用；在此之前看门狗与重启都不会把它装回来）")
 		return nil
 	case "apply":
 	default:
@@ -196,18 +182,13 @@ func cmdACL(args []string) error {
 		return err
 	}
 	if len(entries) == 0 {
-		if err := pipeline.ACLDisable(ctx, table); err != nil {
+		if err := pipeline.ACLDisable(ctx); err != nil {
 			return err
 		}
-		fmt.Println("授权网段已清空，访问控制链已移除，入口对全网开放")
+		fmt.Println("授权网段已清空，访问控制已移除，入口对全网开放")
 		return store.SetACLDisabled(false)
 	}
-	cfg := pipeline.ACLConfig{
-		Table:    table,
-		DoHPort:  atoiOr(keys["DOH_PORT"], 443),
-		DoTPort:  atoiOr(keys["DOT_PORT"], 853),
-		Prefixes: entries,
-	}
+	cfg := pipeline.ACLFromConfig(pipeline.LoadConfig(store.StateDir, *configPath), entries)
 	script, err := cfg.Render()
 	if err != nil {
 		return err

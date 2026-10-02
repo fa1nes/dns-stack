@@ -42,7 +42,7 @@ func cmdCDNHit(args []string) error {
 
 	set, err := cdnrules.Load(*ruleset)
 	if err != nil {
-		return fmt.Errorf("读不到 CDN 直连规则集 %s: %w（先跑 dns-stack sync-rules）", *ruleset, err)
+		return fmt.Errorf("读不到 CDN 直连规则集 %s: %w（先跑 dns-stack routing-data --only cdn-rules --force）", *ruleset, err)
 	}
 
 	mainland, err := cdnhit.LoadMainland(*direct4)

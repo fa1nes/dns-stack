@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/alert"
 	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
@@ -46,7 +47,7 @@ func cmdMaintenance(args []string) error {
 			return err
 		}
 		fmt.Printf("[信息] 剩余 %d 天，到期 %s，SAN 含公网 IP=%v，私钥匹配=%v\n",
-			status.DaysLeft, status.NotAfter.Format("2006-01-02 15:04"),
+			status.DaysLeft, status.NotAfter.Local().Format("2006-01-02 15:04 MST"),
 			status.SANHasIP, status.KeyMatch)
 		return nil
 	}
@@ -76,19 +77,27 @@ func cmdRoutingWatchdog(args []string) error {
 	cfg := pipeline.LoadConfig(*state, *conf)
 	rt := pipeline.NewRuntime(cfg, os.Stdout)
 	watchdog := pipeline.NewWatchdog(cfg)
-	watchdog.FWMark = envOr("FWMARK", watchdog.FWMark)
+	watchdog.FWMark = envOr("FWMARK", pipeline.LoadRoutingConfig(cfg).FWMark)
 	watchdog.Unit = envOr("UNIT", watchdog.Unit)
 	ctx := context.Background()
 	if *checkOnly {
 		health := watchdog.Diagnose(ctx, rt)
+		if prefixes, _ := (access.Store{StateDir: cfg.StateDir}).EnforcedACL(); len(prefixes) > 0 && !pipeline.ACLInstalled(ctx) {
+			health.Problems = append(health.Problems, "访问控制表缺失（acl.txt 有授权网段，入口正对全网开放）")
+		}
 		if health.OK() {
 			fmt.Println("[成功] 分流链路健康")
 			return nil
 		}
 		return fmt.Errorf("分流异常：%s", health.Summary())
 	}
-	health, err := watchdog.Check(ctx, rt)
 	var problems []string
+	if restored, aclErr := pipeline.RestoreACL(ctx, cfg); aclErr != nil {
+		problems = append(problems, "访问控制表缺失且重新下发失败（入口正对全网开放）："+aclErr.Error())
+	} else if restored {
+		rt.Warnf("访问控制表不在内核里，已按 acl.txt 重新下发")
+	}
+	health, err := watchdog.Check(ctx, rt)
 	if !health.Repaired {
 		problems = append(problems, health.Problems...)
 	}

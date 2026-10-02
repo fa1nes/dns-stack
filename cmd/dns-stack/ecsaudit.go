@@ -31,37 +31,6 @@ var coreCNDomains = []string{
 type ecsAuditSets struct {
 	whitelist *ipset.Set
 	direct    *ipset.Set
-	cnAuth    *ipset.Set
-	shared    *ipset.Set
-	manual    []string
-}
-
-func (s ecsAuditSets) sourceOf(addr netip.Addr) string {
-	switch {
-	case s.direct.Contains(addr):
-		return "direct4"
-	case s.shared.Contains(addr):
-		return "shared-excluded"
-	case s.cnAuth.Contains(addr):
-		return "cn-authority"
-	}
-	return "orphan"
-}
-
-func (s ecsAuditSets) manualMatch(name string) bool {
-	for rest := name; rest != ""; {
-		for _, manual := range s.manual {
-			if rest == manual {
-				return true
-			}
-		}
-		dot := strings.IndexByte(rest, '.')
-		if dot < 0 {
-			return false
-		}
-		rest = rest[dot+1:]
-	}
-	return false
 }
 
 func loadPrefixSet(path string) *ipset.Set {
@@ -126,16 +95,12 @@ func cmdECSAudit(args []string) error {
 	sets := ecsAuditSets{
 		whitelist: ipset.New(ranges),
 		direct:    loadPrefixSet(filepath.Join(chnroute, "direct4.txt")),
-		cnAuth:    loadPrefixSet(filepath.Join(chnroute, "cn-authority.txt")),
-		shared:    loadPrefixSet(filepath.Join(chnroute, "shared-excluded.txt")),
-		manual:    loadDomainList(filepath.Join(*state, "manual-cn-zones.txt")),
 	}
 	if sets.direct.Len() == 0 {
 		return fmt.Errorf("direct4 为空或无法解析")
 	}
 
 	cnDomains := coreCNDomains
-	var gfwDomains []string
 	if !*quick {
 		cnDomains = mergeSorted(coreCNDomains,
 			loadDomainList(filepath.Join(chnroute, "cn-zones-matched.txt")))
@@ -164,58 +129,13 @@ func cmdECSAudit(args []string) error {
 			return false
 		}
 		fmt.Printf("  ⚠️ %s  %d/%d 台权威收不到 ECS\n      %s\n",
-			name, len(missing), total, describe(missing, nil))
+			name, len(missing), total, describe(missing))
 		return true
 	})
 	fmt.Printf("  小计: %d 个域名存在漏发\n\n", missCount)
 
-	var leakCount, riskCount int
-	byBucket := map[string]int{}
-	if len(gfwDomains) > 0 {
-		fmt.Printf("── B. 境外域名：权威误入 ECS 白名单（%d 个待查）\n", len(gfwDomains))
-		leakCount = auditDomains(ctx, client, gfwDomains, *workers, func(name string, zone authority.ZoneAuthority) bool {
-			leaked := map[string][]netip.Addr{}
-			kinds := map[string]struct{}{}
-			for ns, addrs := range zone.ByName {
-				for _, addr := range addrs {
-					if sets.whitelist.Contains(addr) {
-						leaked[ns] = append(leaked[ns], addr)
-						kinds[sets.sourceOf(addr)] = struct{}{}
-					}
-				}
-			}
-			if len(leaked) == 0 {
-				return false
-			}
-			bucket := classifyLeak(sets, name, kinds)
-			byBucket[bucket]++
-			if bucket == "risk" {
-				riskCount++
-			}
-			fmt.Printf("  %s %s\n      %s\n", bucket, name, describe(leaked, sets.sourceOf))
-			return true
-		})
-		fmt.Printf("  小计: %d 个域名存在白名单命中\n", leakCount)
-	}
-	fmt.Printf("# 审计完成：A 类漏发 %d 个，B 类命中 %d 个，B 类真实风险 %d 个\n",
-		missCount, leakCount, riskCount)
-	fmt.Printf("# B 类来源分布：%v\n", byBucket)
-	if riskCount > 0 {
-		os.Exit(1)
-	}
+	fmt.Printf("# 审计完成：%d 个国内域名有权威收不到 ECS（CDN 只能按解析器位置调度它们）\n", missCount)
 	return nil
-}
-
-func classifyLeak(sets ecsAuditSets, name string, kinds map[string]struct{}) string {
-	if sets.manualMatch(name) {
-		return "manual-cn"
-	}
-	for kind := range kinds {
-		if kind != "direct4" && kind != "shared-excluded" {
-			return "risk"
-		}
-	}
-	return "explicit-safe"
 }
 
 func auditDomains(
@@ -258,7 +178,7 @@ func auditDomains(
 	return int(hits.Load())
 }
 
-func describe(byName map[string][]netip.Addr, source func(netip.Addr) string) string {
+func describe(byName map[string][]netip.Addr) string {
 	names := make([]string, 0, len(byName))
 	for name := range byName {
 		names = append(names, name)
@@ -267,11 +187,7 @@ func describe(byName map[string][]netip.Addr, source func(netip.Addr) string) st
 	parts := make([]string, 0, len(names))
 	for _, name := range names {
 		for _, addr := range byName[name] {
-			if source == nil {
-				parts = append(parts, fmt.Sprintf("%s=%s", name, addr))
-				continue
-			}
-			parts = append(parts, fmt.Sprintf("%s=%s[%s]", name, addr, source(addr)))
+			parts = append(parts, fmt.Sprintf("%s=%s", name, addr))
 		}
 	}
 	return strings.Join(parts, ", ")
