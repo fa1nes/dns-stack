@@ -17,16 +17,15 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/stack"
-
+	"github.com/dns-stack/dns-stack/internal/statefile"
 	_ "modernc.org/sqlite"
 )
 
 const (
 	DefaultStateDir = "/var/lib/dns-stack"
 	DefaultGoBin    = "/opt/dns-stack/bin/dns-stack-go"
-	mosproxyReload  = "http://127.0.0.1:8888/ctl/reload"
-	classifierLock  = "/run/lock/dns-stack-classifier.lock"
 	panelAuthFile   = "/etc/dns-stack/secrets/panel/auth.json"
 	archEpochFile   = "architecture-epoch"
 )
@@ -75,10 +74,7 @@ func (c *Ctl) requireRole(want string) error {
 	if c.Role() == want {
 		return nil
 	}
-	if want == stack.RoleCNResolver {
-		return fmt.Errorf("该命令只适用于国内解析节点")
-	}
-	return fmt.Errorf("该命令只适用于规则构建节点")
+	return fmt.Errorf("该命令只适用于 ROLE=%s 的节点", want)
 }
 
 func (c *Ctl) Confirm(prompt string) bool {
@@ -119,24 +115,13 @@ func (c *Ctl) unitActive(ctx context.Context, unit string) bool {
 
 func (c *Ctl) Reload(ctx context.Context) error {
 	c.Infof("正在重载 mosproxy 域名表...")
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, mosproxyReload, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("重载失败，请确认 mosproxy 正在运行: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("重载失败(HTTP %d)，请确认 mosproxy 正在运行", resp.StatusCode)
+	if code := metrics.Reload(ctx); code != http.StatusOK {
+		return fmt.Errorf("重载失败(HTTP %d)，请确认 mosproxy 正在运行", code)
 	}
 	c.Okf("域名表已重载")
 	if c.Role() == stack.RoleCNResolver {
-		if c.systemctl(ctx, "reload", "unbound.service") == nil {
-			c.Okf("Unbound 已重载")
+		if exec.CommandContext(ctx, "unbound-control", "-c", "/etc/unbound/unbound.conf", "reload_keep_cache").Run() == nil {
+			c.Okf("Unbound 已重载（缓存保留）")
 		}
 	}
 	return nil
@@ -359,7 +344,7 @@ func (c *Ctl) SetArchEpoch(ctx context.Context, arg string) error {
 		ts = parsed
 	}
 	path := c.state(archEpochFile)
-	if err := os.WriteFile(path, []byte(strconv.FormatInt(ts, 10)+"\n"), 0o644); err != nil {
+	if err := statefile.WriteAtomic(path, []byte(strconv.FormatInt(ts, 10)+"\n"), 0o644); err != nil {
 		return err
 	}
 	c.Okf("架构基准已设为 %s；面板统计将只采用此后的数据",

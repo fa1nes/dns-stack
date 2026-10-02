@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,23 +140,27 @@ func (c Config) CollectPayload(ctx context.Context, dest, mode string, includeSe
 			return err
 		}
 	}
-	copyFile(c.ConfigFile, filepath.Join(dest, "config", filepath.Base(c.ConfigFile)))
-	copyTree("/etc/unbound/unbound.conf.d", filepath.Join(dest, "config", "unbound.conf.d"))
+	var problems []error
+	problems = append(problems,
+		copyFile(c.ConfigFile, filepath.Join(dest, "config", filepath.Base(c.ConfigFile))),
+		optional(copyTree("/etc/unbound/unbound.conf.d", filepath.Join(dest, "config", "unbound.conf.d"))))
 	for _, dir := range []string{filepath.Join(filepath.Dir(c.ConfigFile), "mosproxy"), "/etc/mosproxy"} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		os.MkdirAll(filepath.Join(dest, "config", "mosproxy"), 0o755)
 		for _, e := range entries {
 			if e.IsDir() || strings.Contains(e.Name(), ".bak") {
 				continue
 			}
-			copyFile(filepath.Join(dir, e.Name()), filepath.Join(dest, "config", "mosproxy", e.Name()))
+			problems = append(problems, copyFile(filepath.Join(dir, e.Name()), filepath.Join(dest, "config", "mosproxy", e.Name())))
 		}
 		break
 	}
-	copyFile("/opt/dns-stack/versions.lock", filepath.Join(dest, "versions", "versions.lock"))
+	problems = append(problems, optional(copyFile("/opt/dns-stack/versions.lock", filepath.Join(dest, "versions", "versions.lock"))))
+	if err := errors.Join(problems...); err != nil {
+		return err
+	}
 	c.collectSystemd(filepath.Join(dest, "systemd"))
 
 	if mode == ModeState || mode == ModeFull {
@@ -173,7 +179,9 @@ func (c Config) CollectPayload(ctx context.Context, dest, mode string, includeSe
 		}
 	}
 	if includeSecrets {
-		copyTree(c.SecretsDir, filepath.Join(dest, "secrets"))
+		if err := copyTree(c.SecretsDir, filepath.Join(dest, "secrets")); err != nil {
+			return fmt.Errorf("备份机密目录失败: %w", err)
+		}
 	}
 	return nil
 }
@@ -183,14 +191,14 @@ func (c Config) collectState(ctx context.Context, dest string) error {
 	if c.Role() != stack.RoleCNResolver {
 		return nil
 	}
-	os.MkdirAll(filepath.Join(stateOut, "rule-history"), 0o755)
 	os.MkdirAll(filepath.Join(stateOut, "sync-state"), 0o755)
 	if err := SnapshotSQLite(filepath.Join(c.StateDir, "collector.db"),
 		filepath.Join(stateOut, "collector.db")); err != nil {
 		c.logf("  ! collector.db 快照失败: %v", err)
 	}
-	copyTree(filepath.Join(c.StateDir, "rule-history"), filepath.Join(stateOut, "rule-history"))
-	copyTree(filepath.Join(c.StateDir, "sync-state"), filepath.Join(stateOut, "sync-state"))
+	if err := optional(copyTree(filepath.Join(c.StateDir, "sync-state"), filepath.Join(stateOut, "sync-state"))); err != nil {
+		return err
+	}
 	if _, err := os.Stat(c.GoBin); err != nil {
 		c.logf("  ! 缺少 %s，本次备份缺少规则与 chnroute 状态", c.GoBin)
 		return nil
@@ -608,35 +616,44 @@ func (c Config) PruneWithConfig() PruneResult {
 }
 
 func copyFile(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil || !info.Mode().IsRegular() {
+	in, err := os.Open(src)
+	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(src)
-	if err != nil {
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil || !info.Mode().IsRegular() {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, body, info.Mode().Perm()); err != nil {
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
 		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	if err := errors.Join(copyErr, out.Close()); err != nil {
+		return fmt.Errorf("复制 %s 失败: %w", src, err)
 	}
 	return os.Chtimes(dst, info.ModTime(), info.ModTime())
 }
 
 func copyTree(src, dst string) error {
 	info, err := os.Stat(src)
-	if err != nil || !info.IsDir() {
+	if err != nil {
 		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s 不是目录", src)
 	}
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
-			return nil
+			return err
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
@@ -645,9 +662,15 @@ func copyTree(src, dst string) error {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		copyFile(path, target)
-		return nil
+		return copyFile(path, target)
 	})
+}
+
+func optional(err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func head(values []string, n int) []string {

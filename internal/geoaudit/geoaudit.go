@@ -13,6 +13,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -374,15 +375,7 @@ func Render(kind string, need int, sources []string, spans []Span) string {
 }
 
 func Write(path, kind string, need int, sources []string, spans []Span) error {
-	temp := path + ".tmp"
-	if err := os.WriteFile(temp, []byte(Render(kind, need, sources, spans)), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
+	return statefile.WriteAtomic(path, []byte(Render(kind, need, sources, spans)), 0o644)
 }
 
 type Snapshot struct {
@@ -448,9 +441,20 @@ func LoadSnapshot(path string) (Snapshot, error) {
 	return out, nil
 }
 
-func WriteSnapshots(disputedPath, promotedPath string, report Report) error {
-	if err := Write(disputedPath, KindDisputed, report.DisputeNeed, report.Sources, report.Disputed); err != nil {
-		return err
+func WriteSnapshots(disputedPath, promotedPath string, report Report) ([]string, error) {
+	if report.FailOpen != "" {
+		return []string{"交叉判据 fail-open，争议与晋级清单都不更新：" + report.FailOpen}, nil
 	}
-	return Write(promotedPath, KindPromoted, report.PromoteNeed, report.Sources, report.Promoted)
+	var kept []string
+	if report.DisputeRejected != "" {
+		kept = append(kept, "争议清单本轮不更新："+report.DisputeRejected)
+	} else if err := Write(disputedPath, KindDisputed, report.DisputeNeed, report.Sources, report.Disputed); err != nil {
+		return kept, err
+	}
+	if report.PromoteRejected != "" {
+		kept = append(kept, "晋级清单本轮不更新："+report.PromoteRejected)
+	} else if err := Write(promotedPath, KindPromoted, report.PromoteNeed, report.Sources, report.Promoted); err != nil {
+		return kept, err
+	}
+	return kept, nil
 }

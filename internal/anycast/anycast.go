@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
-
 	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
@@ -278,13 +276,5 @@ func write(path string, shared []Finding, note string) error {
 		builder.WriteString(item.IP)
 		builder.WriteString("\n")
 	}
-	temp := path + ".tmp"
-	if err := os.WriteFile(temp, []byte(builder.String()), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
+	return statefile.WriteAtomic(path, []byte(builder.String()), 0o644)
 }

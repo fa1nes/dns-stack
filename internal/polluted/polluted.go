@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 type Evidence struct {
@@ -149,7 +150,7 @@ func Run(opt Options) (Result, error) {
 	if len(active) > 0 {
 		body.WriteString("\n")
 	}
-	if err := os.WriteFile(opt.ActiveOutPath, []byte(body.String()), 0o644); err != nil {
+	if err := statefile.WriteAtomic(opt.ActiveOutPath, []byte(body.String()), 0o644); err != nil {
 		return res, err
 	}
 
@@ -157,7 +158,7 @@ func Run(opt Options) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	if err := os.WriteFile(opt.EvidenceOutPath, encoded, 0o644); err != nil {
+	if err := statefile.WriteAtomic(opt.EvidenceOutPath, encoded, 0o644); err != nil {
 		return res, err
 	}
 
@@ -174,14 +175,14 @@ func Run(opt Options) (Result, error) {
 		if len(prefixes) > 0 {
 			cidr.WriteString("\n")
 		}
-		if err := os.WriteFile(opt.CIDROutPath, []byte(cidr.String()), 0o644); err != nil {
+		if err := statefile.WriteAtomic(opt.CIDROutPath, []byte(cidr.String()), 0o644); err != nil {
 			return res, err
 		}
 	}
 
 	if opt.StatsPath != "" {
 		stats := fmt.Sprintf("%d %d %d %d\n", res.Observed, res.Added, res.Total, res.RawUnique)
-		if err := os.WriteFile(opt.StatsPath, []byte(stats), 0o644); err != nil {
+		if err := statefile.WriteAtomic(opt.StatsPath, []byte(stats), 0o644); err != nil {
 			return res, err
 		}
 	}

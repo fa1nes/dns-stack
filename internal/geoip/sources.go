@@ -156,6 +156,8 @@ func firstError(errs map[string]string, keys ...string) string {
 }
 
 func (g *GeoDB) Sources(ip string) []SourceResult {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	out := make([]SourceResult, 0, 2)
 
 	cn := SourceResult{Name: "qqwry", Label: "纯真 qqwry"}

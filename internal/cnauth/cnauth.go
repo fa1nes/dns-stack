@@ -18,6 +18,7 @@ import (
 	"github.com/dns-stack/dns-stack/internal/infra"
 	"github.com/dns-stack/dns-stack/internal/ipset"
 	"github.com/dns-stack/dns-stack/internal/ruleset"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -289,18 +290,6 @@ func loadAccumState(path string) (map[string]int64, bool) {
 	return out, true
 }
 
-func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	temp := path + ".tmp"
-	if err := os.WriteFile(temp, data, mode); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
-}
-
 func sortedSample(values map[string]struct{}, limit int) ([]string, int) {
 	out := make([]string, 0, len(values))
 	for v := range values {
@@ -422,7 +411,7 @@ func Run(opt Options) (Result, error) {
 			b.WriteString(ip)
 			b.WriteString("\n")
 		}
-		if err := os.WriteFile(opt.SharedExcludedOut, []byte(b.String()), 0o644); err != nil {
+		if err := statefile.WriteAtomic(opt.SharedExcludedOut, []byte(b.String()), 0o644); err != nil {
 			return res, err
 		}
 	}
@@ -482,7 +471,7 @@ func Run(opt Options) (Result, error) {
 			body.WriteString(zone)
 			body.WriteString("\n")
 		}
-		if err := writeAtomic(opt.SteeredOutPath, []byte(body.String()), 0o644); err != nil {
+		if err := statefile.WriteAtomic(opt.SteeredOutPath, []byte(body.String()), 0o644); err != nil {
 			p.warnf("CDN 地理调度区域清单写入失败：%v", err)
 		}
 	}
@@ -548,7 +537,7 @@ func Run(opt Options) (Result, error) {
 		routeBody.WriteString(prefix.String())
 		routeBody.WriteString("\n")
 	}
-	if err := os.WriteFile(opt.ResultPath, []byte(routeBody.String()), 0o644); err != nil {
+	if err := statefile.WriteAtomic(opt.ResultPath, []byte(routeBody.String()), 0o644); err != nil {
 		return res, err
 	}
 	res.RoutePrefixes = len(built.RoutePrefixes)
@@ -558,7 +547,7 @@ func Run(opt Options) (Result, error) {
 		matchedBody.WriteString(zone.Name)
 		matchedBody.WriteString("\n")
 	}
-	if err := os.WriteFile(opt.MatchedPath, []byte(matchedBody.String()), 0o644); err != nil {
+	if err := statefile.WriteAtomic(opt.MatchedPath, []byte(matchedBody.String()), 0o644); err != nil {
 		return res, err
 	}
 	res.MatchedZones = len(built.MatchedZones)
@@ -719,7 +708,7 @@ func writeAccumState(p printer, path string, state map[string]int64) error {
 	for _, key := range keys {
 		fmt.Fprintf(&b, "%s\t%d\n", key, state[key])
 	}
-	if err := writeAtomic(path, []byte(b.String()), 0o644); err != nil {
+	if err := statefile.WriteAtomic(path, []byte(b.String()), 0o644); err != nil {
 		p.warnf("ECS 累积状态文件写入失败：%v", err)
 	}
 	return nil
@@ -733,5 +722,5 @@ func writeECSConf(path string, targets map[netip.Prefix]struct{}) error {
 	for _, prefix := range collapsePrefixes(targets) {
 		fmt.Fprintf(&b, "    send-client-subnet: %s\n", prefix)
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return statefile.WriteAtomic(path, []byte(b.String()), 0o644)
 }

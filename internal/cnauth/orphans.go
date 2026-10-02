@@ -27,8 +27,6 @@ type OrphanOptions struct {
 	MaxForeign         int
 	Geo                CountryLookup
 	Now                func() time.Time
-	Out                io.Writer
-	ListAll            bool
 }
 
 type OrphanEntry struct {

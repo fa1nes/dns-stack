@@ -65,13 +65,6 @@ func A(value string) func(*Builder) {
 	}
 }
 
-func AAAA(value string) func(*Builder) {
-	return func(b *Builder) {
-		addr := netip.MustParseAddr(value).As16()
-		b.Bytes(addr[:]...)
-	}
-}
-
 func Target(value string) func(*Builder) {
 	return func(b *Builder) { b.Name(value) }
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 	"github.com/dns-stack/dns-stack/internal/resolve"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 var (
@@ -159,7 +160,7 @@ func Collect(ctx context.Context, opt CollectOptions) (CollectResult, error) {
 		raw.WriteString(addr.String())
 		raw.WriteByte('\n')
 	}
-	if err := os.WriteFile(rawPath, []byte(raw.String()), 0o600); err != nil {
+	if err := statefile.WriteAtomic(rawPath, []byte(raw.String()), 0o600); err != nil {
 		return res, err
 	}
 
@@ -206,7 +207,7 @@ func Collect(ctx context.Context, opt CollectOptions) (CollectResult, error) {
 		"",
 		"",
 	}, "\n")
-	if err := replaceFile(outFile, append([]byte(header), active...)); err != nil {
+	if err := statefile.WriteAtomic(outFile, append([]byte(header), active...), 0o644); err != nil {
 		return res, err
 	}
 	if err := moveFile(evidenceOut, evidenceFile); err != nil {
@@ -229,24 +230,12 @@ func confirmedNXDomain(ctx context.Context, client *resolve.Client, fqdn string)
 	return client.Query(ctx, fqdn, dnswire.TypeA).Status == resolve.StatusNXDomain
 }
 
-func replaceFile(path string, body []byte) error {
-	temp := path + ".new"
-	if err := os.WriteFile(temp, body, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
-}
-
 func moveFile(src, dst string) error {
 	body, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return replaceFile(dst, body)
+	return statefile.WriteAtomic(dst, body, 0o644)
 }
 
 func appendHistory(path string, now time.Time, line string) {

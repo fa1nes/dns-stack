@@ -12,6 +12,7 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/geoip"
 	"github.com/dns-stack/dns-stack/internal/ipset"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 var offshoreProbes = []string{"23.56.25.51", "1.36.0.1", "119.31.191.80", "203.198.0.1"}
@@ -279,13 +280,13 @@ func Run(opt Options) (Result, error) {
 		body.WriteString(p.String())
 		body.WriteString("\n")
 	}
-	if err := os.WriteFile(opt.OutPath, []byte(body.String()), 0o644); err != nil {
+	if err := statefile.WriteAtomic(opt.OutPath, []byte(body.String()), 0o644); err != nil {
 		return res, err
 	}
 
 	if opt.StatsPath != "" {
 		stats := fmt.Sprintf("NETWORKS=%d\nCN_ADDRESSES=%d\n", res.Networks, res.CNAddresses)
-		if err := os.WriteFile(opt.StatsPath, []byte(stats), 0o644); err != nil {
+		if err := statefile.WriteAtomic(opt.StatsPath, []byte(stats), 0o644); err != nil {
 			return res, err
 		}
 	}
@@ -331,7 +332,7 @@ func writeExcluded(path string, excluded []foreignSpan) error {
 			fmt.Fprintf(&b, "%s %s %s\n", p, e.code, e.name)
 		}
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return statefile.WriteAtomic(path, []byte(b.String()), 0o644)
 }
 
 func topCountries(counts map[string]int, limit int) string {

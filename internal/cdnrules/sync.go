@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 const (
@@ -107,7 +109,7 @@ func Sync(ctx context.Context, opt SyncOptions) (SyncResult, error) {
 			}
 		}
 	}
-	if err := writeAtomic(dest, bestBody); err != nil {
+	if err := statefile.WriteAtomic(dest, bestBody, 0o644); err != nil {
 		return res, err
 	}
 	res.Applied = true
@@ -130,19 +132,4 @@ func validate(body []byte) (*Set, error) {
 		return nil, fmt.Errorf("自检失败: %s 是 TEST-NET-1，任何 CDN 都不该拥有它", selfTestAddr)
 	}
 	return set, nil
-}
-
-func writeAtomic(path string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	temp := path + ".new"
-	if err := os.WriteFile(temp, body, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
-		return err
-	}
-	return nil
 }

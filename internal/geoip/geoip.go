@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,13 +25,19 @@ const (
 )
 
 type decoder struct {
-	b    []byte
-	base int
+	b     []byte
+	base  int
+	depth int
 }
+
+const maxDecodeDepth = 64
 
 func (d decoder) decode(off int) (any, int, error) {
 	if off < 0 || off >= len(d.b) {
 		return nil, off, errors.New("mmdb offset out of range")
+	}
+	if d.depth++; d.depth > maxDecodeDepth {
+		return nil, off, errors.New("mmdb data nests too deep (pointer loop?)")
 	}
 	ctrl := d.b[off]
 	off++
@@ -773,6 +780,7 @@ type GeoDB struct {
 	asn      *MMDBReader
 	city     *MMDBReader
 	cnip     *IPDBReader
+	mu       sync.Mutex
 	mtimes   map[string]time.Time
 	errors   map[string]string
 }
@@ -818,13 +826,7 @@ func (g *GeoDB) load(kind string) any {
 		return nil
 	}
 	if g.mtimes[kind].Equal(st.ModTime()) {
-		if kind == "asn" {
-			return g.asn
-		}
-		if kind == "city" {
-			return g.city
-		}
-		return g.cnip
+		return g.reader(kind)
 	}
 	var v any
 	if kind == "cnip" {
@@ -854,13 +856,15 @@ func (g *GeoDB) load(kind string) any {
 }
 
 func (g *GeoDB) reader(kind string) any {
-	if kind == "asn" {
+	switch {
+	case kind == "asn" && g.asn != nil:
 		return g.asn
-	}
-	if kind == "city" {
+	case kind == "city" && g.city != nil:
 		return g.city
+	case kind == "cnip" && g.cnip != nil:
+		return g.cnip
 	}
-	return g.cnip
+	return nil
 }
 
 func closeReader(v any) {
@@ -873,6 +877,8 @@ func closeReader(v any) {
 }
 
 func (g *GeoDB) Lookup(ip string) Result {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	out := Result{IP: ip}
 	asn := g.load("asn")
 	city := g.load("city")
@@ -890,13 +896,15 @@ func (g *GeoDB) Lookup(ip string) Result {
 	return resultFromMap(ip, merged, true)
 }
 
-func (g *GeoDB) Available() bool {
-	return g.load("asn") != nil || g.load("cnip") != nil
+func (g *GeoDB) HasASN() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.load("asn") != nil
 }
 
-func (g *GeoDB) HasASN() bool { return g.load("asn") != nil }
-
 func (g *GeoDB) Status() map[string]any {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	out := map[string]any{}
 	for _, kind := range []string{"asn", "city", "cnip"} {
 		r := g.load(kind)

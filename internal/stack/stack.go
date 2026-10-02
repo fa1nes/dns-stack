@@ -29,7 +29,7 @@ const (
 
 const (
 	DefaultNFTTable = "dns_route"
-	ACLChain        = "dns_acl"
+	ACLTable        = "dns_acl"
 )
 
 var GroupOrder = []string{GroupResolve, GroupRouting, GroupOps}

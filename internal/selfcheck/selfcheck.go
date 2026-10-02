@@ -121,7 +121,6 @@ type Options struct {
 	StateDir   string
 	ConfigFile string
 	Role       string
-	Out        io.Writer
 	Quick      bool
 	Full       bool
 	Now        func() time.Time

@@ -197,10 +197,12 @@ func (c Config) applyImport(ctx context.Context, inner string) error {
 				os.Remove(dst + "-wal")
 				os.Remove(dst + "-shm")
 			}
+			restore := copyFile
 			if e.IsDir() {
-				copyTree(src, dst)
-			} else {
-				copyFile(src, dst)
+				restore = copyTree
+			}
+			if err := restore(src, dst); err != nil {
+				return fmt.Errorf("恢复 %s 失败: %w", e.Name(), err)
 			}
 		}
 		bundle := filepath.Join(stateSrc, migrationBundle)
@@ -226,9 +228,13 @@ func (c Config) applyImport(ctx context.Context, inner string) error {
 	stamp := c.now().Format("20060102150405")
 	if dirHasEntries(filepath.Join(inner, "secrets")) {
 		if dirHasEntries(c.SecretsDir) {
-			copyTree(c.SecretsDir, c.SecretsDir+".pre-import-"+stamp)
+			if err := copyTree(c.SecretsDir, c.SecretsDir+".pre-import-"+stamp); err != nil {
+				return fmt.Errorf("保存现有机密目录失败，拒绝覆盖: %w", err)
+			}
 		}
-		copyTree(filepath.Join(inner, "secrets"), c.SecretsDir)
+		if err := copyTree(filepath.Join(inner, "secrets"), c.SecretsDir); err != nil {
+			return fmt.Errorf("恢复机密目录失败: %w", err)
+		}
 		for _, name := range []string{identityBasename, "github_deploy_key"} {
 			os.Chmod(filepath.Join(c.SecretsDir, name), 0o600)
 		}
@@ -238,16 +244,22 @@ func (c Config) applyImport(ctx context.Context, inner string) error {
 	configRoot := filepath.Dir(c.ConfigFile)
 	if dirHasEntries(filepath.Join(inner, "config", "mosproxy")) {
 		backupBeside(filepath.Join(configRoot, "mosproxy", "config.yaml"), stamp)
-		copyTree(filepath.Join(inner, "config", "mosproxy"), filepath.Join(configRoot, "mosproxy"))
+		if err := copyTree(filepath.Join(inner, "config", "mosproxy"), filepath.Join(configRoot, "mosproxy")); err != nil {
+			return fmt.Errorf("恢复 mosproxy 配置失败: %w", err)
+		}
 		c.logf("[成功] 已恢复 mosproxy 配置")
 	}
 	if dirHasEntries(filepath.Join(inner, "config", "unbound.conf.d")) {
 		backupBeside("/etc/unbound/unbound.conf.d/dns-stack.conf", stamp)
-		copyTree(filepath.Join(inner, "config", "unbound.conf.d"), "/etc/unbound/unbound.conf.d")
+		if err := copyTree(filepath.Join(inner, "config", "unbound.conf.d"), "/etc/unbound/unbound.conf.d"); err != nil {
+			return fmt.Errorf("恢复 Unbound 配置失败: %w", err)
+		}
 		c.logf("[成功] 已恢复 Unbound 配置")
 	}
 	if dirHasEntries(filepath.Join(inner, "systemd")) {
-		copyTree(filepath.Join(inner, "systemd"), c.SystemdDir)
+		if err := copyTree(filepath.Join(inner, "systemd"), c.SystemdDir); err != nil {
+			return fmt.Errorf("恢复 systemd 单元失败: %w", err)
+		}
 		exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
 		c.logf("[成功] 已恢复 systemd 单元并重新加载")
 	}

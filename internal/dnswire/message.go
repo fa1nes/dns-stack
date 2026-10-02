@@ -16,7 +16,6 @@ const (
 	TypeSOA   uint16 = 6
 	TypeAAAA  uint16 = 28
 	TypeOPT   uint16 = 41
-	TypeSVCB  uint16 = 64
 	TypeHTTPS uint16 = 65
 )
 
@@ -24,11 +23,7 @@ const ClassIN uint16 = 1
 
 const (
 	RCodeNoError  uint8 = 0
-	RCodeFormErr  uint8 = 1
-	RCodeServFail uint8 = 2
 	RCodeNXDomain uint8 = 3
-	RCodeNotImp   uint8 = 4
-	RCodeRefused  uint8 = 5
 )
 
 const (
