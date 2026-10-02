@@ -76,7 +76,7 @@
 
       <section class="page active" id="page-overview">
         <div class="sysbar" id="sysBar"><div class="state"><span class="spinner"></span> 正在检查各模块…</div></div>
-        <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+        <div class="grid c3" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
         <div class="grid c2">
           <div class="card">
             <h3>请求量趋势 <select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
@@ -86,8 +86,8 @@
             </select></h3>
             <div class="chart" id="tsChart"></div>
             <div class="legend">
-              <span><i class="lg-ok"></i>本机递归</span>
-              <span><i class="lg-accent"></i>香港递归</span>
+              <span><i class="lg-accent"></i>本机递归</span>
+              <span><i class="lg-blue"></i>香港递归</span>
               <span><i class="lg-purple"></i>缓存命中</span>
               <span><i class="lg-err"></i>已拒绝</span>
             </div>
@@ -273,6 +273,7 @@
               <button class="primary" id="btnTest">开始测试</button>
             </div>
             <div class="hint">对比本机与香港两侧的解析结果。结果不同通常是 GeoDNS 按地区调度所致。</div>
+            <div class="examples">试试：<button type="button" class="example" data-example="www.qq.com">www.qq.com</button><button type="button" class="example" data-example="img.alicdn.com">img.alicdn.com</button><button type="button" class="example" data-example="www.apple.com">www.apple.com</button><button type="button" class="example" data-example="www.wikipedia.org">www.wikipedia.org</button></div>
           </div>
           <div id="testResult"></div>
         </div>
@@ -627,7 +628,7 @@
 </div>
 
 <div class="drawer-mask" id="drawerMask"></div>
-<aside class="drawer" id="drawer">
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
   <div class="drawer-head">
     <h3 id="drawerTitle">详情</h3>
     <button class="icon" id="drawerClose" aria-label="关闭详情">

@@ -388,7 +388,7 @@
       return {
         role: 'cn-resolver', verdict, total: MODULES.length, counts, impl, attention,
         headline: verdict === 'ok' ? '全部正常' : attention.length + ' 个模块需要关注',
-        groups: ['解析链路', '分流数据', '规则构建', '面板与运维']
+        groups: ['解析链路', '分流数据', '面板与运维']
           .filter((g) => byGroup[g])
           .map((g) => ({ name: g, modules: byGroup[g],
                          state: byGroup[g].some((x) => x.state !== 'ok') ? 'warn' : 'ok' })),
@@ -498,7 +498,9 @@
     try { body = init && init.body ? JSON.parse(init.body) : null; } catch (e) {  }
 
     let data;
-    if (method !== 'GET') {
+    if (method !== 'GET' && ROUTES[u.pathname] && u.searchParams.get('fresh') === '1') {
+      data = Object.assign(ROUTES[u.pathname](u.searchParams, u.pathname), { fresh: true });
+    } else if (method !== 'GET') {
       data = postResult(u.pathname, body);
     } else {
       if (u.pathname === '/api/export') {

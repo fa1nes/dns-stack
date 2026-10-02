@@ -525,7 +525,7 @@ function renderOverviewUpstreams(list) {
   })}`);
 }
 
-const statCard = (num, label, sub, cls, title) => html`<div class="card stat">
+const statCard = (num, label, sub, cls, title, cardCls) => html`<div class="card stat ${cardCls || ''}">
     <div class="num ${cls || ''}" title="${title || ''}">${num}</div>
     <div class="label">${label}</div>
     ${sub ? html`<div class="sub">${sub}</div>` : raw('')}
@@ -583,14 +583,14 @@ function routingCard(rt) {
   const hkLine = exitLine('香港隧道', ex.tunnel_geo, ex.tunnel_ip, '未建立');
 
   if (fault) {
-    return html`<div class="card stat err">
+    return html`<div class="card stat wide err">
       <div class="num">${fault[0]}</div>
       <div class="label">递归出口分流</div>
       <div class="sub">${fault[1]}</div>
       ${exitPathHtml(cnLine, hkLine)}
     </div>`;
   }
-  return html`<div class="card stat ok">
+  return html`<div class="card stat wide ok">
     <div class="num">正常</div>
     <div class="label">递归出口分流</div>
     ${exitPathHtml(cnLine, hkLine)}
@@ -619,12 +619,12 @@ function latencyCard(lat, m) {
       (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '') +
       (lat.sampled ? ' · 分位数取最近 ' + fmtNum(lat.sampled_from) + ' 条算' : '');
     return statCard(dash(p50, ' ms'), '响应速度（近 1 小时）', sub,
-      p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')));
+      p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')), '', 'wide');
   }
   const avg = m && m.avg_latency_ms;
   return statCard(dash(avg, ' ms'), '上游平均耗时',
     m && m.latency_samples ? '取样 ' + fmtNum(m.latency_samples) + ' 次（不含缓存命中）' : '暂无样本',
-    avg === null || avg === undefined ? '' : (avg <= 50 ? 'ok' : (avg <= 200 ? 'warn' : 'err')));
+    avg === null || avg === undefined ? '' : (avg <= 50 ? 'ok' : (avg <= 200 ? 'warn' : 'err')), '', 'wide');
 }
 
 function renderOverviewSystem(sys) {
@@ -690,7 +690,8 @@ function renderMosproxy(m) {
     ]),
     rejected > 0 ? html`<div class="hint text-warn mt-8">
       ${ICON_WARN}累计 ${fmtNum(rejected)} 次查询被限流拒绝。
-      需要放宽请调高 <code>LIMIT_QPS</code>，或在云安全组限制 443/853 来源。
+      需要放宽请改 <code>/etc/dns-stack/mosproxy/config.yaml</code> 里的 <code>limit</code>，
+      或在云安全组限制 443/853 的来源。
     </div>` : raw(''),
   ]}`);
 }
@@ -1142,7 +1143,7 @@ function latencyCell(r) {
   const ms = r.elapsed_ms;
   if (ms !== null && ms !== undefined) {
     const v = ms >= 10 ? ms.toFixed(0) : ms.toFixed(2);
-    const color = ms <= 5 ? 'var(--ok)' : (ms <= 100 ? 'var(--warn)' : 'var(--err)');
+    const color = ms <= 50 ? 'var(--ok)' : (ms <= 800 ? 'var(--warn)' : 'var(--err)');
     return html`<span style="color:${color}" title="本次查询实际耗时">${v} ms</span>`;
   }
   if (r.cache_hit) return html`<span style="color:var(--text-dim)" title="缓存命中，未经上游">—</span>`;
@@ -1207,7 +1208,7 @@ async function downloadBundle(path, fallbackName) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   } catch (e) { toast('导出失败', e.message, 'err'); }
 }
 
@@ -1218,7 +1219,9 @@ async function runMigrationImport(dryRun) {
   if (!file) { toast('请先选择迁移包', '需要本面板导出的 .tar.gz', 'warn'); return; }
   if (!dryRun && !confirm(
     '导入会按清单覆盖本机规则/状态文件（覆盖前自动备份）。确认继续？')) return;
-  setHtml(out, dryRun ? '试算中…' : '导入中…');
+  const buttons = ['#btnMigrationDryRun', '#btnMigrationImport'].map((sel) => $(sel)).filter(Boolean);
+  buttons.forEach((b) => { b.disabled = true; });
+  setHtml(out, html`<div class="state"><span class="spinner"></span> ${dryRun ? '试算中…' : '导入中…'}</div>`);
   const form = new FormData();
   form.append('bundle', file);
   form.append('dry_run', dryRun ? 'true' : 'false');
@@ -1226,11 +1229,12 @@ async function runMigrationImport(dryRun) {
     const res = await fetch(
       (window.dnsStackApiUrl || ((p) => p))('/api/migration-import'),
       { method: 'POST', credentials: 'include', body: form });
-    const body = await res.json();
+    let body = {};
+    try { body = await res.json(); } catch (e) { body = {}; }
     if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
     const rep = body.report;
     if (!rep) {
-      setHtml(out, '<span class="bad">' + esc(body.stderr || body.error || '未返回报告') + '</span>');
+      setHtml(out, stateHtml(body.stderr || body.error || '未返回报告', 'error'));
       return;
     }
     const counts = {};
@@ -1239,22 +1243,20 @@ async function runMigrationImport(dryRun) {
     if (counts['written']) parts.push('已写入 ' + counts['written']);
     if (counts['would-write']) parts.push('将写入 ' + counts['would-write']);
     if (counts['unchanged']) parts.push('内容相同 ' + counts['unchanged']);
-    const skipped = (rep.skipped || []);
-    let html = '<b>' + (rep.dry_run ? '试算' : '导入') + '结果：</b>' + esc(parts.join('，') || '无变化');
-    if (rep.backup_dir) html += '<br>原文件已备份到 <code>' + esc(rep.backup_dir) + '</code>';
-    if (skipped.length) {
-      html += '<br><b>跳过 ' + skipped.length + ' 项：</b><ul>';
-      skipped.slice(0, 8).forEach((it) => {
-        html += '<li><code>' + esc(it.path) + '</code> — ' + esc(it.reason) + '</li>';
-      });
-      html += '</ul>';
-    }
-    setHtml(out, html);
+    const skipped = rep.skipped || [];
+    setHtml(out, html`<div class="import-report">
+      <div><b>${rep.dry_run ? '试算' : '导入'}结果：</b>${parts.join('，') || '无变化'}</div>
+      ${rep.backup_dir ? html`<div>原文件已备份到 <code>${rep.backup_dir}</code></div>` : ''}
+      ${skipped.length ? html`<div><b>跳过 ${skipped.length} 项：</b></div>
+        <ul>${skipped.slice(0, 8).map((it) => html`<li><code>${it.path}</code> — ${it.reason}</li>`)}</ul>` : ''}
+    </div>`);
     toast(rep.dry_run ? '试算完成' : '导入完成', parts.join('，') || '无变化', 'ok');
-    if (!rep.dry_run) { loadOverview(); loadRules(); }
+    if (!rep.dry_run) { invalidateCache(); loadOverview(); loadRules(); }
   } catch (e) {
-    setHtml(out, '<span class="bad">' + esc(e.message) + '</span>');
+    setHtml(out, stateHtml(e.message, 'error'));
     toast('导入失败', e.message, 'err');
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
   }
 }
 
@@ -1307,6 +1309,7 @@ async function loadQueries(page) {
 
 function startLive() {
   if (state.liveES) return;
+  if (state.queryPage !== 1) loadQueries(1);
   state.liveOn = true;
   setBtnState($('#btnLiveToggle'), ICON_PAUSE, '暂停实时');
   $('#liveDot').className = 'dot live';
@@ -1341,7 +1344,7 @@ function startLive() {
   };
   es.onerror = () => {
     $('#liveDot').className = 'dot warn';
-    $('#liveStatus').textContent = '连接中断，正在自动重连…';  // EventSource 自带重连
+    $('#liveStatus').textContent = '连接中断，正在自动重连…';
   };
   es.onopen = () => {
     $('#liveDot').className = 'dot live';
@@ -1357,15 +1360,28 @@ function stopLive() {
   $('#liveStatus').textContent = '实时流已暂停';
 }
 
+let _drawerReturnFocus = null;
+
 function openDrawer(title) {
+  const drawer = $('#drawer');
+  if (!drawer.classList.contains('open')) _drawerReturnFocus = document.activeElement;
   $('#drawerTitle').textContent = title;
   setHtml($('#drawerBody'), LOADING);
-  $('#drawer').classList.add('open');
-  $('#drawerMask').classList.add('open');
+  drawer.hidden = false;
+  requestAnimationFrame(() => {
+    drawer.classList.add('open');
+    $('#drawerMask').classList.add('open');
+  });
+  $('#drawerClose').focus({ preventScroll: true });
 }
 function closeDrawer() {
-  $('#drawer').classList.remove('open');
+  const drawer = $('#drawer');
+  if (!drawer.classList.contains('open')) return;
+  drawer.classList.remove('open');
   $('#drawerMask').classList.remove('open');
+  setTimeout(() => { if (!drawer.classList.contains('open')) drawer.hidden = true; }, 260);
+  if (_drawerReturnFocus && document.contains(_drawerReturnFocus)) _drawerReturnFocus.focus({ preventScroll: true });
+  _drawerReturnFocus = null;
 }
 
 const SERVER_NAMES = {
@@ -1708,10 +1724,10 @@ async function loadCdnHit(mode) {
     const subnet = $('#cdnSubnet').value;
     const q = '?subnet=' + encodeURIComponent(subnet)
       + (mode === 'refresh' ? '&refresh=1' : '') + (fresh ? '&fresh=1' : '');
-    const d = await api('/api/cdn-hit' + q);
+    const d = await api('/api/cdn-hit' + q, fresh ? { method: 'POST' } : undefined);
     if (!current()) return;
     const rows = (d.probes || []).map((p) => {
-      const style = CDN_VERDICT[p.verdict] || CDN_VERDICT.unknown;
+      const style = CDN_VERDICT[p.verdict] || { cls: 'unknown', mark: '?' };
       return html`<tr>
         <td><b>${p.label}</b><div class="mono hint">${p.domain}</div></td>
         <td>${p.provider || '未识别'}${p.has_mainland
@@ -1839,6 +1855,7 @@ async function accessAction(action, label, payload, confirmed) {
 }
 
 async function runDnsTest() {
+  if ($('#btnTest').disabled) return;
   const domain = $('#testDomain').value.trim();
   if (!domain) { toast('请输入要测试的域名', '', 'err'); return; }
   const qtype = $('#testQtype').value;
@@ -1881,11 +1898,10 @@ async function runDnsTest() {
         ${recs.length ? html`<pre class="block">${recLines}</pre>` : EMPTY('无应答记录')}
         ${ipsGeo.length ? html`<div class="ipgeo-list">${ipsGeo.map((x) => {
           const g = x.geo || {};
-          const inCn = g.country === '中国' || g.country === 'China' || g.country === '香港' || g.country === 'Hong Kong'
-            || g.country === '台湾' || g.country === 'Taiwan' || g.country === '澳门';
+          const cls = x.in_cn === true ? 'cn' : x.in_cn === false ? 'foreign' : 'unknown';
           return html`<div class="ipgeo-row" title="${geoWhy(g)}">
             <span class="mono">${x.ip}</span>
-            <span class="badge ${g.available ? (inCn ? 'cn' : 'foreign') : 'unknown'}">${g.label || '归属未知'}</span>
+            <span class="badge ${cls}">${g.label || '归属未知'}</span>
             ${g.asn ? html`<span class="mono dim">${'AS' + g.asn}</span>` : ''}
           </div>`;
         })}</div>` : ''}
@@ -2014,7 +2030,7 @@ function stopLogFollow() {
 }
 
 let _collectedBound = false;
-let _collected = null;          // 缓存整份数据，切标签/筛选不再重新请求
+let _collected = null;
 let _dataSet = 'cn_zones';
 
 const DATA_SETS = {
@@ -2567,7 +2583,8 @@ const CONFIRM_NOTE = {
   restart_mosproxy: 'DoH / DoT 入口会中断几秒，期间所有客户端的解析请求都会失败。',
   restart_unbound: '本机递归会中断几秒，缓存全部清空；重启后一段时间内查询都要重新递归，会明显变慢。',
   flush_cache: '清空全部解析缓存；之后一段时间内每个域名都要重新递归，查询会明显变慢。',
-  cert_renew: '强制向 CA 重新申请证书，不管当前证书还剩多久；频繁执行可能触发 CA 的签发频率限制。',
+  cert_renew: '立即检查入口证书：剩余不到 3 天或证书里的 IP 对不上时向 CA 续签，否则什么也不做。'
+    + '\n真正续签后会同步面板证书并重启面板，这个页面会断开几秒。',
   clear_domains: '删除 7 天未出现的域名，同时删除全部 7 天前的查询记录，然后压缩数据库。'
     + '\n压缩期间采集器写入会暂停，数据量大时可能持续数十秒。删掉的统计找不回来。',
   clear_domains_all: '清空全部域名统计和全部查询记录，面板上的所有历史数字归零，然后压缩数据库。删掉的找不回来。',
@@ -2578,13 +2595,25 @@ const CONFIRM_NOTE = {
   clear_audit: '删除全部审计记录，之后就查不到谁在什么时候做过什么操作了。',
 };
 
+const _runningOps = new Set();
+
+function markOpBusy(op, busy) {
+  $$('button[data-op="' + op + '"]').forEach((b) => {
+    b.disabled = busy;
+    b.classList.toggle('busy', busy);
+  });
+}
+
 async function runOp(op, label, args, isDangerous) {
   args = args || {};
+  if (_runningOps.has(op)) { toast('「' + label + '」正在执行', '等它结束再试', 'warn'); return; }
   if (isDangerous) {
     const note = CONFIRM_NOTE[op] || '这是危险操作，可能中断服务或覆盖数据。';
     if (!confirm('确认执行「' + label + '」？\n\n' + note)) return;
     args.confirm = true;
   }
+  _runningOps.add(op);
+  markOpBusy(op, true);
   toast('正在执行：' + label, '请稍候…');
   try {
     const d = await api('/api/action/' + op, { method: 'POST', body: JSON.stringify(args) });
@@ -2608,11 +2637,16 @@ async function runOp(op, label, args, isDangerous) {
     if (e.status === 428 && e.body && e.body.need_confirm) {
       if (confirm(e.body.message + '\n\n确认继续？')) {
         args.confirm = true;
+        _runningOps.delete(op);
+        markOpBusy(op, false);
         return runOp(op, label, args, false);
       }
       return;
     }
     toast(label + ' 出错', e.message, 'err');
+  } finally {
+    _runningOps.delete(op);
+    markOpBusy(op, false);
   }
 }
 
@@ -2772,7 +2806,7 @@ function bindEvents() {
     if (!btn) return;
     $$('#domTabs button').forEach((b) => b.classList.toggle('active', b === btn));
     state.domMetric = btn.dataset.metric;
-    loadDomains(1);   // 换指标等于换了排序口径，必须回到第一页
+    loadDomains(1);
   });
   const rd = $('#btnReloadDomains');
   if (rd) rd.addEventListener('click', () => { invalidateCache(); loadDomains(1); });
@@ -2820,6 +2854,12 @@ function bindEvents() {
   if (pwForm) pwForm.addEventListener('submit', changePassword);
 
   $('#btnTest').addEventListener('click', runDnsTest);
+  document.addEventListener('click', (e) => {
+    const ex = e.target.closest('button[data-example]');
+    if (!ex) return;
+    $('#testDomain').value = ex.dataset.example;
+    runDnsTest();
+  });
   $('#testDomain').addEventListener('keydown', (e) => { if (e.key === 'Enter') runDnsTest(); });
 
   $('#btnLogRefresh').addEventListener('click', loadLogs);
