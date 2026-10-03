@@ -129,12 +129,12 @@ var modules = []Module{
 	{
 		Unit: "dns-stack-trim-logs", Name: "日志瘦身", Group: GroupOps,
 		Cron: "trim-logs", LogFile: "trim-logs.log",
-		Purpose: "每天截断各份日志的尾部、清掉已删模块留下的僵尸日志——境外节点只有 989MB 磁盘",
+		Purpose: "每天截断各份日志的尾部、清掉已删模块留下的废弃日志——境外节点只有 989MB 磁盘",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleOffshore}, Every: 24 * time.Hour,
 	},
 	{
 		Unit: "dns-stack-maintenance", Name: "例行维护", Group: GroupOps,
-		Purpose: "检查并续签 TLS 证书，每天备份数据库、配置与规则",
+		Purpose: "检查并续签 TLS 证书，按设定的周期备份数据库、配置与规则",
 		Kind:    KindJob, Impl: ImplGo, Roles: []string{RoleCNResolver}, Every: 6 * time.Hour,
 	},
 }

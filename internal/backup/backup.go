@@ -484,10 +484,7 @@ func (c Config) Backup(ctx context.Context, includeSecrets, automatic bool) (str
 
 	now := c.now()
 	stamp := now.Format("20060102150405")
-	prefix := "daily"
-	if automatic && now.Weekday() == time.Sunday {
-		prefix = "weekly"
-	}
+	prefix := c.archivePrefix(now, automatic)
 	work, err := os.MkdirTemp("", "dns-stack-backup-*")
 	if err != nil {
 		return "", err
@@ -552,6 +549,20 @@ func (c Config) warnOnSuddenShrink(prefix, outFile string) {
 		c.logf("[警告]   本次 %d 字节 / 上次 %d 字节", newInfo.Size(), prevInfo.Size())
 		c.logf("[警告]   若非刚清理过数据，请检查数据库完整性: dns-stack selfcheck")
 	}
+}
+
+func (c Config) archivePrefix(now time.Time, automatic bool) string {
+	if !automatic {
+		return "daily"
+	}
+	weekly := c.archivesWithPrefix("weekly")
+	if len(weekly) == 0 {
+		return "weekly"
+	}
+	if info, err := os.Stat(weekly[0]); err != nil || now.Sub(info.ModTime()) >= 156*time.Hour {
+		return "weekly"
+	}
+	return "daily"
 }
 
 func (c Config) archivesWithPrefix(prefix string) []string {

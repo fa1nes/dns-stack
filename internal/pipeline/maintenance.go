@@ -228,7 +228,18 @@ func ReloadMosproxyCert(ctx context.Context, rt *Runtime) error {
 	return exec.CommandContext(ctx, "systemctl", "restart", "mosproxy.service").Run()
 }
 
+func BackupInterval(cfg Config) time.Duration {
+	if strings.TrimSpace(cfg.Value("BACKUP_INTERVAL_HOURS")) == "0" {
+		return 0
+	}
+	return time.Duration(cfg.Int("BACKUP_INTERVAL_HOURS", 24)) * time.Hour
+}
+
 func stepBackup(ctx context.Context, rt *Runtime) error {
+	if BackupInterval(rt.Config) == 0 {
+		rt.Infof("自动备份已关闭（BACKUP_INTERVAL_HOURS=0）")
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	cfg := backup.DefaultConfig()
@@ -282,10 +293,14 @@ func stepUnboundLog(ctx context.Context, rt *Runtime) error {
 	return nil
 }
 
-func MaintenanceSteps() []Step {
+func MaintenanceSteps(cfg Config) []Step {
+	backupEvery := BackupInterval(cfg)
+	if backupEvery == 0 {
+		backupEvery = 24 * time.Hour
+	}
 	return []Step{
 		{Name: "unbound-log", Label: "unbound 日志可写", Every: time.Hour, Run: stepUnboundLog},
 		{Name: "renew-cert", Label: "TLS 证书检查与续签", Every: 6 * time.Hour, Run: stepRenewCert},
-		{Name: "backup", Label: "数据库/配置/规则备份", Every: 24 * time.Hour, Run: stepBackup},
+		{Name: "backup", Label: "数据库/配置/规则备份", Every: backupEvery, Run: stepBackup},
 	}
 }
