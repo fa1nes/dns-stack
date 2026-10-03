@@ -358,7 +358,8 @@
       client_ip: '127.0.0.1', client_loopback: true, client_covered: false,
     }),
 
-    '/api/doh': () => ({ doh_url: 'https://203.0.113.1/dns-query', is_default: true }),
+    '/api/doh': () => ({ doh_url: 'https://203.0.113.1/dns-query', is_default: true,
+                         dot_url: 'tls://203.0.113.1:853', doq_url: 'quic://203.0.113.1:853' }),
 
     '/api/modules': () => {
       const notes = { 'dns-stack-collect-polluted': ['warn', '从未运行过'],
@@ -415,7 +416,7 @@
     '/api/auth/config': () => ({
       auth_enabled: true, username: 'admin',
       password_disabled: false, totp_enabled: false,
-      session_expires_at: now() + 11 * 3600 + 1260,
+      session_expires_at: now() + 11 * 3600 + 1260, password_set_at: now() - 12 * 86400,
       oauth: { client_id: 'Iv1.0123456789abcdef', allowed_users: ['octocat'], ready: true,
                secret_set: true, verified_once: true },
     }),

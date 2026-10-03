@@ -331,9 +331,9 @@ function initSidebarFold() {
 const isLocalHost = () => ['localhost', '127.0.0.1', '[::1]', '::1'].indexOf(location.hostname) >= 0;
 
 function transport() {
-  if (location.protocol === 'https:') return { cls: 'ok', label: 'HTTPS', detail: 'HTTPS 加密' };
+  if (location.protocol === 'https:') return { cls: 'ok', label: 'HTTPS 加密', detail: 'HTTPS 加密' };
   if (isLocalHost()) return { cls: 'ok', label: '本机直连', detail: 'HTTP，只经过本机回环' };
-  return { cls: 'err', label: '明文', detail: 'HTTP 明文' };
+  return { cls: 'err', label: '明文连接', detail: 'HTTP 明文' };
 }
 
 async function logout() {
@@ -2128,11 +2128,15 @@ async function loadCollected() {
   }
 }
 
-const secState = { auth: null, totpFlow: null };
+const secState = { auth: null };
 
 const ICON_X = raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/></svg>');
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+const stateTag = (cls, text) => html`<span class="set-state is-${cls}">${text}</span>`;
+
+const oauthState = () => (secState.auth && secState.auth.oauth) || {};
 
 async function withBusy(btn, fn) {
   if (!btn) return fn();
@@ -2145,44 +2149,78 @@ async function withBusy(btn, fn) {
   }
 }
 
+function showPasswords(on) {
+  $('#pwShow').checked = on;
+  $$('#pwEdit .pw-input').forEach((el) => { el.type = on ? 'text' : 'password'; });
+}
+
+function resetEdit(box) {
+  if (box.tagName === 'FORM') box.reset();
+  $$('.login-msg', box).forEach((m) => { m.className = 'login-msg'; m.textContent = ''; });
+  if (box.id === 'pwEdit') { showPasswords(false); renderPwChecks(); }
+  if (box.id === 'oaEdit') $('#oaClientId').value = oauthState().client_id || '';
+  if (box.id === 'totpEdit') {
+    $('#totpSecret').textContent = '';
+    delete $('#totpSecret').dataset.copy;
+    $('#totpUri').textContent = '';
+    $('#totpCode').value = '';
+    $('#totpOffPw').value = '';
+  }
+}
+
+function openEdit(id) {
+  $$('#page-account .set-edit').forEach((box) => {
+    const open = box.id === id;
+    if (!open && !box.hidden) resetEdit(box);
+    box.hidden = !open;
+  });
+  $$('#page-account button[data-edit]').forEach((b) => {
+    const open = b.dataset.edit === id;
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    b.textContent = open ? '取消' : b.dataset.label;
+  });
+  const first = id && $$('#' + id + ' input:not([type="checkbox"])').find((el) => el.offsetParent !== null);
+  if (first) first.focus();
+}
+
+function setEditLabel(btn, label) {
+  btn.dataset.label = label;
+  if (btn.getAttribute('aria-expanded') !== 'true') btn.textContent = label;
+}
+
 let _accountBound = false;
 function bindAccount() {
   if (_accountBound) return;
   _accountBound = true;
-  $('#btnSetUser').addEventListener('click', () => {
-    $('#userFold').open = true;
-    $('#userFold').scrollIntoView({ block: 'center', behavior: 'smooth' });
-    $('#userNew').focus({ preventScroll: true });
+  $('#page-account').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-edit]');
+    if (!b) return;
+    if (b.getAttribute('aria-expanded') === 'true') openEdit(null);
+    else if (b.id === 'btnTotp') totpAction();
+    else openEdit(b.dataset.edit);
   });
-  $('#userForm').addEventListener('submit', changeUsername);
-  $('#pwForm').addEventListener('submit', changePassword);
-  $('#pwForm').addEventListener('input', renderPwChecks);
-  $('#pwShow').addEventListener('change', (e) => {
-    $$('#pwForm .pw-input').forEach((el) => { el.type = e.target.checked ? 'text' : 'password'; });
-  });
+  $('#userEdit').addEventListener('submit', changeUsername);
+  $('#pwEdit').addEventListener('submit', changePassword);
+  $('#pwEdit').addEventListener('input', renderPwChecks);
+  $('#pwShow').addEventListener('change', (e) => showPasswords(e.target.checked));
   $('#btnTogglePwd').addEventListener('click', togglePassword);
-  $('#btnTotpSetup').addEventListener('click', totpSetup);
   $('#btnTotpEnable').addEventListener('click', totpEnable);
   $('#totpCode').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); });
-  $('#totpCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') totpEnable(); });
-  $('#btnTotpCancel').addEventListener('click', () => setTotpFlow(null));
-  $('#btnTotpDisable').addEventListener('click', () => { setTotpFlow('off'); $('#totpOffPw').focus(); });
-  $('#btnTotpOffCancel').addEventListener('click', () => setTotpFlow(null));
+  $('#totpCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); totpEnable(); } });
   $('#totpOff').addEventListener('submit', totpDisable);
+  $('#oaEdit').addEventListener('submit', saveOAuth);
   $('#oaUserForm').addEventListener('submit', addOAuthUser);
   $('#oaUsers').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-user]');
     if (b) removeOAuthUser(b);
   });
-  $('#btnSaveOAuth').addEventListener('click', saveOAuth);
   $('#btnAcctLogout').addEventListener('click', logout);
   $('#btnRevokeOthers').addEventListener('click', revokeOtherSessions);
 }
 
 function loadAccount() {
   bindAccount();
-  renderPosture();
-  renderSession();
+  if (secState.auth) renderAccount();
   loadAuthConfig();
 }
 
@@ -2194,85 +2232,95 @@ async function loadAuthConfig() {
     secState.auth = d;
     renderAccount();
   } catch (e) {
-    if (fresh()) setHtml($('#posture'), stateHtml('读取失败：' + e.message, 'error'));
+    if (fresh()) toast('读取账号信息失败', e.message, 'err');
   }
 }
 
 function renderAccount() {
   const d = secState.auth;
   const managed = !!d.auth_enabled;
+  const t = transport();
   $('#acctNoAuth').hidden = managed;
-  $('#acctNoUser').hidden = !managed || !!d.username;
+  $('#acctHero').hidden = !managed;
+  $('#acctPlain').hidden = t.cls !== 'err';
   $('#acctManaged').hidden = !managed;
-  $('#sessionActs').hidden = !managed;
-  $('#sessionNote').hidden = !managed;
-  renderPosture();
-  renderSession();
+  $('#btnAcctLogout').hidden = !managed;
+  $('#revokeRow').hidden = !managed;
+  renderSession(d, t);
   if (!managed) return;
-  renderIdentity(d);
-  renderTotp();
-  renderOAuth(d.oauth || {});
+  renderHero(d, t);
+  renderLogin(d);
+  renderOAuth(d.oauth || {}, d.password_disabled);
 }
 
-function renderPosture() {
-  const box = $('#posture');
-  if (!box) return;
-  const a = secState.auth, o = (a && a.oauth) || {};
-  const on = !!(a && a.auth_enabled);
-  const t = transport();
-  const left = a && a.session_expires_at ? a.session_expires_at - nowSec() : 0;
-  const idle = ['—', 'idle'];
-  const items = [
-    ['用户名', !on ? idle : a.username ? [a.username, 'ok'] : ['未设置', 'warn']],
-    ['密码登录', !a ? idle : !on ? ['未设置', 'err'] : a.password_disabled ? ['已关闭', 'idle'] : ['启用中', 'ok']],
-    ['二次认证', !on ? idle : a.totp_enabled ? ['已启用', 'ok'] : ['未启用', 'idle']],
-    ['GitHub 登录', !on ? idle : o.verified_once ? ['已验证', 'ok'] : o.ready ? ['待验证', 'warn'] : ['未配置', 'idle']],
-    ['传输加密', [t.label, t.cls]],
-    ['本次登录', left > 0 ? ['还剩 ' + fmtDuration(left), left < 1800 ? 'warn' : 'ok'] : idle],
-  ];
-  setHtml(box, html`${items.map(([k, [v, cls]]) => html`
-    <div class="posture-item is-${cls}">
-      <div class="posture-k">${k}</div>
-      <div class="posture-v" title="${v}">${v}</div>
-    </div>`)}`);
-}
-
-function renderSession() {
-  const a = secState.auth;
-  const t = transport();
-  const exp = a && a.session_expires_at;
-  const left = exp ? exp - nowSec() : 0;
-  setHtml($('#accessBadge'), html`<span class="badge ${t.cls}">${t.label}</span>`);
-  setHtml($('#accessBox'), html`${kvList([
-    ['访问地址', html`<span class="mono">${location.host}</span>`],
-    ['传输', t.detail],
-    ['登录到期', !a ? '—' : !a.auth_enabled ? '没设密码，不需要登录'
-      : left > 0 ? html`${fmtTime(exp)}<span class="dim"> · 还剩 ${fmtDuration(left)}</span>` : '—'],
-  ])}${t.cls === 'err' ? html`<div class="callout err">
-    密码会以明文经过网络。请改用 HTTPS，或经 SSH 隧道从本机访问。</div>` : raw('')}`);
-}
-
-function renderIdentity(d) {
+function renderHero(d, t) {
   const name = d.username || '';
+  const left = d.session_expires_at ? d.session_expires_at - nowSec() : 0;
+  const way = d.password_disabled ? '只能用 GitHub 登录'
+    : (d.totp_enabled ? '密码 + 验证码登录' : '密码登录') + ((d.oauth || {}).verified_once ? '，也可用 GitHub' : '');
   $('#acctAvatar').textContent = name ? name[0].toUpperCase() : '?';
   $('#acctName').textContent = name || '未设置用户名';
   $('#acctName').classList.toggle('dim', !name);
-  $('#acctNameHint').textContent = name ? '登录时和密码一起填' : '现在登录只要密码';
-  $('#userFold > summary').textContent = name ? '修改用户名' : '设置用户名';
-  $('#btnUser').textContent = name ? '保存用户名' : '设置用户名';
+  setHtml($('#acctMeta'), html`<span>${way}</span>${
+    left > 0 ? html`<span>登录还剩 ${fmtDuration(left)}</span>` : raw('')}${
+    t.cls === 'err' ? html`<span class="is-err">${t.label}</span>` : raw('')}`);
+}
 
-  setHtml($('#pwBadge'), d.password_disabled
-    ? html`<span class="badge unknown">密码登录已关闭</span>`
-    : html`<span class="badge ok">启用中</span>`);
+function renderSession(d, t) {
+  const left = d.session_expires_at ? d.session_expires_at - nowSec() : 0;
+  setHtml($('#sessionValue'), html`<div><span class="mono">${location.host}</span> · ${t.detail}</div>
+    <div>${!d.auth_enabled ? '没设密码，不需要登录'
+      : left > 0 ? fmtTime(d.session_expires_at) + ' 到期，还剩 ' + fmtDuration(left) : '—'}</div>`);
+}
+
+function renderLogin(d) {
   const o = d.oauth || {};
-  const btn = $('#btnTogglePwd');
+  const userBtn = $('#btnUserEdit');
+  setHtml($('#userValue'), d.username
+    ? html`<span class="mono">${d.username}</span>，登录时和密码一起填`
+    : html`${stateTag('warn', '未设置')}现在登录只要密码，设一个更稳妥`);
+  setEditLabel(userBtn, d.username ? '修改' : '设置');
+  userBtn.classList.toggle('primary', !d.username);
+
+  setHtml($('#pwValue'), (d.password_set_at ? ago(d.password_set_at) + '修改过。' : '')
+    + '改了之后，其它设备会退出登录');
+
+  setHtml($('#totpValue'), d.totp_enabled
+    ? html`${stateTag('ok', '已启用')}登录时还要填验证器上的 6 位数字`
+    : html`${stateTag('idle', '未启用')}启用后，登录时还要填验证器上的 6 位数字`);
+  setEditLabel($('#btnTotp'), d.totp_enabled ? '停用' : '启用');
+
   const blocked = !d.password_disabled && !o.verified_once;
-  btn.textContent = d.password_disabled ? '重新启用密码登录' : '关闭密码登录';
+  setHtml($('#pwLoginValue'), d.password_disabled
+    ? html`${stateTag('idle', '已关闭')}现在只能用 GitHub 登录`
+    : html`${stateTag('ok', '开启')}${blocked
+      ? '要关闭它，先配好 GitHub 登录并成功登录一次' : '关闭后只能用 GitHub 登录'}`);
+  const btn = $('#btnTogglePwd');
+  btn.textContent = d.password_disabled ? '重新启用' : '关闭';
   btn.className = d.password_disabled ? 'primary sm' : 'danger sm';
   btn.dataset.disable = d.password_disabled ? '0' : '1';
   btn.disabled = blocked;
-  $('#pwToggleHint').textContent = blocked ? '先用 GitHub 成功登录一次才能关闭'
-    : (d.password_disabled ? '现在只能用 GitHub 登录' : '');
+}
+
+function renderOAuth(o, passwordDisabled) {
+  const users = o.allowed_users || [];
+  setHtml($('#oauthValue'), o.verified_once
+    ? html`${stateTag('ok', '已验证')}Client ID <span class="mono">${o.client_id}</span>`
+    : o.ready ? html`${stateTag('warn', '待验证')}登录页已经显示「使用 GitHub 登录」，成功登录一次就算验证通过`
+    : o.client_id && o.secret_set ? html`${stateTag('warn', '未完成')}还要在下面添加至少一个允许登录的账号`
+    : html`${stateTag('idle', '未配置')}在 GitHub 建一个 OAuth App，把 Client ID 和 Secret 填进来`);
+  setEditLabel($('#btnOaEdit'), o.client_id ? '修改' : '配置');
+
+  const pinned = passwordDisabled && users.length === 1;
+  setHtml($('#oaUsers'), users.length ? html`${users.map((u) => html`<span class="user-chip">
+      <span class="mono">${u}</span>
+      <button type="button" data-user="${u}" aria-label="移除 ${u}"
+        title="${pinned ? '密码登录已关闭，至少要留一个能登录的账号' : '移除'}"${pinned ? raw(' disabled') : raw('')}>${ICON_X}</button>
+    </span>`)}`
+    : html`<span class="note-xs">还没有，添加之后才能用 GitHub 登录。</span>`);
+  if (document.activeElement !== $('#oaClientId')) $('#oaClientId').value = o.client_id || '';
+  $('#oaCallback').textContent = new URL(
+    (window.dnsStackApiUrl || ((p) => p))('/api/oauth/github/callback'), location.href).href;
 }
 
 function pwChecks() {
@@ -2286,30 +2334,31 @@ function pwChecks() {
 
 function renderPwChecks() {
   const c = pwChecks();
-  $$('#pwChecks [data-check]').forEach((el) => {
-    el.className = 'sec-chip ' + (c[el.dataset.check] ? 'is-ok' : 'is-idle');
-  });
+  $$('#pwChecks [data-check]').forEach((el) => el.classList.toggle('ok', c[el.dataset.check]));
   $('#btnPw').disabled = !$('#pwOld').value || !(c.len && c.diff && c.match);
+}
+
+function failIn(id, text) {
+  const msg = $('#' + id);
+  msg.textContent = text;
+  msg.className = 'login-msg show';
 }
 
 async function changeUsername(e) {
   e.preventDefault();
-  const msg = $('#userMsg');
-  const fail = (t) => { msg.textContent = t; msg.className = 'login-msg show'; };
-  msg.className = 'login-msg';
-  if (!$('#userNew').value.trim()) { $('#userNew').focus(); return fail('请填写新用户名'); }
-  if (!$('#userPw').value) { $('#userPw').focus(); return fail('请输入当前密码'); }
+  $('#userMsg').className = 'login-msg';
+  if (!$('#userNew').value.trim()) { $('#userNew').focus(); return failIn('userMsg', '请填写新用户名'); }
+  if (!$('#userPw').value) { $('#userPw').focus(); return failIn('userMsg', '请输入当前密码'); }
   await withBusy($('#btnUser'), async () => {
     try {
       const d = await api('/api/auth/username', {
         method: 'POST',
         body: JSON.stringify({ username: $('#userNew').value, password: $('#userPw').value }),
       });
-      $('#userForm').reset();
-      $('#userFold').open = false;
+      openEdit(null);
       toast('用户名已更新', d.message || '', 'ok');
       loadAuthConfig();
-    } catch (err) { fail(err.message); }
+    } catch (err) { failIn('userMsg', err.message); }
   });
 }
 
@@ -2318,23 +2367,17 @@ async function changePassword(e) {
   const c = pwChecks();
   if (!$('#pwOld').value || !(c.len && c.diff && c.match)) return;
   if (!confirm('确认修改面板密码？\n\n其它设备上的登录会立即失效，这台设备保持登录。')) return;
-  const msg = $('#pwMsg');
-  msg.className = 'login-msg';
+  $('#pwMsg').className = 'login-msg';
   await withBusy($('#btnPw'), async () => {
     try {
       const d = await api('/api/password', {
         method: 'POST',
         body: JSON.stringify({ old_password: $('#pwOld').value, new_password: $('#pwNew').value }),
       });
-      $('#pwForm').reset();
-      $$('#pwForm .pw-input').forEach((el) => { el.type = 'password'; });
-      $('#pwFold').open = false;
+      openEdit(null);
       toast('密码已更新', d.message || '', 'ok');
       loadAuthConfig();
-    } catch (err) {
-      msg.textContent = err.message;
-      msg.className = 'login-msg show';
-    }
+    } catch (err) { failIn('pwMsg', err.message); }
   });
   renderPwChecks();
 }
@@ -2354,43 +2397,24 @@ async function togglePassword() {
   loadAuthConfig();
 }
 
-function setTotpFlow(flow) {
-  secState.totpFlow = flow;
-  if (!flow) {
-    $('#totpSecret').textContent = '';
-    delete $('#totpSecret').dataset.copy;
-    $('#totpUri').textContent = '';
-    $('#totpCode').value = '';
-    $('#totpOffPw').value = '';
+async function totpAction() {
+  if (secState.auth && secState.auth.totp_enabled) {
+    $('#totpSetup').hidden = true;
+    $('#totpOff').hidden = false;
+    openEdit('totpEdit');
+    return;
   }
-  renderTotp();
-}
-
-function renderTotp() {
-  const enabled = !!(secState.auth && secState.auth.totp_enabled);
-  const flow = secState.totpFlow;
-  setHtml($('#totpBadge'), enabled
-    ? html`<span class="badge ok">已启用</span>`
-    : html`<span class="badge unknown">未启用</span>`);
-  $('#totpActs').hidden = !!flow;
-  $('#btnTotpSetup').hidden = enabled;
-  $('#btnTotpDisable').hidden = !enabled;
-  $('#totpSetup').hidden = flow !== 'setup';
-  $('#totpOff').hidden = flow !== 'off';
-}
-
-async function totpSetup() {
-  await withBusy($('#btnTotpSetup'), async () => {
+  await withBusy($('#btnTotp'), async () => {
     try {
       const d = await api('/api/auth/totp/setup', { method: 'POST' });
       $('#totpSecret').textContent = d.secret.replace(/(.{4})(?=.)/g, '$1 ');
       $('#totpSecret').dataset.copy = d.secret;
       $('#totpUri').textContent = d.uri;
-      $('#totpCode').value = '';
-      setTotpFlow('setup');
-      $('#totpCode').focus();
+      $('#totpSetup').hidden = false;
+      $('#totpOff').hidden = true;
     } catch (e) { toast('生成失败', e.message, 'err'); }
   });
+  if ($('#totpSecret').dataset.copy) openEdit('totpEdit');
 }
 
 async function totpEnable() {
@@ -2405,7 +2429,7 @@ async function totpEnable() {
       const r = await api('/api/auth/totp/enable', {
         method: 'POST', body: JSON.stringify({ code: code }),
       });
-      setTotpFlow(null);
+      openEdit(null);
       toast('二次认证', r.message || '已启用', 'ok');
       loadAuthConfig();
     } catch (e) {
@@ -2424,7 +2448,7 @@ async function totpDisable(e) {
       const r = await api('/api/auth/totp/disable', {
         method: 'POST', body: JSON.stringify({ password: pw }),
       });
-      setTotpFlow(null);
+      openEdit(null);
       toast('二次认证', r.message || '已停用', 'ok');
       loadAuthConfig();
     } catch (err) {
@@ -2432,32 +2456,6 @@ async function totpDisable(e) {
       $('#totpOffPw').select();
     }
   });
-}
-
-const oauthState = () => (secState.auth && secState.auth.oauth) || {};
-
-function renderOAuth(o) {
-  const users = o.allowed_users || [];
-  setHtml($('#oauthBadge'), o.verified_once ? html`<span class="badge ok">已验证</span>`
-    : o.ready ? html`<span class="badge warn">待验证</span>`
-    : html`<span class="badge unknown">未配置</span>`);
-  const chip = (st, text) => html`<span class="sec-chip is-${st}">${text}</span>`;
-  setHtml($('#oauthChips'), html`${[
-    o.client_id ? chip('ok', 'Client ID 已填') : chip('idle', 'Client ID 未填'),
-    o.secret_set ? chip('ok', 'Secret 已设置') : chip('idle', 'Secret 未设置'),
-    o.verified_once ? chip('ok', '通路已验证')
-      : o.ready ? chip('warn', '还没用 GitHub 登录过') : chip('idle', '通路未验证'),
-  ]}`);
-  const pinned = secState.auth.password_disabled && users.length === 1;
-  setHtml($('#oaUsers'), users.length ? html`${users.map((u) => html`<span class="user-chip">
-      <span class="mono">${u}</span>
-      <button type="button" data-user="${u}" aria-label="移除 ${u}"
-        title="${pinned ? '密码登录已关闭，至少要留一个能登录的账号' : '移除'}"${pinned ? raw(' disabled') : raw('')}>${ICON_X}</button>
-    </span>`)}`
-    : html`<span class="note-xs">还没有允许任何账号，添加之后才能用 GitHub 登录。</span>`);
-  if (document.activeElement !== $('#oaClientId')) $('#oaClientId').value = o.client_id || '';
-  $('#oaCallback').textContent = new URL(
-    (window.dnsStackApiUrl || ((p) => p))('/api/oauth/github/callback'), location.href).href;
 }
 
 async function postOAuth(users, extra, btn) {
@@ -2491,15 +2489,16 @@ async function addOAuthUser(e) {
 
 async function removeOAuthUser(btn) {
   const name = btn.dataset.user;
-  if (!confirm('不再允许 ' + name + ' 用 GitHub 登录？\n\n它已经登录的会话不受影响；要立即踢出，再点「退出其它所有设备」。')) return;
+  if (!confirm('不再允许 ' + name + ' 用 GitHub 登录？\n\n它已经登录的会话不受影响；要立即踢出，再点「其它设备 → 全部退出」。')) return;
   await postOAuth((oauthState().allowed_users || []).filter((u) => u !== name), {}, btn);
 }
 
-async function saveOAuth() {
+async function saveOAuth(e) {
+  e.preventDefault();
   const ok = await postOAuth(oauthState().allowed_users || [], {
     client_id: $('#oaClientId').value.trim(), client_secret: $('#oaSecret').value,
   }, $('#btnSaveOAuth'));
-  if (ok) $('#oaSecret').value = '';
+  if (ok) openEdit(null);
 }
 
 async function revokeOtherSessions() {
@@ -2526,23 +2525,31 @@ async function loadOps() {
 
 async function loadDohInfo() {
   const box = $('#dohBox');
-  const badge = $('#dohBadge');
   try {
     const d = await api('/api/doh');
-    setHtml(badge, d.is_default
-      ? html`<span class="badge warn">未设私密路径</span>`
-      : html`<span class="badge ok">已启用私密路径</span>`);
-    setHtml(box, html`<pre class="block" id="dohUrl">${d.doh_url}</pre>
-      <div class="row mt-8">
-        <button class="sm" data-copy-target="dohUrl" data-copy-what="接入地址">复制地址</button>
-        <button class="danger sm" data-op="rotate_doh_path">轮换私密路径</button>
-      </div>
-      ${d.is_default
-        ? html`<div class="hint text-warn">默认路径 /dns-query 对任何人开放，建议轮换。</div>`
-        : html`<div class="hint">轮换后所有客户端都要同步换新地址。</div>`}`);
+    const endpoints = [
+      ['DoH / DoH3', 'dohUrl', d.doh_url],
+      ['DoT', 'dotUrl', d.dot_url],
+      ['DoQ', 'doqUrl', d.doq_url],
+    ].filter((x) => x[2]);
+    setHtml(box, html`${endpoints.map(([k, id, url]) => html`<div class="set-row">
+        <div class="set-main">
+          <div class="set-k">${k}</div>
+          <div class="set-v mono" id="${id}">${url}</div>
+        </div>
+        <button class="sm" data-copy-target="${id}" data-copy-what="${k} 地址">复制</button>
+      </div>`)}
+      <div class="set-row">
+        <div class="set-main">
+          <div class="set-k">DoH 私密路径</div>
+          <div class="set-v">${d.is_default
+            ? html`${stateTag('warn', '未启用')}还在默认路径 /dns-query，谁都能拿这台服务器当公共 DNS 用`
+            : html`${stateTag('ok', '已启用')}轮换后旧地址立即失效，所有客户端都要换新地址`}</div>
+        </div>
+        <button class="danger sm" data-op="rotate_doh_path">轮换</button>
+      </div>`);
   } catch (e) {
     setHtml(box, errState(e));
-    setHtml(badge, raw(''));
   }
 }
 
@@ -2555,8 +2562,9 @@ function copyFrom(el, what) {
     const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
     toast('已选中' + what, '按 Ctrl+C / ⌘C 复制', 'ok');
   };
+  const done = '已复制' + (/^[\x21-\x7e]/.test(what) ? ' ' : '') + what;
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => toast('已复制' + what, '', 'ok')).catch(select);
+    navigator.clipboard.writeText(text).then(() => toast(done, '', 'ok')).catch(select);
   } else select();
 }
 
