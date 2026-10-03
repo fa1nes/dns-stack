@@ -94,6 +94,22 @@ func (h *Helper) opBlocklistRemove(args map[string]any) result {
 	return h.run(append([]string{h.cli, "blocklist", "remove"}, names...), 60*time.Second, true)
 }
 
+func (h *Helper) routeCommand(verb string, args map[string]any) result {
+	list := stringArg(args, "list")
+	if list != "cn" && list != "hk" {
+		return rejectResult("名单只能是 cn 或 hk")
+	}
+	names, message := domainArgs(args)
+	if message != "" {
+		return failure(message)
+	}
+	return h.run(append([]string{h.goBin, "route", verb, list}, names...), 150*time.Second, true)
+}
+
+func (h *Helper) opRouteAdd(args map[string]any) result { return h.routeCommand("add", args) }
+
+func (h *Helper) opRouteRemove(args map[string]any) result { return h.routeCommand("remove", args) }
+
 func (h *Helper) opACLAdd(args map[string]any) result {
 	prefixes, message := prefixArgs(args)
 	if message != "" {

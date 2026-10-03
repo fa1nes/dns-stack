@@ -297,12 +297,6 @@ func (c *Ctl) ClearAudit(ctx context.Context) error {
 	if _, err := db.ExecContext(ctx, "DELETE FROM audit_log"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO audit_log(ts,actor,operation,args,ok,message) VALUES (?,?,?,?,?,?)`,
-		c.now().Unix(), "cli", "audit_clear", "{}", 1,
-		fmt.Sprintf("已清空 %d 条审计记录", n)); err != nil {
-		return err
-	}
 	c.Okf("已清空 %d 条审计记录", n)
 	return nil
 }

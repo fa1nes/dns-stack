@@ -1,7 +1,9 @@
 package helper
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/stack"
 	"github.com/dns-stack/dns-stack/internal/statefile"
 	"github.com/dns-stack/dns-stack/unbound"
@@ -42,7 +45,7 @@ var allowedPriorities = map[string]bool{
 
 var allowedQTypes = map[string]bool{
 	"A": true, "AAAA": true, "CNAME": true, "MX": true, "TXT": true,
-	"NS": true, "SOA": true, "HTTPS": true, "SVCB": true, "PTR": true,
+	"NS": true, "SOA": true, "HTTPS": true, "SVCB": true, "PTR": true, "SRV": true,
 }
 
 var digTargets = map[string][]string{
@@ -72,6 +75,8 @@ var RoleOps = map[string]string{
 	"acl_apply":        stack.RoleCNResolver,
 	"acl_disable":      stack.RoleCNResolver,
 	"acl_status":       stack.RoleCNResolver,
+	"route_add":        stack.RoleCNResolver,
+	"route_remove":     stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
@@ -640,9 +645,43 @@ func (h *Helper) opFlushCache(args map[string]any) result {
 	if code, _ := r["returncode"].(int); code != 0 {
 		return unboundFailure("清理失败: ", r)
 	}
-	h.log("清理 Unbound 缓存: " + zone)
-	return result{"ok": true, "returncode": 0, "stderr": "",
-		"stdout": "已清理 " + label + "。这些名字接下来都要重新走完整递归，短时间内延迟会明显升高"}
+	target := ""
+	if zone != "." {
+		target = zone
+	}
+	message := "已清理 " + label
+	if _, err := metrics.FlushCache(context.Background(), target); err != nil {
+		message += "（只清了 Unbound，" + err.Error() + "）"
+	}
+	h.log("清理缓存: " + zone)
+	return result{"ok": true, "returncode": 0, "stderr": "", "stdout": message}
+}
+
+func (h *Helper) opSetBackupPolicy(args map[string]any) result {
+	values := map[string]string{}
+	for _, field := range []struct {
+		arg, key string
+		min, max int
+	}{
+		{"interval_hours", "BACKUP_INTERVAL_HOURS", 0, 720},
+		{"keep_daily", "BACKUP_RETENTION_DAILY", 1, 60},
+		{"keep_weekly", "BACKUP_RETENTION_WEEKLY", 1, 52},
+	} {
+		value, ok := intArg(args, field.arg)
+		if !ok || value < field.min || value > field.max {
+			return rejectResult(fmt.Sprintf("%s 必须是 %d~%d 的整数", field.arg, field.min, field.max))
+		}
+		values[field.key] = strconv.Itoa(value)
+	}
+	configEditMu.Lock()
+	err := config.Upsert(h.configPath, values)
+	configEditMu.Unlock()
+	if err != nil {
+		return failure("写入 config.env 失败: " + err.Error())
+	}
+	h.log("备份策略: " + values["BACKUP_INTERVAL_HOURS"] + "h / 保留 " +
+		values["BACKUP_RETENTION_DAILY"] + " + 每周 " + values["BACKUP_RETENTION_WEEKLY"])
+	return result{"ok": true, "returncode": 0, "stdout": "备份策略已保存", "stderr": ""}
 }
 
 func (h *Helper) opUnboundStats(map[string]any) result {
@@ -850,6 +889,9 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"acl_disable":         h.opACLDisable,
 		"acl_status":          h.opACLStatus,
 		"prune_backups":       h.opPruneBackups,
+		"set_backup_policy":   h.opSetBackupPolicy,
+		"route_add":           h.opRouteAdd,
+		"route_remove":        h.opRouteRemove,
 		"drop_stale_logs":     h.opDropStaleLogs,
 	}
 }

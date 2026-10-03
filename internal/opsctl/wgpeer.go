@@ -231,14 +231,13 @@ PersistentKeepalive = 25
 	}
 	c.Okf("经隧道的境外递归正常: www.wikipedia.org -> %s", v4[0])
 
-	for _, pair := range [][2]string{
-		{"CN_SERVER_WG_IP", cnAddr}, {"HK_DNS_WG_IP", hkAddr}, {"FOREIGN_DNS_WG_IP", hkAddr},
-	} {
-		if err := upsertConfig(c.ConfigFile, pair[0], pair[1]); err != nil {
-			c.Warnf("写回 %s 失败: %v", pair[0], err)
-		}
+	if err := config.Upsert(c.ConfigFile, map[string]string{
+		"CN_SERVER_WG_IP": cnAddr, "HK_DNS_WG_IP": hkAddr, "FOREIGN_DNS_WG_IP": hkAddr,
+	}); err != nil {
+		c.Warnf("写回 config.env 失败: %v", err)
+	} else {
+		c.Okf("config.env 已更新 CN_SERVER_WG_IP / HK_DNS_WG_IP / FOREIGN_DNS_WG_IP")
 	}
-	c.Okf("config.env 已更新 CN_SERVER_WG_IP / HK_DNS_WG_IP / FOREIGN_DNS_WG_IP")
 	fmt.Fprintln(c.Out)
 	c.Okf("CN ↔ HK 隧道已对接完成")
 	fmt.Fprintln(c.Out, "下一步（分流链路要重建，否则递归出口仍按旧表走）：")
@@ -283,30 +282,6 @@ func wgPubKey(ctx context.Context, private string) (string, error) {
 		return "", fmt.Errorf("推导 WireGuard 公钥失败: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-func upsertConfig(path, key, value string) error {
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(strings.TrimRight(string(body), "\n"), "\n")
-	replaced := false
-	for i, line := range lines {
-		if strings.HasPrefix(line, key+"=") {
-			lines[i] = key + "=" + value
-			replaced = true
-		}
-	}
-	if !replaced {
-		lines = append(lines, key+"="+value)
-	}
-	info, err := os.Stat(path)
-	mode := os.FileMode(0o640)
-	if err == nil {
-		mode = info.Mode().Perm()
-	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), mode)
 }
 
 func firstNonEmpty(values ...string) string {

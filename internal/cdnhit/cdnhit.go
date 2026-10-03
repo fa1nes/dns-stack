@@ -75,34 +75,34 @@ const (
 func (v Verdict) Label() string {
 	switch v {
 	case VerdictMainland:
-		return "命中大陆节点"
+		return "拿到了国内节点"
 	case VerdictNoSteering:
-		return "权威收到了子网但声明不按位置调度"
+		return "权威不分地区，所有人拿到同一个地址"
 	case VerdictNoEcho:
-		return "这次没有 ECS 回显，多半命中了缓存，本次判不出"
+		return "答案来自缓存，看不出是否按地区挑过，复核会清缓存重查"
 	case VerdictNotDelivered:
-		return "清了缓存重查仍无回显——你的子网没送到这台权威，查 ECS 白名单"
+		return "清了缓存重查，权威仍没收到你的子网，ECS 白名单可能漏了它"
 	case VerdictNoNode:
-		return "权威按你的子网挑过了，仍给境外（这个服务在大陆没有节点）"
+		return "按你的地区挑过了仍给境外，这家在国内没有节点"
 	default:
-		return "未解析出地址"
+		return "这次没解析出地址"
 	}
 }
 
 func (v Verdict) Short() string {
 	switch v {
 	case VerdictMainland:
-		return "命中大陆节点"
+		return "国内节点"
 	case VerdictNoSteering:
-		return "不按位置调度"
+		return "不分地区"
 	case VerdictNoEcho:
-		return "无回显，判不出"
+		return "待复核"
 	case VerdictNotDelivered:
-		return "ECS 没送达"
+		return "子网没送到"
 	case VerdictNoNode:
-		return "大陆无节点"
+		return "无国内节点"
 	default:
-		return "未解析出"
+		return "解析失败"
 	}
 }
 
@@ -129,6 +129,7 @@ type Outcome struct {
 	Verdict      Verdict  `json:"verdict"`
 	VerdictText  string   `json:"verdict_text"`
 	VerdictShort string   `json:"verdict_short"`
+	Geo          string   `json:"geo,omitempty"`
 	Error        string   `json:"error,omitempty"`
 }
 
@@ -197,21 +198,27 @@ func (o Options) now() time.Time {
 }
 
 func Run(ctx context.Context, opt Options) (Report, error) {
-	if opt.Set.Empty() {
-		return Report{}, fmt.Errorf("没有可用的 CDN 直连规则集，判据无法回答任何问题")
-	}
-	if opt.Resolver == "" {
-		opt.Resolver = DefaultResolver
-	}
 	if opt.Subnet == "" {
 		opt.Subnet = BeijingTelecom
 	}
-	prefix, err := netip.ParsePrefix(opt.Subnet)
+	reports, err := RunAll(ctx, opt, []string{opt.Subnet})
 	if err != nil {
-		return Report{}, fmt.Errorf("客户端子网 %q 无法解析: %w", opt.Subnet, err)
+		return Report{}, err
 	}
-	if !prefix.Addr().Is4() {
-		return Report{}, fmt.Errorf("客户端子网必须是 IPv4，收到 %s", opt.Subnet)
+	return reports[0], nil
+}
+
+type flushState struct {
+	done bool
+	err  string
+}
+
+func RunAll(ctx context.Context, opt Options, subnets []string) ([]Report, error) {
+	if opt.Set.Empty() {
+		return nil, fmt.Errorf("没有可用的 CDN 直连规则集，判据无法回答任何问题")
+	}
+	if opt.Resolver == "" {
+		opt.Resolver = DefaultResolver
 	}
 	if opt.Timeout <= 0 {
 		opt.Timeout = defaultTimeout
@@ -225,24 +232,67 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 	if len(probes) == 0 {
 		probes = DefaultProbes
 	}
-
-	report := Report{
-		Resolver:    opt.Resolver,
-		Subnet:      prefix.Masked().String(),
-		GeneratedAt: opt.now().Unix(),
-		RulesetAt:   opt.Set.GeneratedAt().Unix(),
-		Fresh:       opt.Flush != nil,
+	prefixes := make([]netip.Prefix, 0, len(subnets))
+	for _, raw := range subnets {
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil {
+			return nil, fmt.Errorf("客户端子网 %q 无法解析: %w", raw, err)
+		}
+		if !prefix.Addr().Is4() {
+			return nil, fmt.Errorf("客户端子网必须是 IPv4，收到 %s", raw)
+		}
+		prefixes = append(prefixes, prefix)
 	}
-	report.Probes = make([]Outcome, len(probes))
+	if len(prefixes) == 0 {
+		return nil, fmt.Errorf("没有给出任何客户端子网")
+	}
+
+	flushed := make([]flushState, len(probes))
+	if opt.Flush != nil {
+		var wg sync.WaitGroup
+		for i, probe := range probes {
+			wg.Add(1)
+			go func(slot int, p Probe) {
+				defer wg.Done()
+				flushed[slot].done = true
+				for _, name := range flushTargets(ctx, opt, p.Domain, prefixes[0]) {
+					if err := opt.Flush(ctx, name); err != nil {
+						flushed[slot] = flushState{err: err.Error()}
+						return
+					}
+				}
+			}(i, probe)
+		}
+		wg.Wait()
+	}
+
+	reports := make([]Report, len(prefixes))
 	var wg sync.WaitGroup
-	for i, probe := range probes {
-		wg.Add(1)
-		go func(slot int, p Probe) {
-			defer wg.Done()
-			report.Probes[slot] = classify(ctx, opt, prefix, p)
-		}(i, probe)
+	for r, prefix := range prefixes {
+		reports[r] = Report{
+			Resolver:    opt.Resolver,
+			Subnet:      prefix.Masked().String(),
+			GeneratedAt: opt.now().Unix(),
+			RulesetAt:   opt.Set.GeneratedAt().Unix(),
+			Fresh:       opt.Flush != nil,
+			Probes:      make([]Outcome, len(probes)),
+		}
+		for i, probe := range probes {
+			wg.Add(1)
+			go func(r, slot int, prefix netip.Prefix, p Probe) {
+				defer wg.Done()
+				reports[r].Probes[slot] = classify(ctx, opt, prefix, p, flushed[slot])
+			}(r, i, prefix, probe)
+		}
 	}
 	wg.Wait()
+	for r := range reports {
+		tallyReport(&reports[r])
+	}
+	return reports, nil
+}
+
+func tallyReport(report *Report) {
 	for _, item := range report.Probes {
 		switch item.Verdict {
 		case VerdictMainland:
@@ -260,24 +310,13 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 			report.Comparable++
 		}
 	}
-	return report, nil
 }
 
-func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe) Outcome {
-	out := Outcome{Domain: probe.Domain, Label: probe.Label}
+func classify(ctx context.Context, opt Options, subnet netip.Prefix, probe Probe, flush flushState) Outcome {
+	out := Outcome{Domain: probe.Domain, Label: probe.Label, Flushed: flush.done, FlushError: flush.err}
 	if provider, known := opt.Set.ProviderFor(probe.Domain); known {
 		out.Provider, out.ProviderID = provider.Name, provider.ID
 		out.HasMainland, out.MainlandNum = provider.ServesMainland(), len(provider.Mainland)
-	}
-
-	if opt.Flush != nil {
-		out.Flushed = true
-		for _, name := range flushTargets(ctx, opt, probe.Domain, subnet) {
-			if err := opt.Flush(ctx, name); err != nil {
-				out.Flushed, out.FlushError = false, err.Error()
-				break
-			}
-		}
 	}
 
 	answer, err := opt.Resolve(ctx, probe.Domain, subnet)

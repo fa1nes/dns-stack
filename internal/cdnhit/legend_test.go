@@ -2,6 +2,7 @@ package cdnhit
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -11,25 +12,36 @@ var allVerdicts = []Verdict{
 	VerdictNoEcho, VerdictNotDelivered, VerdictUnresolved,
 }
 
-func TestEveryVerdictIsExplainedOnThePanel(t *testing.T) {
+func TestEveryVerdictHasAStyleOnThePanel(t *testing.T) {
 	body, err := os.ReadFile("../../web/assets/panel.js")
 	if err != nil {
 		t.Skipf("读不到 panel.js: %v", err)
 	}
 	script := string(body)
-	start := strings.Index(script, "<b>命中大陆节点</b>")
+	start := strings.Index(script, "const CDN_VERDICT = {")
 	if start < 0 {
-		t.Skip("panel.js 里找不到判定图例")
+		t.Fatal("panel.js 里没有 CDN_VERDICT 了")
 	}
-	legend := script[start:]
-	if end := strings.Index(legend, "</div>"); end > 0 {
-		legend = legend[:end]
+	end := strings.Index(script[start:], "};")
+	styled := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\s+([a-z_]+):`).FindAllStringSubmatch(script[start:start+end], -1) {
+		styled[m[1]] = true
 	}
 	for _, verdict := range allVerdicts {
-		short := verdict.Short()
-		if !strings.Contains(legend, short) {
-			t.Errorf("判定 %s 会显示成「%s」，图例里却没有解释它——"+
-				"用户看到一个没人解释的词，只能猜", verdict, short)
+		if !styled[string(verdict)] {
+			t.Errorf("判定 %s 在面板上没有颜色，会落到默认的灰色，和「不分地区」看起来一样", verdict)
+		}
+		if verdict.Short() == "" || verdict.Label() == "" {
+			t.Errorf("判定 %s 缺少文字", verdict)
+		}
+	}
+	for key := range styled {
+		known := false
+		for _, verdict := range allVerdicts {
+			known = known || string(verdict) == key
+		}
+		if !known {
+			t.Errorf("CDN_VERDICT 里的 %s 后端从不产出", key)
 		}
 	}
 }
