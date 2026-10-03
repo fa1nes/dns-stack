@@ -4,8 +4,32 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
+
+func TestEditingAListKeepsTheNotesAroundIt(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.StateDir, RouteCNFile)
+	original := "# Apple：IP 注册在美国，归属库判不出来\napple.com\nicloud.com\n\n# 权威在境外但服务国内\niqiyi.com\n"
+	if err := os.WriteFile(path, []byte(original), 0o664); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.AddRoutes(RouteCN, []string{"sb.sb"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RemoveRoutes(RouteCN, []string{"ICLOUD.com."}); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	want := "# Apple：IP 注册在美国，归属库判不出来\napple.com\n\n# 权威在境外但服务国内\niqiyi.com\nsb.sb\n"
+	if string(body) != want {
+		t.Fatalf("改名单把人写的说明和顺序一起抹掉了：\n%s", body)
+	}
+	if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o664 {
+		t.Fatalf("权限从 0664 变成了 %o", info.Mode().Perm())
+	}
+}
 
 func TestADomainLivesInAtMostOneRouteList(t *testing.T) {
 	s := newStore(t)
@@ -21,7 +45,7 @@ func TestADomainLivesInAtMostOneRouteList(t *testing.T) {
 	}
 	cn, _ := s.Routes(RouteCN)
 	hk, _ := s.Routes(RouteHK)
-	if !reflect.DeepEqual(cn, []string{"example.cn", "sb.sb"}) || !reflect.DeepEqual(hk, []string{"google.com"}) {
+	if !reflect.DeepEqual(cn, []string{"sb.sb", "example.cn"}) || !reflect.DeepEqual(hk, []string{"google.com"}) {
 		t.Fatalf("同一个域名同时在两张名单里会让结果取决于规则顺序：cn=%v hk=%v", cn, hk)
 	}
 

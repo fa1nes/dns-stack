@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -183,33 +182,69 @@ func addEntries(path, header string, current, names []string) (added []string, e
 			continue
 		}
 		seen[value] = struct{}{}
-		current = append(current, value)
 		added = append(added, value)
 	}
 	if len(added) == 0 {
 		return nil, nil
 	}
-	sort.Strings(current)
-	return added, writeEntries(path, header, current)
+	return added, editEntries(path, header, nil, added)
+}
+
+func entryKey(line string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(line), "."))
 }
 
 func removeEntries(path, header string, current, names []string) (removed []string, err error) {
 	drop := make(map[string]struct{}, len(names))
 	for _, raw := range names {
-		drop[strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))] = struct{}{}
+		drop[entryKey(raw)] = struct{}{}
 	}
-	kept := make([]string, 0, len(current))
 	for _, item := range current {
-		if _, gone := drop[item]; gone {
+		if _, gone := drop[entryKey(item)]; gone {
 			removed = append(removed, item)
-			continue
 		}
-		kept = append(kept, item)
 	}
 	if len(removed) == 0 {
 		return nil, nil
 	}
-	return removed, writeEntries(path, header, kept)
+	return removed, editEntries(path, header, drop, nil)
+}
+
+func editEntries(path, header string, drop map[string]struct{}, add []string) error {
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) || (err == nil && len(strings.TrimSpace(string(raw))) == 0) {
+		return writeEntries(path, header, add)
+	}
+	if err != nil {
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case line == "":
+			continue
+		case strings.HasPrefix(trimmed, "# 最后更新: "):
+			b.WriteString("# 最后更新: " + time.Now().Format("2006-01-02 15:04:05") + "\n")
+			continue
+		case trimmed != "" && !strings.HasPrefix(trimmed, "#"):
+			if _, gone := drop[entryKey(trimmed)]; gone {
+				continue
+			}
+		}
+		b.WriteString(line)
+	}
+	if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n") {
+		b.WriteByte('\n')
+	}
+	for _, entry := range add {
+		b.WriteString(entry + "\n")
+	}
+	return statefile.WriteAtomic(path, []byte(b.String()), mode)
 }
 
 func (s Store) AddBlocked(names []string) ([]string, error) {
