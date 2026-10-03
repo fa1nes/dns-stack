@@ -18,12 +18,49 @@ const (
 	BlocklistFile   = "blocklist.txt"
 	ACLFile         = "acl.txt"
 	ACLDisabledFile = "acl.disabled"
+	RouteCNFile     = "manual-cn-zones.txt"
+	RouteHKFile     = "manual-gfw.txt"
 
 	blocklistHeader = "# dns-stack 域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机\n" +
 		"# 每行一个域名，匹配包含其全部子域。# 开头为注释。\n"
 	aclHeader = "# dns-stack 访问控制：只有这里列出的网段能查询 DoH/DoT/DoQ 入口\n" +
 		"# 每行一个 CIDR 或单个地址。空文件 = 不启用访问控制（全网可查）。\n"
+	routeCNHeader = "# dns-stack 国内解析名单：这些域名的权威服务器从国内直连查询，并带上客户端子网\n" +
+		"# 每行一个域名，包含全部子域。由面板或 dns-stack route 维护。\n"
+	routeHKHeader = "# dns-stack 香港解析名单：这些域名整条交给香港 Unbound 解析\n" +
+		"# 每行一个域名，包含全部子域。由面板或 dns-stack route 维护。\n"
 )
+
+type RouteList string
+
+const (
+	RouteCN RouteList = "cn"
+	RouteHK RouteList = "hk"
+)
+
+func ParseRouteList(raw string) (RouteList, error) {
+	switch RouteList(strings.ToLower(strings.TrimSpace(raw))) {
+	case RouteCN:
+		return RouteCN, nil
+	case RouteHK:
+		return RouteHK, nil
+	}
+	return "", fmt.Errorf("名单只能是 cn（国内解析）或 hk（香港解析），收到 %q", raw)
+}
+
+func (l RouteList) Other() RouteList {
+	if l == RouteCN {
+		return RouteHK
+	}
+	return RouteCN
+}
+
+func (l RouteList) file() (string, string) {
+	if l == RouteCN {
+		return RouteCNFile, routeCNHeader
+	}
+	return RouteHKFile, routeHKHeader
+}
 
 type Store struct {
 	StateDir string
@@ -127,16 +164,12 @@ func normalizeDomain(name string) (string, error) {
 		return "", fmt.Errorf("域名格式非法: %s", name)
 	}
 	if !strings.Contains(value, ".") {
-		return "", fmt.Errorf("拒绝拉黑顶级域 %q——它会连带屏蔽该 TLD 下的一切", value)
+		return "", fmt.Errorf("不接受顶级域 %q——它会连带影响这个后缀下的所有域名", value)
 	}
 	return value, nil
 }
 
-func (s Store) AddBlocked(names []string) (added []string, err error) {
-	current, err := s.Blocklist()
-	if err != nil {
-		return nil, err
-	}
+func addEntries(path, header string, current, names []string) (added []string, err error) {
 	seen := make(map[string]struct{}, len(current))
 	for _, item := range current {
 		seen[item] = struct{}{}
@@ -157,14 +190,10 @@ func (s Store) AddBlocked(names []string) (added []string, err error) {
 		return nil, nil
 	}
 	sort.Strings(current)
-	return added, writeEntries(s.blocklistPath(), blocklistHeader, current)
+	return added, writeEntries(path, header, current)
 }
 
-func (s Store) RemoveBlocked(names []string) (removed []string, err error) {
-	current, err := s.Blocklist()
-	if err != nil {
-		return nil, err
-	}
+func removeEntries(path, header string, current, names []string) (removed []string, err error) {
 	drop := make(map[string]struct{}, len(names))
 	for _, raw := range names {
 		drop[strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))] = struct{}{}
@@ -180,7 +209,55 @@ func (s Store) RemoveBlocked(names []string) (removed []string, err error) {
 	if len(removed) == 0 {
 		return nil, nil
 	}
-	return removed, writeEntries(s.blocklistPath(), blocklistHeader, kept)
+	return removed, writeEntries(path, header, kept)
+}
+
+func (s Store) AddBlocked(names []string) ([]string, error) {
+	current, err := s.Blocklist()
+	if err != nil {
+		return nil, err
+	}
+	return addEntries(s.blocklistPath(), blocklistHeader, current, names)
+}
+
+func (s Store) RemoveBlocked(names []string) ([]string, error) {
+	current, err := s.Blocklist()
+	if err != nil {
+		return nil, err
+	}
+	return removeEntries(s.blocklistPath(), blocklistHeader, current, names)
+}
+
+func (s Store) routePath(list RouteList) (string, string) {
+	name, header := list.file()
+	return filepath.Join(s.StateDir, name), header
+}
+
+func (s Store) Routes(list RouteList) ([]string, error) {
+	path, _ := s.routePath(list)
+	return readEntries(path)
+}
+
+func (s Store) AddRoutes(list RouteList, names []string) (added, moved []string, err error) {
+	current, err := s.Routes(list)
+	if err != nil {
+		return nil, nil, err
+	}
+	path, header := s.routePath(list)
+	if added, err = addEntries(path, header, current, names); err != nil || len(added) == 0 {
+		return added, nil, err
+	}
+	moved, err = s.RemoveRoutes(list.Other(), added)
+	return added, moved, err
+}
+
+func (s Store) RemoveRoutes(list RouteList, names []string) ([]string, error) {
+	current, err := s.Routes(list)
+	if err != nil {
+		return nil, err
+	}
+	path, header := s.routePath(list)
+	return removeEntries(path, header, current, names)
 }
 
 func (s Store) SetACL(entries []string) ([]netip.Prefix, error) {
