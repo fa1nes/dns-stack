@@ -14,9 +14,11 @@ sudo dns-stack doh-path
 DOH_PATH=/<32 位十六进制>/dns-query
 DOH_URL=https://<服务器IP>/<32 位十六进制>/dns-query
 DOH_PATH_IS_DEFAULT=0
+DOT_URL=tls://<服务器IP>:853
+DOQ_URL=quic://<服务器IP>:853
 ```
 
-也可以在面板「设置 → 接入」里查看并复制。
+也可以在面板「设置 → 接入」里查看并复制，三种协议的地址都在那里。
 
 | 协议 | 地址 |
 |---|---|
