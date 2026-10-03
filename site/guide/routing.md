@@ -47,23 +47,33 @@ sudo dns-stack test www.example.com
 
 ## 人工干预
 
-绝大多数情况不需要。国内权威集合每 15 分钟自动学习，一个域名第一次被查询时可能还没被收录，第二次就会纠正。持续不纠正时再人工补：
+绝大多数情况不需要。国内权威集合每 15 分钟自动学习，一个域名第一次被查询时可能还没被收录，第二次就会纠正。持续不纠正时再人工补，两张名单：
 
-| 文件（`/var/lib/dns-stack/`） | 作用 |
-|---|---|
-| `manual-cn-zones.txt` | 人工补充「应当按国内权威对待」的区域，下一轮流水线生效 |
-| `manual-gfw.txt` | 强制只交给香港 Unbound。用于国内权威返回空应答这类特例 |
-| `manual-exclude.txt` | 把域名从 `manual-gfw.txt` 里摘出来，回到默认路径 |
+| 名单 | 文件（`/var/lib/dns-stack/`） | 效果 | 适用 |
+|---|---|---|---|
+| 国内解析 | `manual-cn-zones.txt` | 它的权威服务器从国内直连查询，并带上客户端子网 | 按来源地区给不同答案、国内能访问却被解析到境外的网站 |
+| 香港解析 | `manual-gfw.txt` | 整条交给香港 Unbound | 国内解析结果被污染或不完整的域名 |
+
+`manual-exclude.txt` 可以把域名从香港名单里摘出来，回到默认路径。
+
+在面板「设置 → 域名规则」里加、删，或者用命令：
 
 ```bash
-echo "example.cn" | sudo tee -a /var/lib/dns-stack/manual-cn-zones.txt
-sudo dns-stack routing-refresh     # 立即重建分流数据，不必等定时器
-
-echo "example.com" | sudo tee -a /var/lib/dns-stack/manual-gfw.txt
-sudo dns-stack reload              # 重载 mosproxy 域名表，Unbound 用 reload_keep_cache，缓存保留
+sudo dns-stack route add cn sb.sb        # 加进国内解析
+sudo dns-stack route add hk example.com  # 加进香港解析
+sudo dns-stack route remove cn sb.sb
+sudo dns-stack route                     # 列出两张名单
 ```
 
+改完立即生效，不用等定时器：国内解析会马上重算一次国内权威路由和 ECS 白名单，香港解析会让 mosproxy 重载名单；之后清掉这个域名在 Unbound 和 mosproxy 里的旧缓存。加 `--no-apply` 只改文件。一个域名只能在一张名单里，加进一张会自动从另一张移出。
+
+在「工具 → 解析测试」或查询详情里，结果下方也有「走国内 / 走香港」按钮，效果相同。
+
 匹配是域匹配：写 `example.com` 就覆盖 `www.example.com` 等全部子域。
+
+::: tip 例子：sb.sb 打开提示「你的地区不能访问」
+它按来源地区给不同的地址：从国内问，拿到国内能用的源站；从香港问，拿到 Cloudflare，而 Cloudflare 对你的出口返回 403。它的权威在境外，默认走隧道，于是拿到的是香港视角的答案。加进国内解析之后，权威改为直连并带上你的子网，拿到的就是国内视角的地址。
+:::
 
 ## 查看现状
 
@@ -71,7 +81,7 @@ sudo dns-stack reload              # 重载 mosproxy 域名表，Unbound 用 rel
 sudo dns-stack routing-status
 ```
 
-面板「设置 → 数据与证书」可以查看并整表导出直连域名、污染 IP 等分流数据集。
+面板「设置 → 缓存与数据」可以查看并整表导出直连域名、污染 IP 等分流数据集。
 
 ## 看门狗
 

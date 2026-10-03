@@ -44,6 +44,7 @@
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `ALERT_WEBHOOK` | 空 | 告警推送地址，见 [健康检查与告警](/ops/health#告警推送) |
+| `BACKUP_INTERVAL_HOURS` | `24` | 自动备份间隔（小时）；`0` 关闭自动备份。例行维护每 6 小时跑一次，所以小于 6 等于 6 |
 | `BACKUP_RETENTION_DAILY` | `3` | 保留几份日备份（1–365） |
 | `BACKUP_RETENTION_WEEKLY` | `2` | 保留几份周备份（1–104） |
 | `BACKUP_ZSTD_LEVEL` | `6` | 压缩级别（1–19） |
@@ -68,8 +69,8 @@
 
 | 设置 | 位置 |
 |---|---|
-| 乐观缓存时长、最小 TTL | 面板「设置 → 数据与证书 → 缓存策略」，写在 Unbound 与 mosproxy 的配置里 |
-| 域名黑名单 | `/var/lib/dns-stack/blocklist.txt` |
+| 乐观缓存时长、最小 TTL | 面板「设置 → 缓存与数据」，写在 Unbound 与 mosproxy 的配置里 |
+| 拦截名单 | `/var/lib/dns-stack/blocklist.txt` |
 | 访问控制 | `/var/lib/dns-stack/acl.txt` |
-| 人工分流规则 | `/var/lib/dns-stack/manual-cn-zones.txt`、`manual-gfw.txt`、`manual-exclude.txt` |
+| 国内解析 / 香港解析名单 | `/var/lib/dns-stack/manual-cn-zones.txt`、`manual-gfw.txt`（面板「设置 → 域名规则」或 `dns-stack route` 维护）；`manual-exclude.txt` 把域名从香港名单里摘出来 |
 | 面板用户名、密码与二次认证 | `/etc/dns-stack/secrets/panel/auth.json`，只能经 `dns-stack panel-password` / 面板修改 |

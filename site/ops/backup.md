@@ -2,11 +2,14 @@
 
 ## 自动备份
 
-例行维护每天做一次备份，写到 `/var/backups/dns-stack/`：
+例行维护默认每天做一次备份，写到 `/var/backups/dns-stack/`：
 
-- 文件名 `daily-<时间>.tar.zst`，周日的那份叫 `weekly-<时间>.tar.zst`；
-- 默认保留 3 份日备份、2 份周备份（`BACKUP_RETENTION_DAILY`、`BACKUP_RETENTION_WEEKLY`）；
+- 间隔由 `BACKUP_INTERVAL_HOURS` 决定（默认 24，`0` 关闭）；
+- 距上一份周备份满 6.5 天的那次自动备份存成 `weekly-<时间>.tar.zst`，其余是 `daily-<时间>.tar.zst`。不再看是不是周日——每 3 天或每周备份一次时，可能永远碰不上周日；
+- 默认保留最近 3 份日备份、2 份周备份（`BACKUP_RETENTION_DAILY`、`BACKUP_RETENTION_WEEKLY`），超出的在每次备份之后删掉；手动备份算日备份；
 - 剩余空间不足 500MB 时不备份。
+
+这三项都能在面板「设置 → 维护 → 备份」里直接改，写回 `config.env`，下一轮例行维护生效。
 
 内容：`config.env`、Unbound 与 mosproxy 的配置、systemd 单元、版本锁；国内节点还包括查询数据库（用 `VACUUM INTO` 做一致性快照）和迁移数据。每个包带清单与 SHA256 校验。**自动备份不含任何密钥**。
 
@@ -32,7 +35,7 @@ sudo dns-stack import <包>               # 导入到本机（会覆盖数据，
 - 先给本机做一份导入前备份，失败可以回滚；
 - `config.env` 是**合并**而不是覆盖：新机器的 `PUBLIC_IPV4` / `PUBLIC_IPV6` 保持不变，原文件另存为 `config.env.imported`。
 
-面板「设置 → 服务与备份 → 备份与迁移」导出的是另一种迁移数据包：按清单白名单导出、**一条密钥都不含**，并且显式列出每个排除项和理由。用 `dns-stack migration-restore --bundle <包>` 恢复，支持 `--dry-run`。
+面板「设置 → 维护 → 迁移」导出的是另一种迁移数据包：按清单白名单导出、**一条密钥都不含**，并且显式列出每个排除项和理由。用 `dns-stack migration-restore --bundle <包>` 恢复，支持 `--dry-run`。
 
 ## 一键迁移到新服务器
 

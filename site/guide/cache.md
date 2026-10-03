@@ -34,10 +34,10 @@
 
 ## 在面板里调整
 
-面板「设置 → 数据与证书 → 缓存策略」里有两个下拉框：
+面板「设置 → 缓存与数据」里有两个下拉框，选完立即生效：
 
-- **乐观缓存**：同时修改 Unbound 的 `serve-expired-ttl`（立即生效）和 mosproxy 的 `optimistic_ttl`（重启 mosproxy 后生效），两者保持成对。上限 30 天。
-- **最小 TTL**：修改 Unbound 的 `cache-min-ttl`，立即生效。
+- **过期后继续使用**（乐观缓存）：同时修改 Unbound 的 `serve-expired-ttl`（立即生效）和 mosproxy 的 `optimistic_ttl`（重启 mosproxy 后生效），两者保持成对。上限 30 天。
+- **最短缓存**（最小 TTL）：修改 Unbound 的 `cache-min-ttl`，立即生效。
 
 两者都会同步写回配置文件，重启后不丢。重新运行 `install.sh` 时，安装脚本会保留这几项调过的值，不会被模板默认值覆盖。
 
@@ -45,13 +45,13 @@
 
 ## 清缓存
 
-同一张卡片里的「清理缓存」可以清掉某个域名及其子域，留空则全部清空：
+同一张卡片里的「清缓存」可以清掉某个域名及其子域，留空则全部清空。Unbound 和 mosproxy 两层一起清：
 
 ```bash
-unbound-control flush_zone example.com   # 等价的命令行
+unbound-control flush_zone example.com                       # Unbound
+curl 'http://127.0.0.1:8888/ctl/flush?domain=example.com'    # mosproxy，不带 domain 清全部
 ```
 
-注意两点：
+mosproxy 的 `/ctl/flush` 从 fork 的 v0.2.1 开始才有；更早的版本只能清掉 Unbound，面板会在结果里注明。
 
-- 它只清 **Unbound** 的缓存。mosproxy 的条目最多再保留 `maximum_ttl`（1 小时），过期后的第一次刷新就会拿到新答案。要立刻清掉 mosproxy 的缓存只能重启它。
-- 被清掉的名字接下来都要重新走完整递归，短时间内延迟会明显升高。全部清空要慎用。
+被清掉的名字接下来都要重新走完整递归，短时间内延迟会明显升高。全部清空要慎用。
