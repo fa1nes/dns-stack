@@ -162,13 +162,7 @@ const EMPTY = (t) => stateHtml(t || '暂无数据');
 const errState = (e) => stateHtml('加载失败：' + e.message, 'error');
 const rowSpan = (n, content) => html`<tr><td colspan="${n}">${content}</td></tr>`;
 
-const ICON_PLAY = raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6.5 4.8 19.5 12 6.5 19.2" fill="currentColor" stroke="none"/></svg>');
-const ICON_PAUSE = raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4.8" width="4" height="14.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="14" y="4.8" width="4" height="14.4" rx="1.2" fill="currentColor" stroke="none"/></svg>');
 const ICON_WARN = raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1.5px;margin-right:3px"><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>');
-
-function setBtnState(btn, icon, label) {
-  if (btn) setHtml(btn, html`${icon}${label}`);
-}
 
 function debounce(fn, ms) {
   let t = 0;
@@ -302,17 +296,51 @@ function showDiagnostics() {
       左右被切 → 看「横向溢出」；整页排版全丢 → 看「样式表」。</div>`);
 }
 
+const THEME_KEY = 'dns-stack-theme';
+const THEME_LABEL = { auto: '跟随系统', light: '浅色', dark: '深色' };
+const THEME_ICON = {
+  auto: raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none"/></svg>'),
+  light: raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>'),
+  dark: raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'),
+};
+const prefersLight = window.matchMedia('(prefers-color-scheme: light)');
+
+function themeMode() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'light' || v === 'dark' ? v : 'auto';
+  } catch (e) { return 'auto'; }
+}
+
+function applyTheme() {
+  const mode = themeMode();
+  const dark = mode === 'dark' || (mode === 'auto' && !prefersLight.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = dark ? '#0a0e15' : '#f6f8fa';
+  $$('.theme-btn').forEach((b) => {
+    setHtml(b, html`${THEME_ICON[mode]}${b.id === 'themeToggle' ? html`<span class="lbl">${THEME_LABEL[mode]}</span>` : raw('')}`);
+    b.title = '主题：' + THEME_LABEL[mode];
+    b.setAttribute('aria-label', b.title);
+  });
+}
+
 function initTheme() {
-  const saved = localStorage.getItem('dns-stack-theme');
-  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-  document.documentElement.dataset.theme = saved || (prefersLight ? 'light' : 'dark');
-  const toggle = () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('dns-stack-theme', next);
+  applyTheme();
+  const next = { auto: 'light', light: 'dark', dark: 'auto' };
+  const cycle = () => {
+    const mode = next[themeMode()];
+    try {
+      if (mode === 'auto') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, mode);
+    } catch (e) {  }
+    document.documentElement.classList.add('theme-switching');
+    applyTheme();
+    setTimeout(() => document.documentElement.classList.remove('theme-switching'), 260);
+    toast('主题：' + THEME_LABEL[mode], '', 'ok');
   };
-  const a = $('#themeToggle'); if (a) a.addEventListener('click', toggle);
-  const b = $('#themeToggleMobile'); if (b) b.addEventListener('click', toggle);
+  $$('.theme-btn').forEach((b) => b.addEventListener('click', cycle));
+  prefersLight.addEventListener('change', () => { if (themeMode() === 'auto') applyTheme(); });
 }
 
 function initSidebarFold() {
@@ -364,14 +392,14 @@ const state = {
   page: 'overview',
   overviewTimer: null,
   sysModules: null, sysHealth: null,
-  liveES: null, liveOn: false, liveLoaded: false,
+  liveES: null, liveOn: false, liveLoaded: false, livePaused: false,
+  syncingSelects: false,
   logES: null, logFollow: false, logLines: [],
   queryPage: 1, queryPages: 1,
   domMetric: 'new',
   domPage: 1, domPages: 1,
   tsData: null,
   upstreamLatency: {},
-  upstreamTags: [],
 };
 
 const PAGE_TITLES = {
@@ -379,18 +407,18 @@ const PAGE_TITLES = {
 };
 
 const PAGE_DESCS = {
-  overview: '解析链路与系统资源的整体健康',
-  queries: '逐条查询记录与域名聚合统计',
-  tools: '解析测试、位置探测与日志',
-  settings: '接入地址、规则、服务与审计',
-  account: '用户名、密码、二次认证与登录会话',
+  overview: '解析是否健康、快不快',
+  queries: '每一条请求和域名统计',
+  tools: '解析测试、CDN 就近、IP 与日志',
+  settings: '接入、域名规则、缓存与维护',
+  account: '登录方式与会话',
 };
 
 const SETTING_TAB_LOADERS = {
-  entry: loadDohInfo,
-  rules: loadRules,
-  access: loadAccess,
-  services: loadOps,
+  entry: loadEntry,
+  rules: loadAccess,
+  data: loadData,
+  ops: loadOps,
   audit: loadAudit,
 };
 const _settingsLoaded = {};
@@ -417,10 +445,13 @@ function switchPage(page) {
   const loaders = {
     overview: startOverview,
     queries: function () {
-      initLivePage();
+      const active = $('#queryTabs button.active');
+      if (!active || active.dataset.qtab === 'live') initLivePage();
+      else loadDomains(state.domPage || 1);
     },
     tools: function () {
-      loadMyLocation();
+      const active = $('#toolTabs button.active');
+      openToolTab(active ? active.dataset.ttab : 'test');
     },
     settings: function () {
       const active = $('#settingTabs button.active');
@@ -430,6 +461,14 @@ function switchPage(page) {
   };
   (loaders[page] || function () {})();
   location.hash = page;
+}
+
+function openToolTab(name) {
+  if (name !== 'logs' && state.logFollow) stopLogFollow();
+  if (name === 'location') loadMyLocation();
+  if (name === 'ip' && !$('#ipResult').firstChild) loadIpLookup();
+  if (name === 'cdn' && !$('#cdnHitResult').firstChild) loadCdnHit('');
+  if (name === 'logs' && !state.logLines.length) loadLogs();
 }
 
 function startOverview() {
@@ -454,50 +493,30 @@ function startOverview() {
 }
 
 function cacheUpstreams(list) {
-  if (!list || !list.length) return;
   const lat = {};
-  const tags = [];
-  list.forEach((u) => {
-    tags.push(u.tag);
+  (list || []).forEach((u) => {
     if (u.avg_latency_ms !== null && u.avg_latency_ms !== undefined) lat[u.tag] = u.avg_latency_ms;
   });
   state.upstreamLatency = lat;
-  state.upstreamTags = tags;
-  syncRespByOptions();
-}
-
-function syncRespByOptions() {
-  const sel = $('#fRespBy');
-  if (!sel) return;
-  const want = ['cache', ...state.upstreamTags];
-  const have = Array.from(sel.options).map((o) => o.value).filter(Boolean);
-  if (want.length === have.length && want.every((v, i) => v === have[i])) return;
-  const cur = sel.value;
-  const opts = [html`<option value="">全部上游</option>`,
-    html`<option value="cache">缓存直接返回</option>`,
-    ...state.upstreamTags.map((t) => html`<option value="${t}">${t}</option>`)];
-  setHtml(sel, html`${opts}`);
-
-  sel.value = (cur && want.indexOf(cur) >= 0) ? cur : '';
 }
 
 async function loadOverview() {
   try {
-
     const d = await apiCached('/api/overview');
     const health = overviewHealth(d);
     const dot = $('#healthDot');
     dot.className = 'dot ' + health.level;
-    dot.title = health.reasons.length ? health.reasons.join('\n') : '解析链路正常';
-    renderSysBar(null, health);
+    dot.title = health.reasons.length ? health.reasons.join('\n') : '解析正常';
+    state.sysHealth = health;
+    renderAlert();
     cacheUpstreams(d.upstreams);
     renderOverviewStats(d);
-    renderOverviewSystem(d.system);
-    renderMosproxy(d.mosproxy);
-    renderUnbound(d.unbound);
+    renderRouteCard(d.routing);
     renderOverviewUpstreams(d.upstreams);
+    renderOverviewSystem(d.system, d.mosproxy);
+    renderResolver(d.mosproxy, d.unbound);
   } catch (e) {
-    setHtml($('#ovStats'), stateHtml('概览数据加载失败：' + e.message, 'error'));
+    setHtml($('#ovStats'), stateHtml('概览加载失败：' + e.message, 'error'));
     $('#healthDot').className = 'dot err';
   }
 }
@@ -505,165 +524,170 @@ async function loadOverview() {
 function overviewHealth(d) {
   const down = [];
   const degraded = [];
-  if (!(d.mosproxy && d.mosproxy.available)) down.push('DNS 入口 mosproxy 无响应');
-  if (!(d.unbound && d.unbound.available)) down.push('本机 Unbound 无响应');
+  if (!(d.mosproxy && d.mosproxy.available)) down.push('mosproxy 没有响应');
+  if (!(d.unbound && d.unbound.available)) down.push('本机 Unbound 没有响应');
   (d.upstreams || []).forEach((u) => {
-    if (!u.online) degraded.push((SERVER_NAMES[u.tag] || u.tag) + ' 离线（健康检查失败）');
+    if (!u.online) degraded.push(upstreamName(u.tag) + ' 离线');
   });
-  return {
-    level: down.length ? 'err' : (degraded.length ? 'warn' : 'ok'),
-    reasons: down.concat(degraded),
-  };
+  const fault = routingFault(d.routing);
+  if (fault) degraded.push(fault[0] + '：' + fault[1]);
+  return { level: down.length ? 'err' : (degraded.length ? 'warn' : 'ok'), reasons: down.concat(degraded) };
 }
+
+function renderAlert() {
+  const box = $('#ovAlert');
+  if (!box) return;
+  const health = state.sysHealth || { level: 'ok', reasons: [] };
+  const mods = state.sysModules;
+  const issues = health.reasons.concat(mods && mods.verdict !== 'ok' ? (mods.attention || []) : []);
+  if (!issues.length) { setHtml(box, raw('')); return; }
+  const bad = health.level === 'err' || (mods && mods.verdict === 'down');
+  setHtml(box, html`<div class="callout ${bad ? 'err' : ''} alert-bar">
+    <ul>${issues.slice(0, 5).map((x) => html`<li>${x}</li>`)}</ul>
+    <button class="sm" data-page-jump="settings" data-tab="ops">查看</button>
+  </div>`);
+}
+
+const UPSTREAM_NAMES = {
+  'local-unbound': ['本机 Unbound', ''],
+  'foreign-hk': ['香港 Unbound', '本机解析失败时接手，也负责「香港解析」名单'],
+  'cn-unbound': ['国内 Unbound', ''],
+};
+const upstreamName = (tag) => (UPSTREAM_NAMES[tag] || [tag])[0];
 
 function renderOverviewUpstreams(list) {
   const body = $('#ovUpstreamBody');
   if (!body) return;
   if (!list || !list.length) { setHtml(body, rowSpan(6, EMPTY('暂无上游数据'))); return; }
   setHtml(body, html`${list.map((u) => {
+    const [name, note] = UPSTREAM_NAMES[u.tag] || [u.tag, ''];
     const ratio = u.success_ratio;
-    const rc = ratio === null || ratio === undefined ? 'var(--text-muted)'
-      : (ratio >= 99 ? 'var(--ok)' : (ratio >= 95 ? 'var(--warn)' : 'var(--err)'));
     return html`<tr>
-      <td class="mono">${u.tag}</td>
+      <td><span class="up-name">${name}</span>${note ? html`<span class="up-note">${note}</span>` : raw('')}</td>
       <td><span class="badge ${u.online ? 'ok' : 'err'}">${u.online ? '在线' : '离线'}</span></td>
-      <td class="mono" style="color:${rc}">${ratio === null || ratio === undefined ? '—' : ratio + '%'}</td>
+      <td class="mono">${fmtNum(u.query_total)}</td>
+      <td class="mono ${u.err_total > 0 ? 'text-warn' : 'dim'}"
+        title="${ratio === null || ratio === undefined ? '' : '成功率 ' + ratio + '%'}">${fmtNum(u.err_total)}</td>
       <td class="mono">${dash(u.avg_latency_ms, ' ms')}</td>
       <td class="mono">${dash(u.p95_latency_ms, ' ms')}</td>
-      <td class="dim">${SERVER_NAMES[u.tag] || '—'}</td>
     </tr>`;
   })}`);
 }
 
-const statCard = (num, label, sub, cls, title, cardCls) => html`<div class="card stat ${cardCls || ''}">
-    <div class="num ${cls || ''}" title="${title || ''}">${num}</div>
+const statCard = (num, label, sub, cls, title) => html`<div class="card stat">
     <div class="label">${label}</div>
+    <div class="num ${cls || ''}" title="${title || ''}">${num}</div>
     ${sub ? html`<div class="sub">${sub}</div>` : raw('')}
   </div>`;
 
 function renderOverviewStats(d) {
   const m = d.mosproxy || {}, ev = d.events || {};
   const hit = m.cache_hit_ratio || 0;
-  const errR = m.error_ratio || 0;
   setHtml($('#ovStats'), html`${[
-    statCard(m.available ? fmtNum(m.query_total) : '—', '累计查询量',
-      m.available ? '开机至今 · 每秒 ' + (m.qps || 0) + ' 次' : '指标不可用', 'accent',
-      m.available ? fmtNumFull(m.query_total) : ''),
-    statCard(m.available ? hit.toFixed(1) + '%' : '—', '缓存命中率',
-      m.available ? '100 次查询省下 ' + Math.round(hit) + ' 次解析' : '',
-      hit >= 50 ? 'ok' : (hit >= 20 ? 'warn' : '')),
-    statCard(m.available ? errR.toFixed(2) + '%' : '—', '上游失败率',
-      m.available ? '失败 ' + fmtNum(m.upstream_err_total) + ' / ' + fmtNum(m.upstream_query_total) : '',
-      errR > 5 ? 'err' : (errR > 1 ? 'warn' : 'ok')),
     eventsCard(ev, m),
+    statCard(m.available ? hit.toFixed(1) + '%' : '—', '缓存命中',
+      m.available ? '累计 ' + fmtNum(m.query_total) + ' 次' : '取不到指标',
+      hit >= 50 ? 'ok' : (hit >= 20 ? 'warn' : ''), m.available ? fmtNumFull(m.query_total) + ' 次' : ''),
     latencyCard(ev.latency, m),
-    routingCard(d.routing),
+    failureCard(ev),
   ]}`);
 }
 
 function eventsCard(ev, m) {
   if (ev.error) return statCard('—', '近 1 小时请求', ev.error, 'warn');
   if (m && m.available && (m.qps || 0) > 0 && (ev.last_5m || 0) === 0) {
-    return statCard('采集已停', '近 1 小时请求',
-      'mosproxy 仍在处理查询(QPS ' + m.qps + ')，但 5 分钟内无事件入库。'
-      + '执行 sudo dns-stack health 查看 collector', 'err');
+    return statCard('采集已停', '近 1 小时请求', '有查询进来，但 5 分钟没记下任何一条', 'err');
   }
   return statCard(fmtNum(ev.last_1h || 0), '近 1 小时请求',
-    '近 5 分钟 ' + fmtNum(ev.last_5m || 0) + ' · 域名 ' + fmtNum(ev.domains || 0), '',
-    fmtNumFull(ev.last_1h || 0));
-}
-
-function routingCard(rt) {
-  if (!rt) return '';
-  if (rt.error) return statCard('—', '递归出口分流', rt.error, 'warn');
-  const direct4 = rt.direct4_count || 0;
-  const zones = rt.cn_zones_count || 0;
-  const authority = rt.cn_authority_count || 0;
-
-  const fault =
-      !rt.chain_active ? ['分流链失效', '正在以直连方式查询境外权威，答案可能已被污染']
-    : !rt.tunnel_active ? ['隧道未就绪', '境外查询会直接失败，不会自动回落']
-    : direct4 < 1000 ? ['大陆集合过小', '仅 ' + fmtNum(direct4) + ' 段，国内查询会被误导进隧道']
-    : (zones > 0 && authority === 0)
-      ? ['权威集合为空', fmtNum(zones) + ' 个直连域名的权威一段也未收录，解析会改走隧道']
-    : null;
-
-  const ex = rt.exits || {};
-  const cnLine = exitLine('大陆直连', ex.direct_geo, ex.direct_ip, '未配置');
-  const hkLine = exitLine('香港隧道', ex.tunnel_geo, ex.tunnel_ip, '未建立');
-
-  if (fault) {
-    return html`<div class="card stat wide err">
-      <div class="num">${fault[0]}</div>
-      <div class="label">递归出口分流</div>
-      <div class="sub">${fault[1]}</div>
-      ${exitPathHtml(cnLine, hkLine)}
-    </div>`;
-  }
-  return html`<div class="card stat wide ok">
-    <div class="num">正常</div>
-    <div class="label">递归出口分流</div>
-    ${exitPathHtml(cnLine, hkLine)}
-  </div>`;
-}
-
-function exitLine(name, geo, ip, emptyText) {
-  const g = geo || {};
-  const label = g.label || (ip ? '归属未知' : emptyText);
-  return { name: name, label: label, ip: ip || '', known: !!g.label };
-}
-
-function exitPathHtml(cn, hk) {
-  const row = (e) => html`<div class="exit-line">
-    <span class="exit-name">${e.name}</span>
-    <span class="exit-geo${e.known ? '' : ' dim'}">${e.label}</span>
-    ${e.ip ? html`<span class="exit-ip">${e.ip}</span>` : ''}
-  </div>`;
-  return html`<div class="exit-path">${row(cn)}${row(hk)}</div>`;
+    '每秒 ' + ((m && m.qps) || 0) + ' 次 · ' + fmtNum(ev.domains || 0) + ' 个域名', '', fmtNumFull(ev.last_1h || 0));
 }
 
 function latencyCard(lat, m) {
   if (lat && lat.samples) {
     const p50 = lat.p50;
-    const sub = '半数快于此 · 最慢 5% 超 ' + dash(lat.p95, ' ms') +
-      (lat.slow_1s ? ' · 卡顿 ' + fmtNum(lat.slow_1s) + ' 次' : '') +
-      (lat.sampled ? ' · 分位数取最近 ' + fmtNum(lat.sampled_from) + ' 条算' : '');
-    return statCard(dash(p50, ' ms'), '响应速度（近 1 小时）', sub,
-      p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')), '', 'wide');
+    const sub = 'P95 ' + dash(lat.p95, ' ms') +
+      (lat.slow_1s ? ' · 超过 1 秒 ' + fmtNum(lat.slow_1s) + ' 次' : '') +
+      (lat.sampled ? ' · 按最近 ' + fmtNum(lat.sampled_from) + ' 条' : '');
+    return statCard(dash(p50, ' ms'), '响应速度', sub,
+      p50 === null || p50 === undefined ? '' : (p50 <= 20 ? 'ok' : (p50 <= 200 ? 'warn' : 'err')),
+      '中位数 · 平均 ' + dash(lat.avg, ' ms'));
   }
   const avg = m && m.avg_latency_ms;
-  return statCard(dash(avg, ' ms'), '上游平均耗时',
-    m && m.latency_samples ? '取样 ' + fmtNum(m.latency_samples) + ' 次（不含缓存命中）' : '暂无样本',
-    avg === null || avg === undefined ? '' : (avg <= 50 ? 'ok' : (avg <= 200 ? 'warn' : 'err')), '', 'wide');
+  return statCard(dash(avg, ' ms'), '响应速度', '近 1 小时没有样本，显示上游平均',
+    avg === null || avg === undefined ? '' : (avg <= 50 ? 'ok' : (avg <= 200 ? 'warn' : 'err')));
 }
 
-function renderOverviewSystem(sys) {
-  if (!sys) { setHtml($('#ovSystem'), EMPTY('系统信息不可用')); return; }
+function failureCard(ev) {
+  const total = ev.total_24h || 0, failed = ev.failed_24h || 0;
+  const rate = total ? failed * 100 / total : 0;
+  const card = statCard(total ? rate.toFixed(2) + '%' : '—', '解析失败',
+    html`24 小时 ${fmtNum(failed)} 次 · <a href="#" data-page-jump="queries" data-tab="domains" data-metric="fail">看是谁</a>`,
+    !total ? '' : (rate < 1 ? 'ok' : (rate < 5 ? 'warn' : 'err')), fmtNumFull(failed) + ' / ' + fmtNumFull(total));
+  return card;
+}
+
+function routingFault(rt) {
+  if (!rt || rt.error) return null;
+  const direct4 = rt.direct4_count || 0;
+  const zones = rt.cn_zones_count || 0;
+  if (rt.chain_active === false) return ['分流失效', '境外查询正直连出去，结果可能被污染'];
+  if (rt.tunnel_active === false) return ['隧道断开', '境外查询会失败'];
+  if (direct4 > 0 && direct4 < 1000) return ['大陆网段太少', '只有 ' + fmtNum(direct4) + ' 段，国内查询会被误送去香港'];
+  if (zones > 0 && (rt.cn_authority_count || 0) === 0) return ['国内权威为空', '直连域名会改走香港'];
+  return null;
+}
+
+function renderRouteCard(rt) {
+  const box = $('#ovRoute');
+  if (!box) return;
+  if (!rt) { setHtml(box, EMPTY()); return; }
+  if (rt.error) { setHtml(box, stateHtml(rt.error, 'error')); return; }
+  const fault = routingFault(rt);
+  const ex = rt.exits || {};
+  const exit = (geo, ip, empty) => {
+    const g = geo || {};
+    return html`<span>${g.label || (ip ? '位置未知' : empty)}</span>${ip ? html`<span class="mono dim ip-tail">${ip}</span>` : raw('')}`;
+  };
+  setHtml(box, html`
+    <div class="route-state ${fault ? 'err' : 'ok'}">
+      <span class="dot ${fault ? 'err' : 'ok'}"></span>
+      <b>${fault ? fault[0] : '分流正常'}</b>
+      ${fault ? html`<span class="dim">${fault[1]}</span>` : raw('')}
+    </div>
+    ${kvList([
+      ['国内出口', exit(ex.direct_geo, ex.direct_ip, '未配置')],
+      ['香港出口', exit(ex.tunnel_geo, ex.tunnel_ip, '未建立')],
+      ['大陆网段', fmtNum(rt.direct4_count || 0) + ' 段'],
+      ['国内权威', fmtNum(rt.cn_authority_count || 0) + ' 段 · ' + fmtNum(rt.cn_zones_count || 0) + ' 个域名'],
+    ])}
+    ${ex.tunnel_note ? html`<div class="hint text-warn">${ex.tunnel_note}</div>` : raw('')}`);
+}
+
+function renderOverviewSystem(sys, m) {
+  if (!sys) { setHtml($('#ovSystem'), EMPTY('取不到系统信息')); return; }
   const bar = (pct, label, detail) => {
     const cls = pct > 90 ? 'err' : (pct > 75 ? 'warn' : '');
-    return html`<div style="margin-bottom:14px">
-      <div class="res-head">
-        <span>${label}</span><span class="mono dim">${detail}</span>
-      </div>
+    return html`<div class="res">
+      <div class="res-head"><span>${label}</span><span class="mono dim">${detail}</span></div>
       <div class="progress"><div class="fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
     </div>`;
   };
   const parts = [];
   if (sys.memory) {
-    parts.push(bar(sys.memory.percent, '内存',
-      fmtBytes(sys.memory.used) + ' / ' + fmtBytes(sys.memory.total) + ' (' + sys.memory.percent + '%)'));
+    parts.push(bar(sys.memory.percent, '内存', fmtBytes(sys.memory.used) + ' / ' + fmtBytes(sys.memory.total)));
   }
   if (sys.disk) {
-    parts.push(bar(sys.disk.percent, '磁盘',
-      fmtBytes(sys.disk.used) + ' / ' + fmtBytes(sys.disk.total) + ' (' + sys.disk.percent + '%)' +
-      ' · 可写 ' + fmtBytes(sys.disk.free)));
+    parts.push(bar(sys.disk.percent, '磁盘', '剩余 ' + fmtBytes(sys.disk.free) + ' / ' + fmtBytes(sys.disk.total)));
   }
   if (sys.load) {
     const pct = Math.min(sys.load['1m'] / (sys.cpu_count || 1) * 100, 100);
-    parts.push(bar(pct, 'CPU 负载（' + sys.cpu_count + ' 核）',
-      sys.load['1m'] + ' / ' + sys.load['5m'] + ' / ' + sys.load['15m']));
+    parts.push(bar(pct, '负载（' + sys.cpu_count + ' 核）',
+      sys.load['1m'] + ' · ' + sys.load['5m'] + ' · ' + sys.load['15m']));
   }
-  parts.push(html`<div class="hint">系统已运行 ${fmtDuration(sys.uptime_seconds)}</div>`);
+  const rejected = m ? (m.rejected_cc || 0) + (m.rejected_qps || 0) : 0;
+  parts.push(html`<div class="hint">已运行 ${fmtDuration(sys.uptime_seconds)}${rejected
+    ? html` · <span class="text-warn">限流拒绝 ${fmtNum(rejected)} 次（并发 ${fmtNum(m.rejected_cc)} / QPS ${fmtNum(m.rejected_qps)}）</span>`
+    : raw('')}</div>`);
   setHtml($('#ovSystem'), html`${parts}`);
 }
 
@@ -678,54 +702,21 @@ const barRows = (items) => {
     <span class="val">${fmtNum(x.count)}</span></div>`)}`;
 };
 
-function renderMosproxy(m) {
-  if (!m || !m.available) {
-    setHtml($('#ovMosproxy'), stateHtml((m && m.message) || 'mosproxy 指标不可用', 'error'));
-    return;
-  }
-
-  const rejected = (m.rejected_cc || 0) + (m.rejected_qps || 0);
-  const rejectVal = (n) => (n > 0 ? html`<span class="badge warn">${fmtNum(n)}</span>` : fmtNum(n));
-  setHtml($('#ovMosproxy'), html`${[
-    kvList([
-      ['累计请求', fmtNum(m.query_total) + (m.query_total_synthetic ? '（缓存 + 上游合计）' : '')],
-      ['当前 QPS', m.qps],
-      ['缓存命中', fmtNum(m.cache_hit_total) + '（' + m.cache_hit_ratio + '%）'],
-      ['缓存条目', fmtNum(m.cache_entries)],
-      ['预取次数', fmtNum(m.prefetch_total)],
-      ['上游请求', fmtNum(m.upstream_query_total)],
-      ['上游失败', fmtNum(m.upstream_err_total)],
-      ['并发超限被拒', rejectVal(m.rejected_cc)],
-      ['QPS 超限被拒', rejectVal(m.rejected_qps)],
-    ]),
-    rejected > 0 ? html`<div class="hint text-warn mt-8">
-      ${ICON_WARN}累计 ${fmtNum(rejected)} 次查询被限流拒绝。
-      需要放宽请改 <code>/etc/dns-stack/mosproxy/config.yaml</code> 里的 <code>limit</code>，
-      或在云安全组限制 443/853 的来源。
-    </div>` : raw(''),
-  ]}`);
-}
-
-function renderUnbound(u) {
-  if (!u || !u.available) {
-    setHtml($('#ovUnbound'), stateHtml((u && u.message) || 'Unbound 统计不可用', 'error'));
-    return;
-  }
-  const note = (text) => raw(
-    '<span class="note-xs"> ' + esc(text) + '</span>');
-  setHtml($('#ovUnbound'), kvList([
-    ['累计查询', fmtNum(u.queries)],
-    ['缓存命中', fmtNum(u.cache_hits) + '（' + u.cache_hit_ratio + '%）'],
-    ['缓存未命中', fmtNum(u.cache_miss)],
-    ['预取次数', fmtNum(u.prefetch)],
-    ['平均递归耗时', html`${u.recursion_time_avg_ms} ms${note('不含缓存命中')}`],
-    ['递归耗时中位数', html`${u.recursion_time_median_ms} ms${note('不含缓存命中')}`],
-    ['当前排队请求', html`${fmtNum(u.requestlist_current)}${note('瞬时值，个位数属正常')}`],
-    ['权威应答带回 ECS', u.subnet_queries
-      ? html`${fmtNum(u.subnet_queries)}${note('其中 ' + fmtNum(u.subnet_cache_hits)
-          + ' 条由 ECS 缓存回答')}`
-      : html`<span class="badge warn">0</span>${note('CDN 只能按解析器位置调度')}`],
-  ]));
+function renderResolver(m, u) {
+  const box = $('#ovResolver');
+  if (!box) return;
+  const left = m && m.available ? kvList([
+    ['缓存条目', fmtNum(m.cache_entries)],
+    ['后台刷新', fmtNum(m.prefetch_total) + ' 次'],
+    ['转发上游', fmtNum(m.upstream_query_total) + ' 次'],
+  ]) : stateHtml((m && m.message) || '取不到 mosproxy 指标', 'error');
+  const right = u && u.available ? kvList([
+    ['Unbound 命中', u.cache_hit_ratio + '%'],
+    ['递归耗时', '中位 ' + u.recursion_time_median_ms + ' ms · 平均 ' + u.recursion_time_avg_ms + ' ms'],
+    ['带子网应答', u.subnet_queries ? fmtNum(u.subnet_queries) + ' 次'
+      : html`<span class="text-warn">0 · CDN 只能按服务器位置选节点</span>`],
+  ]) : stateHtml((u && u.message) || '取不到 Unbound 统计', 'error');
+  setHtml(box, html`<div class="two-col">${left}${right}</div>`);
 }
 
 async function loadTimeseries() {
@@ -784,117 +775,84 @@ function drawChart(d) {
 }
 
 function initLivePage() {
-  if (!state.upstreamTags.length) {
-    apiCached('/api/overview')
-      .then((d) => { cacheUpstreams(d.upstreams); if (state.page === 'queries') loadQueries(state.queryPage); })
-      .catch(() => {  });
-  }
   if (!state.liveLoaded) { state.liveLoaded = true; loadQueries(1); }
+  if (!state.livePaused) startLive();
 }
 
 const ROUTE_CLS = { cn: 'cn', foreign: 'foreign', recursive: 'cn', cache: 'cache', reject: 'reject', failed: 'warn' };
 
-const DIRECTION_BADGE = {
-  direct:   ['cn', '整条递归全程直连'],
-  hongkong: ['foreign', '整条递归经隧道出网'],
-  adaptive: ['cn', '按权威 IP 逐跳分流'],
-};
-
 const cnBadge = (inCn) => raw(
-  inCn === true ? '<span class="badge cn">大陆节点</span>'
+  inCn === true ? '<span class="badge cn">国内节点</span>'
   : inCn === false ? '<span class="badge foreign">境外节点</span>'
-  : '<span class="badge unknown">归属未知</span>');
+  : '<span class="badge unknown">位置未知</span>');
 
-function alignedList(items, cols) {
-  const w = cols.map((c) => Math.max(...items.map((it) => String(c(it) || '').length)));
-  return items.map((it) =>
-    cols.map((c, i) => String(c(it) || '').padEnd(i === cols.length - 1 ? 0 : w[i])).join('  ')
-  ).join('\n');
+const geoText = (g) => html`<span class="geo">${(g && g.label) || '位置未知'}</span>`;
+
+const PATH_TEXT = {
+  direct: ['ok', '权威直连'],
+  tunnel: ['foreign', '权威经香港'],
+  mixed: ['warn', '部分直连'],
+  hongkong: ['foreign', '整条走香港'],
+  unknown: ['unknown', '权威没问到'],
+};
+const RULE_TEXT = { cn: '国内解析', hk: '香港解析' };
+
+function routeActions(rt, domain) {
+  const target = (rt && (rt.rule_domain || rt.zone)) || domain;
+  const buttons = [];
+  if (!rt || rt.rule !== 'cn') buttons.push(html`<button class="sm" data-route-add="cn" data-domain="${target}">走国内</button>`);
+  if (!rt || rt.rule !== 'hk') buttons.push(html`<button class="sm" data-route-add="hk" data-domain="${target}">走香港</button>`);
+  if (rt && rt.rule) buttons.push(html`<button class="sm" data-route-remove="${rt.rule}" data-domain="${rt.rule_domain}">移出名单</button>`);
+  buttons.push(html`<button class="sm" data-flush="${target}">清缓存</button>`);
+  return html`<div class="row route-actions">${buttons}</div>`;
 }
 
-function routingSummary(rt) {
-  if (!rt) return EMPTY('暂无判定信息');
-  const [cls, text] = DIRECTION_BADGE[rt.direction] || ['unknown', rt.direction || '未知'];
-  const parts = [];
-
-  parts.push(html`<div class="drawer-prose">
-    <span class="badge ${cls}">${text}</span>
-    ${rt.manual_rule ? html` <span class="badge accent">人工规则 ${rt.manual_rule}</span>` : ''}
-  </div>`);
-  if (rt.reason) {
-    parts.push(html`<div class="drawer-prose">${rt.reason}</div>`);
-  }
-
+function routingSummary(rt, domain) {
+  if (!rt) return raw('');
+  const [cls, pathText] = PATH_TEXT[rt.path] || PATH_TEXT.unknown;
+  const hops = rt.authorities || [];
+  const direct = hops.filter((a) => a.exit === 'direct').length;
+  const rows = [];
   if (rt.result_ip) {
-    parts.push(html`<div class="drawer-prose" style="margin-top:8px">
-      ★ 最终命中 <span class="mono"><b>${rt.result_ip}</b></span>${geoTag(rt.result_geo)}
-      ${cnBadge(rt.result_in_cn)}</div>`);
-    if (!rt.viewer_subnet) {
-      parts.push(html`<div class="callout">
-        这一行是<b>面板自己查的</b>，没带客户端子网(ECS)，按位置调度的域名会回默认节点——
-        通常就是隧道出口那一侧。<b>它不等于你的设备拿到的地址</b>；
-        要看真实结果，在上面的输入框里填上你的运营商网段再查一次。</div>`);
-    }
+    rows.push(['答案', html`<span class="mono">${rt.result_ip}</span> ${geoText(rt.result_geo)} ${cnBadge(rt.result_in_cn)}`]);
   }
-
-  if (rt.authorities && rt.authorities.length) {
-    const lines = alignedList(rt.authorities, [
-      (a) => a.ns,
-      (a) => a.ip,
-      (a) => (a.in_cn === true ? '大陆' : a.in_cn === false ? '境外' : '未知') + geoTag(a.geo),
-    ]);
-    parts.push(html`<details class="drawer-details">
-      <summary>权威分布（${rt.zone_queried || ''}）</summary>
-      <div class="dd-body"><pre class="block">${lines}</pre></div>
-    </details>`);
-  }
-
-  const detailRows = [];
-  const ex = rt.exits;
-  if (ex && ex.available) {
-    detailRows.push(['出口线路', html`
-      ${exitPathHtml(
-        exitLine('大陆直连', ex.direct_geo, ex.direct_ip, '未配置'),
-        exitLine('香港隧道', ex.tunnel_geo, ex.tunnel_ip, '未建立'))}
-      ${ex.tunnel_note ? html`<div class="note-xs text-warn">${ex.tunnel_note}</div>` : ''}`]);
-  } else if (ex) {
-    detailRows.push(['出口线路', html`<span class="badge warn">取不到：${ex.error || '未知原因'}</span>`]);
-  }
-  if (rt.viewer_subnet) {
-    detailRows.push(['查询身份', html`<span class="mono">${rt.viewer_subnet}</span>　${ecsVerdict(rt.ecs)}`]);
-  } else if (rt.result_ip) {
-    detailRows.push(['查询身份', raw('<span class="badge warn">未带 ECS</span>　'
-      + '<span class="note-xs">内网访问取不到公网子网，以下为默认节点</span>')]);
-  }
-  if (rt.zone) detailRows.push(['直连区域', html`<span class="mono">${rt.zone}</span>`]);
-
+  rows.push(['权威', html`<span class="badge ${cls}">${pathText}</span>${hops.length
+    ? html` <span class="dim">${hops.length} 个，${direct} 个直连</span>` : raw('')}`]);
+  rows.push(['名单', rt.rule
+    ? html`<span class="badge accent">${RULE_TEXT[rt.rule]}</span> <span class="mono dim">${rt.rule_domain}</span>`
+    : html`<span class="dim">未加入</span>`]);
+  if (rt.viewer_subnet) rows.push(['子网', html`<span class="mono">${rt.viewer_subnet}</span> ${ecsVerdict(rt.ecs)}`]);
   const gs = rt.geoip_status;
-  if (gs && !gs.available) {
-    detailRows.push(['归属库', html`<span class="badge warn">不可用${gs.error ? '：' + gs.error : ''}</span>`]);
-  } else if (gs && gs.degraded) {
-    detailRows.push(['归属库', html`<span class="badge accent">降级运行</span>
-      <span class="note-xs">省份标注会减少</span>`]);
-  }
+  if (gs && !gs.available) rows.push(['归属库', html`<span class="badge warn">不可用</span>`]);
 
-  if (detailRows.length) {
-    parts.push(html`<details class="drawer-details">
-      <summary>更多判定细节</summary>
-      <div class="dd-body">${kvList(detailRows)}</div>
-    </details>`);
+  const more = [];
+  if (hops.length) {
+    more.push(html`<details class="drawer-details"><summary>权威 · ${rt.zone || ''}</summary>
+      <div class="dd-body"><table class="mini"><tbody>${hops.map((a) => html`<tr>
+        <td class="mono">${a.ns}</td><td class="mono dim">${a.ip}</td><td>${geoText(a.geo)}</td>
+        <td><span class="badge ${a.exit === 'direct' ? 'cn' : 'foreign'}">${a.exit === 'direct' ? '直连' : '经香港'}</span></td>
+      </tr>`)}</tbody></table></div></details>`);
   }
-
   if (rt.result_ips_geo && rt.result_ips_geo.length > 1) {
-    const lines = alignedList(rt.result_ips_geo, [
-      (r) => r.ip,
-      (r) => (r.in_cn === true ? '大陆' : r.in_cn === false ? '境外' : '未知') + geoTag(r.geo),
-    ]);
-    parts.push(html`<details class="drawer-details">
-      <summary>全部 A 记录归属（${rt.result_ips_geo.length} 条）</summary>
-      <div class="dd-body"><pre class="block">${lines}</pre></div>
-    </details>`);
+    more.push(html`<details class="drawer-details"><summary>全部地址 · ${rt.result_ips_geo.length}</summary>
+      <div class="dd-body"><table class="mini"><tbody>${rt.result_ips_geo.map((r) => html`<tr>
+        <td class="mono">${r.ip}</td><td>${geoText(r.geo)}</td><td>${cnBadge(r.in_cn)}</td>
+      </tr>`)}</tbody></table></div></details>`);
   }
+  return html`${kvList(rows)}
+    ${rt.result_ip && !rt.viewer_subnet ? html`<div class="hint">这次没带你的子网，按地区分配节点的网站，你实际拿到的地址可能不同</div>` : raw('')}
+    ${routeActions(rt, domain)}${more}`;
+}
 
-  return html`${parts}`;
+async function routeChange(btn) {
+  const domain = btn.dataset.domain;
+  const add = btn.dataset.routeAdd;
+  const list = add || btn.dataset.routeRemove;
+  const action = add ? 'route_add' : 'route_remove';
+  const label = (add ? '加入' : '移出') + RULE_TEXT[list];
+  await withBusy(btn, () => accessAction(action, label, { list: list, domains: [domain] }));
+  if (state.page === 'tools' && $('#testDomain').value.trim()) runDnsTest();
+  else if ($('#drawer').classList.contains('open')) showDomain($('#drawerTitle').textContent);
 }
 
 let _myLocBusy = false;
@@ -941,8 +899,8 @@ function myLocationHtml(d) {
     const sameRegion = !!(ng.region && g.region && ng.region === g.region);
     const tags = [];
     if (ng.is_cloud) {
-      tags.push(sameRegion ? '<span class="pill ok">本地云节点</span>'
-        : '<span class="pill accent">云节点</span>');
+      tags.push(sameRegion ? '<span class="pill ok">本地云</span>'
+        : '<span class="pill accent">云</span>');
     } else if (sameCarrier && sameRegion) tags.push('<span class="pill ok">本地节点</span>');
     else if (sameCarrier) tags.push('<span class="pill ok">同运营商</span>');
     else if (normCarrier(ng.carrier) && myCarrier) tags.push('<span class="pill warn">跨运营商</span>');
@@ -950,14 +908,14 @@ function myLocationHtml(d) {
       tags.push('<span class="pill warn">境外</span>');
     }
     if (n.ecs && !n.ecs.honored) {
-      tags.push('<span class="pill">未按位置调度</span>');
+      tags.push('<span class="pill">不分地区</span>');
     }
     return html`<div class="probe" title="${geoWhy(ng)}${ecsWhy(n.ecs)}">
       <div class="probe-h">
         <span class="probe-n">${n.name}</span>
         ${raw(tags.join(''))}
       </div>
-      <div class="probe-g">${ng.label || (n.ip ? '归属未知' : n.error || '解析失败')}</div>
+      <div class="probe-g">${ng.label || (n.ip ? '位置未知' : n.error || '解析失败')}</div>
       <div class="probe-ip mono">${n.ip || ''}</div>
     </div>`;
   });
@@ -967,7 +925,7 @@ function myLocationHtml(d) {
       ${field('你的 IP', html`<span class="mono">${d.client_ip}</span>`)}
       ${field('位置', where)}
       ${field('运营商', carrier)}
-      ${field('发给权威的子网', html`<span class="mono">${d.ecs || '—'}</span>`)}
+      ${field('代你询问的子网', html`<span class="mono">${d.ecs || '—'}</span>`)}
     </div>
     <div class="loc-nodes">${nodes.length ? nodes : EMPTY('暂无探测结果')}</div>
   </div>`;
@@ -976,7 +934,7 @@ function myLocationHtml(d) {
 function geoWhy(g) {
   if (!g) return '';
   if (!g.available) return '归属库不可用' + (g.error ? '：' + g.error : '');
-  if (!g.label) return '库可用，但未收录该 IP';
+  if (!g.label) return '归属库里没有这个 IP';
   const parts = [];
   if (g.region) parts.push('地区 ' + g.region);
   if (g.carrier) parts.push('运营商 ' + g.carrier);
@@ -988,10 +946,8 @@ function geoWhy(g) {
 }
 
 function ecsWhy(e) {
-  if (!e) return '\nECS 未回显：无法确认权威是否按位置调度';
-  return e.honored
-    ? `\nECS ${e.subnet} → 权威按 /${e.scope} 调度`
-    : `\nECS ${e.subnet} → 权威回 scope=0，此答案对所有子网通用`;
+  if (!e) return '\n看不出是否按地区作答';
+  return e.honored ? `\n按 ${e.subnet} 的地区作答（/${e.scope}）` : '\n不分地区，所有人拿到同一个地址';
 }
 
 const IP_SOURCE_KIND = { qqwry: 'cn', maxmind: 'global', dbip: 'global', ipsb: 'online' };
@@ -1014,15 +970,15 @@ function ipRoutingRow(routing) {
     : v === false ? raw('<span class="badge foreign">' + no + '</span>')
     : raw('<span class="badge unknown">未知</span>');
   return [
-    ['大陆网段 direct4', tri(routing.direct4, '在集合内', '不在')],
-    ['墙内权威段', tri(routing.cn_authority, '是', '否')],
+    ['大陆网段', tri(routing.direct4, '在内', '不在')],
+    ['国内权威', tri(routing.cn_authority, '是', '否')],
     ['共享 anycast', routing.shared_anycast === true
-      ? raw('<span class="badge warn">是，已排除出直连</span>')
+      ? raw('<span class="badge warn">是，不直连</span>')
       : raw('<span class="badge ok">否</span>')],
-    ['已知污染地址', routing.polluted === true
+    ['污染地址', routing.polluted === true
       ? raw('<span class="badge err">是</span>')
       : raw('<span class="badge ok">否</span>')],
-    ['全局可路由', tri(routing.global, '是', '保留/私有')],
+    ['公网地址', tri(routing.global, '是', '保留/私有')],
   ];
 }
 
@@ -1046,11 +1002,11 @@ function ipFreshnessHtml(freshness) {
   });
   if (!rows.length) return '';
   return html`<div class="card">
-    <h3>归属库时效</h3>
+    <h3>归属库</h3>
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th>数据库</th><th>构建时间</th><th>距今</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
-    <div class="hint">库停更不会让解析失败，只会让归属悄悄变旧——所以这里必须能看见。</div>
+
   </div>`;
 }
 
@@ -1091,22 +1047,19 @@ function renderIpLookup(d) {
     </div>
 
     <div class="card">
-      <h3>多源对照</h3>
+      <h3>归属</h3>
       <div class="table-wrap"><table class="tbl ip-matrix">
         <thead><tr><th class="rowhead"></th>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>
-      ${(d.divergences || []).length
-        ? html`<div class="hint text-warn">只有 ASN 与国家码参与比对，省市与组织名各源写法不同，仅并列展示。</div>`
-        : html`<div class="hint">各源在 ASN 与国家码上完全一致。</div>`}
+      ${(d.divergences || []).length ? html`<div class="hint text-warn">标「分歧」的行各库说法不一</div>` : raw('')}
       ${unavailable.length
-        ? html`<div class="hint">未参与本次查询：${unavailable.map((s) => s.label + (s.error ? '（' + s.error + '）' : '')).join('、')}</div>`
+        ? html`<div class="hint">没查：${unavailable.map((s) => s.label + (s.error ? '（' + s.error + '）' : '')).join('、')}</div>`
         : ''}
     </div>
 
     <div class="card">
-      <h3>本机分流事实</h3>
+      <h3>在本机分流里</h3>
       ${kvList(ipRoutingRow(d.routing))}
-      <div class="hint">这一组来自本机的规则集合，与上面的归属库无关：递归方向只看 direct4 与 cn_authority。</div>
     </div>
 
     ${ipFreshnessHtml(d.freshness)}
@@ -1128,20 +1081,10 @@ async function loadIpLookup() {
   }
 }
 
-function geoTag(g) {
-  return g && g.available && g.label ? '  [' + g.label + ']' : '';
-}
-
 function ecsVerdict(e) {
-  if (!e) {
-    return raw('<span class="badge warn">应答未回显 ECS</span>　'
-      + '<span class="note-xs">权威没带 CLIENT-SUBNET，无法确认是否按位置调度</span>');
-  }
-  if (e.honored) {
-    return html`<span class="badge ok">已按位置调度 /${e.scope}</span>`;
-  }
-  return raw('<span class="badge warn">权威未按位置调度</span>　'
-    + '<span class="note-xs">应答 scope=0，对所有子网通用</span>');
+  if (!e) return html`<span class="badge unknown" title="应答里没有子网信息，可能来自缓存">看不出是否按地区</span>`;
+  if (e.honored) return html`<span class="badge ok">按地区作答 /${e.scope}</span>`;
+  return html`<span class="badge warn">不分地区</span>`;
 }
 
 const routeBadge = (r) =>
@@ -1152,29 +1095,26 @@ const rcodeBadge = (r) =>
 function latencyCell(r) {
   const ms = r.elapsed_ms;
   if (ms !== null && ms !== undefined) {
-    const v = ms >= 10 ? ms.toFixed(0) : ms.toFixed(2);
-    const color = ms <= 50 ? 'var(--ok)' : (ms <= 800 ? 'var(--warn)' : 'var(--err)');
-    return html`<span style="color:${color}" title="本次查询实际耗时">${v} ms</span>`;
+    const v = ms >= 10 ? ms.toFixed(0) : ms.toFixed(1);
+    const cls = ms <= 50 ? 'ok' : (ms <= 800 ? 'warn' : 'err');
+    return html`<span class="lat ${cls}">${v} ms</span>`;
   }
-  if (r.cache_hit) return html`<span style="color:var(--text-dim)" title="缓存命中，未经上游">—</span>`;
-  const avg = state.upstreamLatency[r.resp_by];
-  if (avg === undefined) return html`<span style="color:var(--text-dim)">—</span>`;
-  return html`<span style="color:var(--text-dim)"
-    title="当前 mosproxy 未提供单次耗时，这里退回显示上游 ${r.resp_by} 的平均延迟">~${avg} ms</span>`;
+  const avg = r.cache_hit ? undefined : state.upstreamLatency[r.resp_by];
+  if (avg === undefined) return html`<span class="dim">—</span>`;
+  return html`<span class="dim" title="这条没有单次耗时，显示的是上游平均">~${avg} ms</span>`;
 }
 
-const queryRow = (r, isNew) => html`<tr class="clickable" data-domain="${r.domain}">
+const ICON_DEL = raw('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/></svg>');
+
+const queryRow = (r) => html`<tr class="clickable" data-domain="${r.domain}">
     <td class="mono dim">${fmtClock(r.ts)}</td>
     <td class="mono wrap">${r.domain}</td>
     <td class="mono">${r.qtype_name}</td>
     <td>${rcodeBadge(r)}</td>
     <td>${routeBadge(r)}</td>
-    <td class="mono dim">${r.resp_by || '—'}</td>
     <td class="mono">${latencyCell(r)}</td>
-    <td class="cache-cell">${r.cache_hit ? raw('<span class="yes">是</span>')
-                                          : raw('<span class="no">否</span>')}</td>
     <td>${r.id === null || r.id === undefined ? ''
-        : html`<button class="row-del" data-qid="${r.id}" title="删除这条记录">删除</button>`}</td>
+        : html`<button class="row-del" data-qid="${r.id}" title="删除这条记录" aria-label="删除">${ICON_DEL}</button>`}</td>
   </tr>`;
 
 async function deleteRecord(op, args, opts) {
@@ -1191,7 +1131,7 @@ async function deleteRecord(op, args, opts) {
 
 function deleteQuery(id, btn) {
   return deleteRecord('delete_query', { id: Number(id) }, {
-    confirm: '删除这条查询记录？', btn, done: '已删除该条记录',
+    confirm: '删除这条请求记录？', btn, done: '已删除',
     after: () => { invalidateCache(); loadQueries(state.queryPage); },
   });
 }
@@ -1261,7 +1201,7 @@ async function runMigrationImport(dryRun) {
         <ul>${skipped.slice(0, 8).map((it) => html`<li><code>${it.path}</code> — ${it.reason}</li>`)}</ul>` : ''}
     </div>`);
     toast(rep.dry_run ? '试算完成' : '导入完成', parts.join('，') || '无变化', 'ok');
-    if (!rep.dry_run) { invalidateCache(); loadOverview(); loadRules(); }
+    if (!rep.dry_run) { invalidateCache(); loadOverview(); loadData(); }
   } catch (e) {
     setHtml(out, stateHtml(e.message, 'error'));
     toast('导入失败', e.message, 'err');
@@ -1280,14 +1220,13 @@ function bindMigrationImport() {
 async function loadQueries(page) {
   page = page || 1;
   const body = $('#liveBody');
-  setHtml(body, rowSpan(9, LOADING));
+  setHtml(body, rowSpan(7, LOADING));
   const params = new URLSearchParams({ page: String(page), size: '50' });
   const filters = {
     domain: $('#fDomain').value.trim(),
     qtype: $('#fQtype').value,
     route: $('#fRoute').value,
     rcode: $('#fRcode').value,
-    resp_by: $('#fRespBy').value,
   };
   Object.keys(filters).forEach((k) => { if (filters[k]) params.set(k, filters[k]); });
   const sinceSec = Number($('#fSince').value || 0);
@@ -1300,30 +1239,32 @@ async function loadQueries(page) {
     state.queryPage = d.page;
     state.queryPages = d.pages || 1;
     if (!d.items.length) {
-      setHtml(body, rowSpan(9, EMPTY('没有符合条件的请求记录')));
+      setHtml(body, rowSpan(7, EMPTY('没有符合条件的请求')));
     } else {
-      setHtml(body, html`${d.items.map((r) => queryRow(r, false))}`);
+      setHtml(body, html`${d.items.map((r) => queryRow(r))}`);
     }
-    $('#liveCount').textContent = d.total_capped
-      ? '超过 ' + fmtNum(d.total) + ' 条记录（已按上限计数）'
-      : '共 ' + fmtNum(d.total) + ' 条记录';
+    $('#liveCount').textContent = (d.total_capped ? '超过 ' : '共 ') + fmtNum(d.total) + ' 条';
     $('#pageInfo').textContent = d.page + ' / ' + (d.pages || 1) + (d.total_capped ? '+' : '');
     $('#btnPrev').disabled = d.page <= 1;
     $('#btnNext').disabled = d.page >= (d.pages || 1);
   } catch (e) {
     if (!fresh()) return;
-    setHtml(body, rowSpan(9, errState(e)));
+    setHtml(body, rowSpan(7, errState(e)));
     $('#liveCount').textContent = '—';
   }
 }
 
+function setLiveStatus(dot, text) {
+  $('#liveDot').className = 'dot ' + dot;
+  $('#liveStatus').textContent = text;
+}
+
 function startLive() {
   if (state.liveES) return;
-  if (state.queryPage !== 1) loadQueries(1);
   state.liveOn = true;
-  setBtnState($('#btnLiveToggle'), ICON_PAUSE, '暂停实时');
-  $('#liveDot').className = 'dot live';
-  $('#liveStatus').textContent = '实时流已连接';
+  state.livePaused = false;
+  $('#btnLiveToggle').textContent = '暂停';
+  setLiveStatus('idle', '连接中…');
 
   const es = new EventSource(
     (window.dnsStackApiUrl || ((p) => p))('/api/queries/stream'),
@@ -1332,42 +1273,35 @@ function startLive() {
   es.onmessage = (ev) => {
     try {
       const d = JSON.parse(ev.data);
-      if (!d.events || !d.events.length) return;
+      if (!d.events || !d.events.length || state.queryPage !== 1) return;
       const f = $('#fDomain').value.trim().toLowerCase();
       const rt = $('#fRoute').value;
       const qt = $('#fQtype').value;
       const rc = $('#fRcode').value;
-      const rb = $('#fRespBy').value;
       const rows = d.events.filter((r) =>
         (!f || (r.domain || '').toLowerCase().indexOf(f) >= 0) &&
         (!rt || r.route === rt) &&
         (!qt || r.qtype_name === qt) &&
-        (!rc || r.rcode_name === rc) &&
-        (!rb || r.resp_by === rb));
+        (!rc || r.rcode_name === rc));
       if (!rows.length) return;
       const body = $('#liveBody');
       const placeholder = body.querySelector('td[colspan]');
       if (placeholder) setHtml(body, raw(''));
-      prependHtml(body, html`${rows.map((r) => queryRow(r, true))}`);
+      prependHtml(body, html`${rows.map((r) => queryRow(r))}`);
+      $$('tr', body).slice(0, rows.length).forEach((tr) => tr.classList.add('fresh'));
       trimChildren(body, 300);
     } catch (e) {  }
   };
-  es.onerror = () => {
-    $('#liveDot').className = 'dot warn';
-    $('#liveStatus').textContent = '连接中断，正在自动重连…';
-  };
-  es.onopen = () => {
-    $('#liveDot').className = 'dot live';
-    $('#liveStatus').textContent = '实时流已连接';
-  };
+  es.onerror = () => setLiveStatus('warn', '断开了，正在重连…');
+  es.onopen = () => setLiveStatus('live', '实时');
 }
 
-function stopLive() {
+function stopLive(paused) {
   if (state.liveES) { state.liveES.close(); state.liveES = null; }
   state.liveOn = false;
-  setBtnState($('#btnLiveToggle'), ICON_PLAY, '开启实时');
-  $('#liveDot').className = 'dot idle';
-  $('#liveStatus').textContent = '实时流已暂停';
+  if (paused) state.livePaused = true;
+  $('#btnLiveToggle').textContent = '继续';
+  setLiveStatus('idle', paused ? '已暂停' : '未连接');
 }
 
 let _drawerReturnFocus = null;
@@ -1394,11 +1328,23 @@ function closeDrawer() {
   _drawerReturnFocus = null;
 }
 
-const SERVER_NAMES = {
-  'local-unbound': '本机 Unbound 递归',
-  'foreign-hk': '香港 Unbound 递归',
-  'cn-unbound': '国内 Unbound 递归（专用接口）',
-};
+function recordList(records, ipsGeo) {
+  const geo = {};
+  (ipsGeo || []).forEach((x) => { geo[x.ip] = x; });
+  if (!records || !records.length) return EMPTY('没有记录');
+  return html`<table class="mini records"><tbody>${records.map((rec) => {
+    const g = geo[rec.value];
+    return html`<tr>
+      <td class="mono rtype">${rec.type}</td>
+      <td class="mono wrap">${rec.value}</td>
+      <td>${g ? html`${geoText(g.geo)} ${cnBadge(g.in_cn)}` : raw('')}</td>
+      <td class="mono dim ttl">${rec.ttl === null || rec.ttl === undefined ? '' : rec.ttl + 's'}</td>
+    </tr>`;
+  })}</tbody></table>`;
+}
+
+const SERVER_LABEL = { 'local-unbound': '本机', 'foreign-hk': '香港' };
+const RESP_NAME = { cache: '缓存', 'local-unbound': '本机', 'foreign-hk': '香港', '(无)': '没有回答' };
 
 async function showDomain(domain) {
   openDrawer(domain);
@@ -1406,70 +1352,58 @@ async function showDomain(domain) {
   try {
     const d = await api('/api/domain/' + encodeURIComponent(domain) + '?live=true');
     if (!fresh()) return;
-    const parts = [];
+    const parts = [routingSummary(d.routing, domain)];
 
-    parts.push(html`<h4>递归出口</h4>`);
-    parts.push(routingSummary(d.routing));
+    if (d.live) {
+      parts.push(html`<h4>现在解析</h4><div class="grid c2 tight">${Object.keys(d.live).map((server) => {
+        const types = d.live[server];
+        const records = [];
+        Object.keys(types).forEach((qt) => { (types[qt].records || []).forEach((r) => records.push(r)); });
+        const seen = {};
+        const unique = records.filter((r) => {
+          const k = r.type + r.value;
+          if (seen[k]) return false;
+          seen[k] = true;
+          return true;
+        });
+        const errors = Object.keys(types).map((k) => types[k].error).filter(Boolean);
+        const empty = errors.length
+          ? html`<span class="badge err" title="${errors[0]}">出错</span>`
+          : html`<span class="badge unknown">没有记录</span>`;
+        return html`<div class="sub-card"><div class="sub-head">${SERVER_LABEL[server] || server}
+          ${unique.length ? raw('') : empty}</div>
+          ${unique.length ? recordList(unique) : raw('')}</div>`;
+      })}</div>`);
+    }
 
     if (d.aggregate) {
       const a = d.aggregate;
-      parts.push(html`<h4>累计统计</h4>`);
+      parts.push(html`<h4>统计</h4>`);
       parts.push(kvList([
-        ['请求次数', fmtNum(a.occurrence_count)],
-        ['失败次数', fmtNum(a.fail_count || 0)],
-        ['最近状态', a.last_rcode_name || '—'],
-        ['最近路由', a.last_route_name || '—'],
-        ['首次出现', fmtTime(a.first_seen_at) + '（' + ago(a.first_seen_at) + '）'],
-        ['最后请求', fmtTime(a.last_seen_at) + '（' + ago(a.last_seen_at) + '）'],
+        ['请求', fmtNum(a.occurrence_count) + ' 次' + (a.fail_count ? '，失败 ' + fmtNum(a.fail_count) + ' 次' : '')],
+        ['最近', (a.last_rcode_name || '—') + ' · ' + (a.last_route_name || '—')],
+        ['首次', fmtTime(a.first_seen_at) + '（' + ago(a.first_seen_at) + '）'],
+        ['最后', fmtTime(a.last_seen_at) + '（' + ago(a.last_seen_at) + '）'],
       ]));
     }
-
-    if (d.by_upstream && d.by_upstream.length) {
-      parts.push(html`<h4>响应来源分布</h4>`);
-      parts.push(barRows(d.by_upstream.map((x) => ({ name: x.resp_by, count: x.count }))));
+    if (d.by_upstream && d.by_upstream.length > 1) {
+      parts.push(html`<h4>谁回答的</h4>`);
+      parts.push(barRows(d.by_upstream.map((x) => ({ name: RESP_NAME[x.resp_by] || x.resp_by, count: x.count }))));
     }
-
-    if (d.live) {
-      parts.push(html`<h4>实时解析结果</h4>`);
-      Object.keys(d.live).forEach((server) => {
-        const types = d.live[server];
-        const blocks = [];
-        Object.keys(types).forEach((qtype) => {
-          const r = types[qtype];
-          if (r.error || !r.records || !r.records.length) return;
-          blocks.push(html`<pre class="block">${recordLines(r.records)}</pre>`);
-          if (r.query_time_ms !== null && r.query_time_ms !== undefined) {
-            blocks.push(html`<div class="hint">耗时 ${r.query_time_ms} ms</div>`);
-          }
-        });
-        if (!blocks.length) {
-          const statuses = Object.keys(types).map((k) => types[k].status).filter(Boolean).join(' / ');
-          blocks.push(html`<div class="hint">无应答记录（状态：${statuses || '查询失败'}）</div>`);
-        }
-        parts.push(html`<div style="margin-bottom:12px">
-          <div class="probe-head">${SERVER_NAMES[server] || server}</div>
-          ${blocks}</div>`);
-      });
-    }
-
     if (d.recent && d.recent.length) {
-      parts.push(html`<h4>最近 ${d.recent.length} 次请求</h4>`);
-      parts.push(html`<div class="table-wrap"><table>
-        <thead><tr><th>时间</th><th>类型</th><th>状态</th><th>路由</th><th>来源</th></tr></thead>
-        <tbody>${d.recent.map((r) => html`<tr>
-          <td class="mono">${fmtTime(r.ts)}</td>
+      parts.push(html`<h4>最近 ${d.recent.length} 次</h4>`);
+      parts.push(html`<table class="mini"><tbody>${d.recent.map((r) => html`<tr>
+          <td class="mono dim">${fmtTime(r.ts)}</td>
           <td class="mono">${r.qtype_name}</td>
           <td>${rcodeBadge(r)}</td>
-          <td>${routeBadge(r)}</td>
-          <td class="mono">${r.resp_by || '—'}</td></tr>`)}</tbody></table></div>`);
+          <td>${routeBadge(r)}</td></tr>`)}</tbody></table>`);
     }
-
     parts.push(html`<div class="drawer-foot">
-      <button class="danger sm" id="btnDelDomain">删除该域名的统计记录</button>
-      <span class="hint">只清除面板里的统计，不影响实际解析。</span>
+      <button class="danger sm" id="btnDelDomain">删除统计</button>
+      <span class="hint m0">只删面板里的记录，不影响解析</span>
     </div>`);
 
-    setHtml($('#drawerBody'), parts.length ? html`${parts}` : EMPTY('没有该域名的记录'));
+    setHtml($('#drawerBody'), html`${parts}`);
     const delBtn = $('#btnDelDomain');
     if (delBtn) delBtn.addEventListener('click', () => deleteDomain(domain));
   } catch (e) {
@@ -1480,7 +1414,7 @@ async function showDomain(domain) {
 
 function deleteDomain(domain) {
   return deleteRecord('delete_domain', { domain: domain }, {
-    confirm: '删除「' + domain + '」的全部统计记录？\n\n只影响面板统计，不影响这个域名的实际解析。',
+    confirm: '删除「' + domain + '」的全部统计？\n\n只删面板里的记录，不影响解析。',
     done: '已删除', detail: domain,
     after: () => {
       closeDrawer();
@@ -1490,7 +1424,7 @@ function deleteDomain(domain) {
   });
 }
 
-const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fRespBy', '#fSince'];
+const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fSince'];
 
 function setFilterMore(open) {
   const box = $('#filterMore');
@@ -1515,11 +1449,11 @@ function syncFilterCount(settle) {
 }
 
 const DOM_COUNT_LABEL = {
-  new: (n) => '共 ' + n + ' 个域名',
-  recent: (n) => '共 ' + n + ' 个域名',
-  count: (n) => '共 ' + n + ' 个域名',
-  fail: (n) => n + ' 个域名解析失败过',
-  slow: (n) => n + ' 个域名有耗时样本',
+  new: (n) => n + ' 个域名',
+  recent: (n) => n + ' 个域名',
+  count: (n) => n + ' 个域名',
+  fail: (n) => n + ' 个域名失败过',
+  slow: (n) => n + ' 个域名有耗时记录',
 };
 
 async function loadDomains(page) {
@@ -1571,7 +1505,7 @@ async function loadDomains(page) {
       return html`<tr class="clickable" data-domain="${x.domain}">
       <td class="mono wrap">${x.domain}</td>
       <td class="node-cell" title="${why}">${n.ip
-        ? html`<span class="node-geo">${label || '归属未知'}</span><span class="node-ip mono">${n.ip}</span>`
+        ? html`<span class="node-geo">${label || '位置未知'}</span><span class="node-ip mono">${n.ip}</span>`
         : raw('<span class="node-geo dim">—</span>')}</td>
       <td class="mono">${fmtNum(x.occurrence_count)}</td>
       <td class="mono" style="color:${x.fail_count > 0 ? 'var(--err)' : 'var(--text-dim)'}">${fmtNum(x.fail_count)}</td>
@@ -1592,11 +1526,11 @@ function renderDomainHead(metric) {
   if (body) body.dataset.metric = metric;
   if (!head) return;
   setHtml(head, metric === 'slow'
-    ? html`<th>域名</th><th style="width:90px">平均耗时</th><th style="width:90px">最慢一次</th>
-           <th style="width:70px">样本数</th><th colspan="3">最后请求</th>`
-    : html`<th>域名</th><th style="width:160px">解析节点</th>
-           <th style="width:80px">请求次数</th><th style="width:70px">失败次数</th>
-           <th style="width:88px">最近状态</th><th style="width:130px">最后请求</th>`);
+    ? html`<th>域名</th><th style="width:90px">平均</th><th style="width:90px">最慢</th>
+           <th style="width:70px">次数</th><th colspan="3">最后请求</th>`
+    : html`<th>域名</th><th style="width:170px">解析到</th>
+           <th style="width:80px">请求</th><th style="width:70px">失败</th>
+           <th style="width:96px">最近结果</th><th style="width:130px">最后请求</th>`);
 }
 
 async function loadDomainSummary() {
@@ -1608,14 +1542,10 @@ async function loadDomainSummary() {
     (d.by_exit || []).forEach((x) => { byExit[x.path] = x.count; });
     const exitCount = (k) => byExit[k] || 0;
     setHtml($('#domSummary'), html`${[
-      statCard(fmtNum(exitCount('cache')), '缓存命中', '近 24 小时 · 没有查询出网', 'ok'),
-      statCard(fmtNum(exitCount('recursive')), '本机递归',
-        '近 24 小时 · 香港递归 ' + fmtNum(exitCount('hongkong')) + ' 次',
-        exitCount('hongkong') > 0 ? 'accent' : 'ok'),
-      statCard(fmtNum(d.new_24h || 0), '近 24 小时新增',
-        '近 1 小时活跃 ' + fmtNum(d.active_1h || 0)),
-      statCard(fmtNum(d.failing || 0), '近 24 小时失败',
-        '历史累计 ' + fmtNum(d.failed_ever || 0) + ' 个曾失败过',
+      statCard(fmtNum(exitCount('cache')), '缓存回答', '24 小时', 'ok'),
+      statCard(fmtNum(exitCount('recursive')), '本机递归', '24 小时 · 香港 ' + fmtNum(exitCount('hongkong')) + ' 次', ''),
+      statCard(fmtNum(d.new_24h || 0), '新域名', '24 小时 · 1 小时内活跃 ' + fmtNum(d.active_1h || 0)),
+      statCard(fmtNum(d.failing || 0), '失败的域名', '24 小时 · 累计 ' + fmtNum(d.failed_ever || 0) + ' 个',
         d.failing > 0 ? 'warn' : 'ok'),
     ]}`);
 
@@ -1632,47 +1562,49 @@ async function loadDomainSummary() {
 
 
 
-async function loadRules() {
+function loadEntry() {
+  loadDohInfo();
+  loadCert();
+}
+
+function loadData() {
+  loadCacheInfo();
   loadCollected();
+  loadRulesInfo();
+}
+
+async function loadCert() {
+  const box = $('#certInfo');
+  try {
+    const c = await apiCached('/api/cert');
+    if (!c.exists) { setHtml(box, html`${stateTag('err', '找不到')}${c.error || ''}`); return; }
+    const days = c.days_left;
+    const cls = days === null || days === undefined ? 'idle' : (days <= 2 ? 'err' : (days <= 4 ? 'warn' : 'ok'));
+    setHtml(box, html`${stateTag(cls, days === undefined ? '有效期未知' : '还剩 ' + days + ' 天')}${
+      c.expires_at ? fmtTime(c.expires_at).slice(0, 5) + ' 到期 · ' : ''}<span class="mono">${c.san || '—'}</span>
+      <span class="dim" title="${c.issuer || ''}"> · 每 6 小时自动续签</span>`);
+  } catch (e) {
+    setHtml(box, errState(e));
+  }
+}
+
+async function loadRulesInfo() {
   try {
     const d = await apiCached('/api/rules');
     setHtml($('#rulesInfo'), kvList([
-      ['provider', html`<b>${fmtNum(d.cdn_providers)}</b> 家`],
-      ['前缀', fmtNum(d.cdn_prefixes) + ' 条'],
-      ['其中大陆段', fmtNum(d.cdn_mainland) + ' 条'],
-      ['规则集版本', d.cdn_generated_at ? ago(d.cdn_generated_at) : '—'],
-      ['污染 IP 网段', fmtNum(d.polluted_cidr_count) + ' 段'],
-      ['人工 GFW 清单', fmtNum(d.manual_gfw_count) + ' 条'],
+      ['CDN', fmtNum(d.cdn_providers) + ' 家 · ' + fmtNum(d.cdn_prefixes) + ' 段，国内 ' + fmtNum(d.cdn_mainland) + ' 段'],
+      ['更新于', d.cdn_generated_at ? ago(d.cdn_generated_at) : '—'],
+      ['污染 IP', fmtNum(d.polluted_cidr_count) + ' 段'],
+      ['香港解析', fmtNum(d.manual_gfw_count) + ' 个域名'],
     ]));
   } catch (e) {
     setHtml($('#rulesInfo'), errState(e));
-  }
-
-  loadCacheInfo();
-
-  try {
-    const c = await apiCached('/api/cert');
-    if (!c.exists) { setHtml($('#certInfo'), EMPTY('未找到证书文件')); return; }
-    const days = c.days_left;
-    const cls = (days === null || days === undefined) ? '' : (days <= 2 ? 'err' : (days <= 5 ? 'warn' : 'ok'));
-    setHtml($('#certInfo'), html`${[
-      kvList([
-        ['剩余有效期', html`<span class="badge ${cls}">${dash(days, ' 天')}</span>`],
-        ['生效时间', c.not_before || '—'],
-        ['过期时间', c.not_after || '—'],
-        ['适用地址', c.san || '—'],
-        ['签发机构', c.issuer || '—'],
-      ]),
-      html`<div class="hint">Let's Encrypt IP 证书约 6 天，每 6 小时自动检查续签。</div>`,
-    ]}`);
-  } catch (e) {
-    setHtml($('#certInfo'), errState(e));
   }
 }
 
 function fmtTtl(sec) {
   if (sec === null || sec === undefined) return '—';
-  if (sec === 0) return '已关闭';
+  if (sec === 0) return '关闭';
   if (sec % 86400 === 0) return (sec / 86400) + ' 天';
   if (sec % 3600 === 0) return (sec / 3600) + ' 小时';
   return sec + ' 秒';
@@ -1682,167 +1614,165 @@ function syncSelect(id, value) {
   const sel = $(id);
   if (!sel || value === null || value === undefined) return;
   const cur = String(value);
-  if (Array.from(sel.options).some((o) => o.value === cur)) {
-    sel.value = cur;
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!Array.from(sel.options).some((o) => o.value === cur)) {
+    sel.add(new Option((sel.dataset.custom || '{n}').replace('{n}', cur), cur));
   }
+  sel.value = cur;
+  sel.dataset.applied = cur;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 async function loadCacheInfo() {
   try {
     const d = await api('/api/cache');
     const mp = d.mosproxy || {}, ub = d.unbound || {}, hit = d.hit;
-    const rows = [];
-    if (hit && hit.queries) {
-      rows.push(['Unbound 命中率', html`<b>${hit.rate.toFixed(1)}%</b>
-        <span class="hint">${fmtNum(hit.hits)} / ${fmtNum(hit.queries)} 次查询</span>`]);
-    }
-    rows.push(
-      ['mosproxy 乐观缓存', html`<b>${fmtTtl(mp.optimistic_ttl)}</b>`],
-      ['mosproxy 最大 TTL', fmtTtl(mp.maximum_ttl)],
-      ['Unbound 过期兜底', html`<b>${fmtTtl(ub['serve-expired-ttl'])}</b>`],
-      ['Unbound 等待阈值', ub['serve-expired-client-timeout'] !== undefined
-        ? ub['serve-expired-client-timeout'] + ' ms（超过就先回旧记录）' : '—'],
-      ['Unbound 最小 TTL', fmtTtl(ub['cache-min-ttl'])],
-      ['Unbound 最大 TTL', fmtTtl(ub['cache-max-ttl'])],
-    );
-    setHtml($('#cacheInfo'), kvList(rows));
+    setHtml($('#cacheInfo'), hit && hit.queries
+      ? html`Unbound 命中 ${hit.rate.toFixed(1)}%（${fmtNum(hit.hits)} / ${fmtNum(hit.queries)}）`
+      : raw('只清本机缓存，下次查询会重新递归'));
+    state.syncingSelects = true;
     syncSelect('#cacheTtl', mp.optimistic_ttl);
     syncSelect('#minTtl', ub['cache-min-ttl']);
+    state.syncingSelects = false;
   } catch (e) {
     setHtml($('#cacheInfo'), errState(e));
   }
 }
 
+async function applySetting(sel, op, label, args, note) {
+  if (state.syncingSelects || sel.value === sel.dataset.applied) return;
+  const text = sel.selectedOptions[0].textContent.trim();
+  if (!confirm(label + '改为「' + text + '」？' + (note ? '\n\n' + note : ''))) {
+    sel.value = sel.dataset.applied || sel.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  sel.dataset.applied = sel.value;
+  await runOp(op, label, args(), false);
+}
+
 const CDN_VERDICT = {
-  mainland: { cls: 'ok', mark: '✓' },
-  no_steering: { cls: 'unknown', mark: '–' },
-  no_node: { cls: 'unknown', mark: '–' },
-  no_echo: { cls: 'unknown', mark: '?' },
-  not_delivered: { cls: 'err', mark: '✗' },
-  unresolved: { cls: 'unknown', mark: '?' },
+  mainland: 'ok',
+  no_steering: 'idle',
+  no_node: 'idle',
+  no_echo: 'warn',
+  not_delivered: 'err',
+  unresolved: 'err',
 };
 
 async function loadCdnHit(mode) {
   const box = $('#cdnHitResult');
   const fresh = mode === 'fresh';
   setHtml(box, fresh
-    ? html`<div class="state"><span class="spinner"></span> 正在清缓存并重查，要走完整递归，请稍候…</div>`
-    : LOADING);
+    ? html`<div class="state"><span class="spinner"></span> 正在清缓存重查…</div>` : LOADING);
   const current = latestOnly('cdn-hit');
   try {
-    const subnet = $('#cdnSubnet').value;
-    const q = '?subnet=' + encodeURIComponent(subnet)
-      + (mode === 'refresh' ? '&refresh=1' : '') + (fresh ? '&fresh=1' : '');
+    const q = '?all=1' + (mode === 'refresh' ? '&refresh=1' : '') + (fresh ? '&fresh=1' : '');
     const d = await api('/api/cdn-hit' + q, fresh ? { method: 'POST' } : undefined);
     if (!current()) return;
-    const rows = (d.probes || []).map((p) => {
-      const style = CDN_VERDICT[p.verdict] || { cls: 'unknown', mark: '?' };
-      return html`<tr>
-        <td><b>${p.label}</b><div class="mono hint">${p.domain}</div></td>
-        <td>${p.provider || '未识别'}${p.has_mainland
-          ? html`<span class="badge ok sm" title="规则集里有 ${p.mainland_prefixes} 条大陆段">有大陆节点</span>`
-          : (p.mainland_prefixes ? html`<span class="badge unknown sm"
-              title="只有 ${p.mainland_prefixes} 条大陆段，不足以判定它为大陆用户提供节点">大陆段偏少</span>` : '')}</td>
-        <td class="wrap mono">${(p.addrs || []).join(' ') || (p.error || '—')}${
-          p.mismatch ? html`<div class="hint">不属于该 CDN 的任何段，可能是自建源站或投毒地址</div>` : ''}</td>
-        <td class="mono">${p.ecs_echoed ? 'scope=' + p.ecs_scope : '无回显'}</td>
-        <td><span class="badge ${style.cls}" title="${p.verdict_text}">${style.mark} ${
-          p.verdict_short || p.verdict_text}</span></td>
-      </tr>`;
+    const reports = d.reports || [];
+    const vantages = d.vantages || [];
+    if (!reports.length) { setHtml(box, EMPTY()); return; }
+    let hits = 0, total = 0, pending = 0, missed = 0;
+    reports.forEach((r) => {
+      hits += r.mainland; total += r.probes.length; pending += r.undecided - countUnresolved(r); missed += r.not_delivered;
     });
-    const summary = d.comparable
-      ? html`就近命中 <b>${d.mainland}/${d.comparable}</b>${
-          d.undecided ? html` <span class="hint">（${d.undecided} 个无 ECS 回显，本轮判不出）</span>` : ''}`
-      : html`<b>本轮判不出</b>：${d.undecided} 个域名都没有 ECS 回显`;
-    setHtml(box, html`<div class="card">
-      <h3>就近命中</h3>
-      ${kvList([
-        ['结果', summary],
-        ['客户端子网', html`<span class="mono">${d.subnet}</span>`],
-        ['本轮方式', d.fresh ? '已清缓存后重查（判据可信）' : '复用缓存（无回显时判不出）'],
-        ['规则集版本', fmtTime(d.ruleset_at)],
-        ['探测时间', fmtTime(d.generated_at)],
-      ])}
-      ${d.not_delivered ? html`<div class="callout err">
-        <b>${d.not_delivered} 个域名清缓存重查后仍无 ECS 回显</b>——子网没送到那台权威。
-        用 <span class="mono">dns-stack ecs-audit</span> 查 ECS 白名单。</div>` : ''}
-      ${!d.fresh && d.undecided ? html`<div class="callout">
-        ${d.undecided} 个域名无 ECS 回显，可能是缓存。点「清缓存重查」可判定。</div>` : ''}
-      ${d.mainland === 0 && d.comparable > 0 ? html`<div class="callout">
-        <b>一个大陆节点都没拿到</b>，ECS 链路多半整条失效。
-        用 <span class="mono">dns-stack ecs-audit --quick</span> 复核白名单。</div>` : ''}
-      <div class="table-wrap mt-12"><table class="card-rows">
-        <thead><tr><th>域名</th><th style="width:96px">CDN</th><th style="width:150px">解析结果</th>
-          <th style="width:78px">ECS 回显</th><th style="width:132px">判定</th></tr></thead>
-        <tbody>${rows.length ? rows : rowSpan(5, '暂无数据')}</tbody>
-      </table></div>
-      <div class="hint mt-8">
-        <b>命中大陆节点</b> 答案落在 CDN 规则集的大陆段或 direct4 里 ·
-        <b>无回显，判不出</b> 可能是缓存，清缓存重查即可判定 ·
-        <b>ECS 没送达</b> 缓存已清仍不回显，查白名单 ·
-        <b>不按位置调度</b> 权威回 scope=0 ·
-        <b>大陆无节点</b> 权威挑过了仍给境外 ·
-        <b>未解析出</b> 这一轮没拿到地址
+    const rows = reports[0].probes.map((p, i) => html`<tr>
+      <th class="site" title="${p.domain}"><b>${p.label}</b><span class="mono dim">${p.domain}</span></th>
+      ${reports.map((r) => cdnCell(r.probes[i]))}
+    </tr>`);
+    setHtml(box, html`
+      <div class="cdn-summary">
+        <div class="cdn-score"><b>${hits}</b><span>/ ${total}</span></div>
+        <div>
+          <div>拿到国内节点</div>
+          <div class="dim">${fmtTime(d.generated_at)}${d.fresh ? ' · 已清缓存' : ''}${pending > 0
+            ? html` · <span class="text-warn">${pending} 项来自缓存，点「复核」可确认</span>` : raw('')}</div>
+        </div>
       </div>
-    </div>`);
+      ${missed ? html`<div class="callout err">${missed} 项清了缓存仍没收到子网，可能是 ECS 白名单漏了，用 <code>dns-stack ecs-audit</code> 查</div>` : raw('')}
+      <div class="table-wrap"><table class="cdn-matrix">
+        <thead><tr><th></th>${vantages.map((v) => html`<th>${v.label}</th>`)}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="legend cdn-legend">
+        <span><i class="dot ok"></i>国内节点</span>
+        <span><i class="dot idle"></i>不分地区 / 无国内节点</span>
+        <span><i class="dot warn"></i>待复核</span>
+        <span><i class="dot err"></i>子网没送到 / 解析失败</span>
+      </div>`);
   } catch (e) {
     if (!current()) return;
     setHtml(box, errState(e));
   }
 }
 
+function countUnresolved(report) {
+  return report.probes.filter((p) => p.verdict === 'unresolved').length;
+}
+
+function cdnCell(p) {
+  if (!p) return html`<td></td>`;
+  const cls = CDN_VERDICT[p.verdict] || 'idle';
+  const where = (p.geo || '').replace(/^中国\s*/, '') || (p.addrs || [])[0] || p.error || '—';
+  const tip = p.verdict_text + '\n' + (p.addrs || []).join(' ') +
+    (p.ecs_echoed ? '\n子网作用范围 /' + p.ecs_scope : '') + (p.provider ? '\n' + p.provider : '');
+  return html`<td><span class="cdn-cell is-${cls}" title="${tip}">
+    <span class="dot ${cls}"></span><span class="cdn-where">${where}</span>
+    ${p.verdict === 'mainland' ? raw('') : html`<span class="cdn-why">${p.verdict_short}</span>`}
+  </span></td>`;
+}
+
 const splitEntries = (text) => String(text || '').split(/[\s,;]+/).filter(Boolean);
 
-function accessRows(items, kind, empty) {
-  if (!items.length) return EMPTY(empty);
-  return html`<div class="table-wrap mt-12"><table class="card-rows"><tbody>${
-    items.map((item) => html`<tr>
-      <td class="mono wrap">${item}</td>
-      <td style="width:72px"><button class="danger sm" data-access-remove="${kind}"
-        data-value="${item}">移除</button></td>
-    </tr>`)}</tbody></table></div>`;
+const LIST_ACTIONS = {
+  route_cn: { add: 'route_add', remove: 'route_remove', list: 'cn', label: '国内解析' },
+  route_hk: { add: 'route_add', remove: 'route_remove', list: 'hk', label: '香港解析' },
+  blocklist: { add: 'blocklist_add', remove: 'blocklist_remove', label: '拦截名单' },
+  acl: { add: 'acl_add', remove: 'acl_remove', label: '访问控制' },
+};
+
+function chipList(items, kind, empty) {
+  if (!items.length) return html`<span class="note-xs">${empty}</span>`;
+  return html`${items.map((item) => html`<span class="chip">
+      <span class="mono">${item}</span>
+      <button type="button" data-list-remove="${kind}" data-value="${item}" aria-label="移除 ${item}" title="移除">${ICON_X}</button>
+    </span>`)}`;
 }
 
 function renderAccess(d) {
+  const lists = [
+    ['route_cn', '#routeCnList', '#routeCnCount', '还没有'],
+    ['route_hk', '#routeHkList', '#routeHkCount', '还没有'],
+    ['blocklist', '#blList', '#blCount', '没有拦截任何域名'],
+  ];
   if (d.note) {
-    setHtml($('#blBadge'), '');
-    setHtml($('#aclBadge'), '');
-    setHtml($('#blList'), stateHtml(d.note));
+    lists.forEach(([, box]) => setHtml($(box), stateHtml(d.note)));
     setHtml($('#aclList'), stateHtml(d.note));
     return;
   }
-  const blocked = d.blocklist || [];
+  lists.forEach(([key, box, count, empty]) => {
+    const items = d[key] || [];
+    setHtml($(count), items.length ? html`<span class="badge unknown sm">${items.length}</span>` : raw(''));
+    setHtml($(box), d[key + '_error'] ? stateHtml(d[key + '_error'], 'error') : chipList(items, key, empty));
+  });
   const acl = d.acl || [];
-  setHtml($('#blBadge'), html`<span class="badge ${blocked.length ? 'ok' : 'unknown'} sm">${
-    blocked.length} 条</span>`);
   setHtml($('#aclBadge'), acl.length
-    ? html`<span class="badge ${d.acl_installed ? 'ok' : 'unknown'} sm">${acl.length} 个网段 · ${
-        d.acl_installed ? '已下发到内核' : '尚未下发'}</span>`
-    : html`<span class="badge unknown sm">未启用，入口对全网开放</span>`);
-  setHtml($('#blList'), d.blocklist_error
-    ? stateHtml(d.blocklist_error, 'error')
-    : accessRows(blocked, 'blocklist', '黑名单为空，没有域名被拦截'));
-  setHtml($('#aclList'), html`${d.acl_error
-    ? stateHtml(d.acl_error, 'error')
-    : accessRows(acl, 'acl', '授权网段为空，访问控制未启用')}${
-    acl.length && !d.acl_installed
-      ? html`<div class="callout">列表已改但还没下发到内核，点「重新下发」才会生效。</div>`
-      : ''}${
+    ? html`<span class="badge ${d.acl_installed ? 'ok' : 'warn'} sm">${d.acl_installed ? '生效中' : '未下发'}</span>`
+    : html`<span class="badge unknown sm">未启用</span>`);
+  $('#aclActions').hidden = !acl.length;
+  setHtml($('#aclList'), html`${d.acl_error ? stateHtml(d.acl_error, 'error') : chipList(acl, 'acl', '不限制，所有人都能用')}${
+    acl.length && !d.acl_installed ? html`<div class="callout">改动还没下发，点「重新下发」生效</div>` : raw('')}${
     acl.length && !d.client_loopback && !d.client_covered
-      ? html`<div class="callout err">你现在的地址 <span class="mono">${d.client_ip}</span>
-          不在授权网段里。一旦下发，你就会被自己挡在门外。</div>`
-      : ''}`);
+      ? html`<div class="callout err">你现在的地址 <span class="mono">${d.client_ip}</span> 不在里面，下发后会把自己挡在外面</div>`
+      : raw('')}`);
 }
 
 async function loadAccess() {
-  setHtml($('#blList'), LOADING);
-  setHtml($('#aclList'), LOADING);
+  ['#routeCnList', '#routeHkList', '#blList', '#aclList'].forEach((id) => setHtml($(id), LOADING));
   try {
     renderAccess(await api('/api/access'));
   } catch (e) {
-    setHtml($('#blList'), errState(e));
-    setHtml($('#aclList'), errState(e));
+    ['#routeCnList', '#routeHkList', '#blList', '#aclList'].forEach((id) => setHtml($(id), errState(e)));
   }
 }
 
@@ -1851,83 +1781,80 @@ async function accessAction(action, label, payload, confirmed) {
   if (confirmed) body.confirm = true;
   try {
     const d = await api('/api/access', { method: 'POST', body: JSON.stringify(body) });
-    toast(label + (d.ok ? ' 完成' : ' 失败'), (d.message || '').slice(0, 800), d.ok ? 'ok' : 'err');
-    await loadAccess();
+    toast(label + (d.ok ? '' : '失败'), (d.message || '').slice(0, 800), d.ok ? 'ok' : 'err');
+    if (state.page === 'settings') await loadAccess();
+    return d.ok;
   } catch (e) {
     if (e.status === 428 && e.body && e.body.need_confirm) {
-      if (confirm(e.body.message + '\n\n确认继续？')) {
-        return accessAction(action, label, payload, true);
-      }
-      return;
+      if (confirm(e.body.message + '\n\n确认继续？')) return accessAction(action, label, payload, true);
+      return false;
     }
-    toast(label + ' 出错', e.message, 'err');
+    toast(label + '失败', e.message, 'err');
+    return false;
   }
 }
+
+async function listAdd(form) {
+  const kind = form.dataset.listForm || 'acl';
+  const meta = LIST_ACTIONS[kind];
+  const input = $('input', form);
+  const items = splitEntries(input.value);
+  if (!items.length) { input.focus(); return; }
+  const payload = kind === 'acl' ? { prefixes: items } : { domains: items };
+  if (meta.list) payload.list = meta.list;
+  const ok = await withBusy($('button[type="submit"]', form), () => accessAction(meta.add, '已加入' + meta.label, payload));
+  if (ok) input.value = '';
+}
+
+async function listRemove(btn) {
+  const kind = btn.dataset.listRemove;
+  const meta = LIST_ACTIONS[kind];
+  const value = btn.dataset.value;
+  const payload = kind === 'acl' ? { prefixes: [value] } : { domains: [value] };
+  if (meta.list) payload.list = meta.list;
+  await withBusy(btn, () => accessAction(meta.remove, '已移出' + meta.label, payload));
+}
+
+const TYPE_HINT = { PTR: '反查', TXT: 'TXT', SRV: 'SRV' };
 
 async function runDnsTest() {
   if ($('#btnTest').disabled) return;
   const domain = $('#testDomain').value.trim();
-  if (!domain) { toast('请输入要测试的域名', '', 'err'); return; }
-  const qtype = $('#testQtype').value;
-  const subnetEl = $('#testSubnet');
-  const subnet = subnetEl ? subnetEl.value.trim() : '';
-  if (subnet) {
-    const m = subnet.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
-    if (!m || m.slice(1, 5).some((o) => Number(o) > 255) || Number(m[5]) > 32) {
-      toast('子网格式不对', '应为 a.b.c.0/24 这样的 IPv4 网段，每段 0-255，前缀不超过 32', 'err');
-      return;
-    }
+  if (!domain) { $('#testDomain').focus(); return; }
+  const subnet = $('#testSubnet').value.trim();
+  if (subnet && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.0\/24$/.test(subnet)) {
+    toast('子网格式不对', '写成 a.b.c.0/24', 'err');
+    return;
   }
   const btn = $('#btnTest');
   btn.disabled = true;
-  btn.textContent = '测试中…';
+  btn.classList.add('busy');
   setHtml($('#testResult'), html`<div class="card">${LOADING}</div>`);
-
   try {
-    const body = { domain: domain, qtype: qtype, servers: ['local-unbound', 'foreign-hk'] };
+    const body = { domain: domain, qtype: $('#testQtype').value, servers: ['local-unbound', 'foreign-hk'] };
     if (subnet) body.subnet = subnet;
     const d = await api('/api/dns-test', { method: 'POST', body: JSON.stringify(body) });
-    const cards = Object.keys(d.results).map((server) => {
+    const types = (d.qtypes || []).join(' + ');
+    const cards = ['local-unbound', 'foreign-hk'].filter((k) => d.results[k]).map((server) => {
       const r = d.results[server];
-      const name = SERVER_NAMES[server] || server;
-      if (r.error) {
-        return html`<div class="card"><h3>${name}</h3>${stateHtml(r.error, 'error')}</div>`;
-      }
-      const recs = r.records || [];
-      const ipsGeo = r.ips_geo || [];
-      const geoMap = {};
-      ipsGeo.forEach((x) => { geoMap[x.ip] = x.geo; });
-      const recLines = recs.map((rec) => {
-        const base = rec.type + '  TTL=' + (rec.ttl === null || rec.ttl === undefined ? '—' : rec.ttl) + '  ' + rec.value;
-        const g = geoMap[rec.value];
-        return g && g.label ? base + '  [' + g.label + ']' : base;
-      }).join('\n');
+      const ok = r.status === 'NOERROR';
       return html`<div class="card">
-        <h3><span>${name}</span>
-          <span class="badge ${r.status === 'NOERROR' ? 'ok' : 'err'}">${r.status || '—'}</span></h3>
-        ${recs.length ? html`<pre class="block">${recLines}</pre>` : EMPTY('无应答记录')}
-        ${ipsGeo.length ? html`<div class="ipgeo-list">${ipsGeo.map((x) => {
-          const g = x.geo || {};
-          const cls = x.in_cn === true ? 'cn' : x.in_cn === false ? 'foreign' : 'unknown';
-          return html`<div class="ipgeo-row" title="${geoWhy(g)}">
-            <span class="mono">${x.ip}</span>
-            <span class="badge ${cls}">${g.label || '归属未知'}</span>
-            ${g.asn ? html`<span class="mono dim">${'AS' + g.asn}</span>` : ''}
-          </div>`;
-        })}</div>` : ''}
-        <div class="hint">递归耗时 ${dash(r.query_time_ms, ' ms')}
-          · 含面板往返共 ${dash(r.panel_elapsed_ms, ' ms')}</div>
+        <h3>${SERVER_LABEL[server]}
+          <span class="row"><span class="dim fs-12">${dash(r.query_time_ms, ' ms')}</span>
+          <span class="badge ${ok ? 'ok' : 'err'}">${r.status || (r.error ? '出错' : '—')}</span></span></h3>
+        ${r.error && !r.status ? stateHtml(r.error, 'error') : recordList(r.records, r.ips_geo)}
       </div>`;
     });
-
     setHtml($('#testResult'), html`
-      <div class="card"><h3>递归出口判定</h3>${routingSummary(d.routing)}</div>
+      ${d.routing ? html`<div class="card"><h3><span class="mono">${d.domain}</span>
+        <span class="dim fs-12">${types}</span></h3>${routingSummary(d.routing, d.domain)}</div>`
+        : html`<div class="card"><h3><span class="mono">${d.domain}</span><span class="dim fs-12">${TYPE_HINT[types] || types}</span></h3></div>`}
       <div class="grid c2">${cards}</div>`);
   } catch (e) {
     setHtml($('#testResult'), html`<div class="card">${stateHtml('测试失败：' + e.message, 'error')}</div>`);
   } finally {
     btn.disabled = false;
-    btn.textContent = '开始测试';
+    btn.classList.remove('busy');
   }
 }
 
@@ -1991,8 +1918,8 @@ async function loadLogs() {
 function startLogFollow() {
   if (state.logES) return;
   state.logFollow = true;
-  setBtnState($('#btnLogFollow'), ICON_PAUSE, '暂停');
-  $('#btnLogFollow').classList.add('primary');
+  $('#btnLogFollow').textContent = '停止跟随';
+  $('#btnLogFollow').classList.add('active');
 
   const params = new URLSearchParams({ unit: $('#logUnit').value });
   const p = $('#logPriority').value;
@@ -2023,29 +1950,26 @@ function startLogFollow() {
     } catch (e) {  }
   };
   es.onerror = () => {
-    if (state.logES !== es) return;
-    setBtnState($('#btnLogFollow'), ICON_PAUSE, '重连中…');
+    if (state.logES === es) $('#btnLogFollow').textContent = '重连中…';
   };
   es.onopen = () => {
-    if (state.logES !== es) return;
-    setBtnState($('#btnLogFollow'), ICON_PAUSE, '暂停');
+    if (state.logES === es) $('#btnLogFollow').textContent = '停止跟随';
   };
 }
 
 function stopLogFollow() {
   if (state.logES) { state.logES.close(); state.logES = null; }
   state.logFollow = false;
-  setBtnState($('#btnLogFollow'), ICON_PLAY, '实时');
-  $('#btnLogFollow').classList.remove('primary');
+  $('#btnLogFollow').textContent = '跟随';
+  $('#btnLogFollow').classList.remove('active');
 }
 
-let _collectedBound = false;
 let _collected = null;
 let _dataSet = 'cn_zones';
 
 const DATA_SETS = {
-  cn_zones: { name: '直连域名', unit: '个', hint: '递归链中出现过大陆权威，因此整条递归都走直连' },
-  polluted: { name: '污染 IP', unit: '个', hint: '实测捕获的 GFW 伪造应答地址' },
+  cn_zones: { unit: '个', hint: '权威在国内，查询直连' },
+  polluted: { unit: '个', hint: '实测抓到的伪造应答地址' },
 };
 
 function renderDataList() {
@@ -2061,50 +1985,41 @@ function renderDataList() {
   const serverTruncated = dmeta && dmeta.truncated;
 
   setHtml(box, html`
-    <div class="hint" style="margin-bottom:6px">
-      ${meta.hint || ''} · 共 <b>${fmtNum(serverTruncated ? dmeta.total : all.length)}</b> ${meta.unit || ''}
-      ${kw ? html`· 筛选出 ${fmtNum(items.length)} 条` : ''}
-      ${items.length > LIMIT ? html`· 仅显示前 ${LIMIT} 条，请用筛选框缩小范围` : ''}
-      ${serverTruncated
-        ? html`<span class="badge warn wrap" style="margin-left:6px">服务端已截断：只传回 ${fmtNum(dmeta.returned)} / ${fmtNum(dmeta.total)} 条，筛选也查不到其余部分</span>`
-        : ''}
+    <div class="hint mb-8">
+      ${meta.hint || ''} · 共 ${fmtNum(serverTruncated ? dmeta.total : all.length)} ${meta.unit || ''}
+      ${kw ? html`· 匹配 ${fmtNum(items.length)}` : ''}
+      ${items.length > LIMIT ? html`· 只显示前 ${LIMIT} 条` : ''}
+      ${serverTruncated ? html`· <span class="text-warn">只载入了 ${fmtNum(dmeta.returned)} 条，完整数据请导出</span>` : ''}
     </div>
     ${shown.length
       ? html`<div class="data-grid">${shown.map((x) => html`<span class="data-item">${x}</span>`)}</div>`
       : EMPTY(kw ? '没有匹配项' : '暂无数据')}`);
 }
 
+function bindCollected() {
+  $('#dataTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-set]');
+    if (!btn) return;
+    $$('#dataTabs button').forEach((x) => x.classList.toggle('active', x === btn));
+    _dataSet = btn.dataset.set;
+    renderDataList();
+  });
+  $('#dataSearch').addEventListener('input', debounce(renderDataList, 120));
+  $('#btnExportDataset').addEventListener('click', () => downloadBundle(
+    '/api/export?dataset=' + _dataSet + '&format=txt', 'dns-stack-' + _dataSet + '.txt'));
+}
+
 async function loadCollected() {
-  if (!_collectedBound) {
-    const b = $('#btnReloadCollected');
-    if (b) b.addEventListener('click', () => { invalidateCache(); loadCollected(); });
-    const tabs = $('#dataTabs');
-    if (tabs) tabs.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-set]');
-      if (!btn) return;
-      $$('#dataTabs button').forEach((x) => x.classList.toggle('active', x === btn));
-      _dataSet = btn.dataset.set;
-      renderDataList();
-    });
-    const s = $('#dataSearch');
-    if (s) s.addEventListener('input', renderDataList);
-    const ex = $('#btnExportDataset');
-    if (ex) ex.addEventListener('click', () => downloadBundle(
-      '/api/export?dataset=' + _dataSet + '&format=txt',
-      'dns-stack-' + _dataSet + '.txt'));
-    _collectedBound = !!(b && tabs);
-  }
   try {
     const d = await apiCached('/api/collected');
     _collected = d;
     const ip = d.ip || {};
 
     setHtml($('#collectStats'), html`${[
-      statCard(fmtNum(d.domains_total), '域名（近 7 天）', '近 24 小时活跃 ' + fmtNum(d.domains_active_24h)),
-      statCard(fmtNum(d.queries_24h), '近 24 小时查询', '', 'accent'),
-      statCard(fmtNum(ip.cn_zones), '直连域名', '权威在大陆，全程直连', 'ok'),
-      statCard(fmtNum(ip.polluted), '污染 IP', fmtNum(ip.polluted_cidr) + ' 段',
-        ip.polluted > 0 ? 'warn' : ''),
+      statCard(fmtNum(d.domains_total), '域名', '7 天 · 24 小时活跃 ' + fmtNum(d.domains_active_24h)),
+      statCard(fmtNum(d.queries_24h), '查询', '24 小时'),
+      statCard(fmtNum(ip.cn_zones), '直连域名', '权威在国内', 'ok'),
+      statCard(fmtNum(ip.polluted), '污染 IP', fmtNum(ip.polluted_cidr) + ' 段', ip.polluted > 0 ? 'warn' : ''),
     ]}`);
 
     renderDataList();
@@ -2112,14 +2027,14 @@ async function loadCollected() {
     const rows = d.failing_domains || [];
     setHtml($('#failingDomains'), rows.length
       ? html`<div class="table-wrap"><table>
-          <thead><tr><th>注册域</th><th style="text-align:right">子域</th>
+          <thead><tr><th>域名</th><th style="text-align:right">子域</th>
             <th style="text-align:right">失败</th></tr></thead>
           <tbody>${rows.map((x) => html`<tr>
             <td><a href="#" class="dom-link" data-domain="${x.domain}">${x.domain}</a></td>
             <td style="text-align:right" class="mono">${fmtNum(x.subdomains)}</td>
             <td style="text-align:right" class="mono">${fmtNum(x.count)}</td></tr>`)}</tbody>
         </table></div>`
-      : EMPTY('近 24 小时无解析失败'));
+      : EMPTY('24 小时内没有失败'));
     $$('#failingDomains .dom-link').forEach((a) => a.addEventListener('click', (ev) => {
       ev.preventDefault(); showDomain(a.dataset.domain);
     }));
@@ -2277,24 +2192,23 @@ function renderLogin(d) {
   const o = d.oauth || {};
   const userBtn = $('#btnUserEdit');
   setHtml($('#userValue'), d.username
-    ? html`<span class="mono">${d.username}</span>，登录时和密码一起填`
-    : html`${stateTag('warn', '未设置')}现在登录只要密码，设一个更稳妥`);
+    ? html`<span class="mono">${d.username}</span>`
+    : html`${stateTag('warn', '未设置')}现在登录只要密码`);
   setEditLabel(userBtn, d.username ? '修改' : '设置');
   userBtn.classList.toggle('primary', !d.username);
+  $$('.pw-user').forEach((el) => { el.value = d.username || ''; });
 
-  setHtml($('#pwValue'), (d.password_set_at ? ago(d.password_set_at) + '修改过。' : '')
-    + '改了之后，其它设备会退出登录');
+  setHtml($('#pwValue'), d.password_set_at ? ago(d.password_set_at) + '改过' : '改密码会让其它设备退出');
 
   setHtml($('#totpValue'), d.totp_enabled
-    ? html`${stateTag('ok', '已启用')}登录时还要填验证器上的 6 位数字`
-    : html`${stateTag('idle', '未启用')}启用后，登录时还要填验证器上的 6 位数字`);
+    ? html`${stateTag('ok', '已启用')}登录要再填 6 位验证码`
+    : html`${stateTag('idle', '未启用')}启用后登录要再填 6 位验证码`);
   setEditLabel($('#btnTotp'), d.totp_enabled ? '停用' : '启用');
 
   const blocked = !d.password_disabled && !o.verified_once;
   setHtml($('#pwLoginValue'), d.password_disabled
-    ? html`${stateTag('idle', '已关闭')}现在只能用 GitHub 登录`
-    : html`${stateTag('ok', '开启')}${blocked
-      ? '要关闭它，先配好 GitHub 登录并成功登录一次' : '关闭后只能用 GitHub 登录'}`);
+    ? html`${stateTag('idle', '已关闭')}只能用 GitHub 登录`
+    : html`${stateTag('ok', '开启')}${blocked ? '先用 GitHub 登录成功一次才能关闭' : '关闭后只能用 GitHub 登录'}`);
   const btn = $('#btnTogglePwd');
   btn.textContent = d.password_disabled ? '重新启用' : '关闭';
   btn.className = d.password_disabled ? 'primary sm' : 'danger sm';
@@ -2306,18 +2220,18 @@ function renderOAuth(o, passwordDisabled) {
   const users = o.allowed_users || [];
   setHtml($('#oauthValue'), o.verified_once
     ? html`${stateTag('ok', '已验证')}Client ID <span class="mono">${o.client_id}</span>`
-    : o.ready ? html`${stateTag('warn', '待验证')}登录页已经显示「使用 GitHub 登录」，成功登录一次就算验证通过`
-    : o.client_id && o.secret_set ? html`${stateTag('warn', '未完成')}还要在下面添加至少一个允许登录的账号`
-    : html`${stateTag('idle', '未配置')}在 GitHub 建一个 OAuth App，把 Client ID 和 Secret 填进来`);
+    : o.ready ? html`${stateTag('warn', '待验证')}用 GitHub 登录成功一次即可`
+    : o.client_id && o.secret_set ? html`${stateTag('warn', '未完成')}还要添加允许的账号`
+    : html`${stateTag('idle', '未配置')}在 GitHub 建一个 OAuth App 后填进来`);
   setEditLabel($('#btnOaEdit'), o.client_id ? '修改' : '配置');
 
   const pinned = passwordDisabled && users.length === 1;
-  setHtml($('#oaUsers'), users.length ? html`${users.map((u) => html`<span class="user-chip">
+  setHtml($('#oaUsers'), users.length ? html`${users.map((u) => html`<span class="chip">
       <span class="mono">${u}</span>
       <button type="button" data-user="${u}" aria-label="移除 ${u}"
         title="${pinned ? '密码登录已关闭，至少要留一个能登录的账号' : '移除'}"${pinned ? raw(' disabled') : raw('')}>${ICON_X}</button>
     </span>`)}`
-    : html`<span class="note-xs">还没有，添加之后才能用 GitHub 登录。</span>`);
+    : html`<span class="note-xs">还没有</span>`);
   if (document.activeElement !== $('#oaClientId')) $('#oaClientId').value = o.client_id || '';
   $('#oaCallback').textContent = new URL(
     (window.dnsStackApiUrl || ((p) => p))('/api/oauth/github/callback'), location.href).href;
@@ -2366,7 +2280,7 @@ async function changePassword(e) {
   e.preventDefault();
   const c = pwChecks();
   if (!$('#pwOld').value || !(c.len && c.diff && c.match)) return;
-  if (!confirm('确认修改面板密码？\n\n其它设备上的登录会立即失效，这台设备保持登录。')) return;
+  if (!confirm('修改密码？\n\n其它设备会立即退出，这台不受影响。')) return;
   $('#pwMsg').className = 'login-msg';
   await withBusy($('#btnPw'), async () => {
     try {
@@ -2385,7 +2299,7 @@ async function changePassword(e) {
 async function togglePassword() {
   const btn = $('#btnTogglePwd');
   const want = btn.dataset.disable === '1';
-  if (want && !confirm('关闭后只能用 GitHub 登录。\n\nGitHub 不可达时，要在服务器执行 sudo dns-stack panel-password 才能恢复。确认关闭？')) return;
+  if (want && !confirm('关闭密码登录？\n\n之后只能用 GitHub 登录。GitHub 连不上时，在服务器执行 sudo dns-stack panel-password 恢复。')) return;
   await withBusy(btn, async () => {
     try {
       const r = await api('/api/auth/password-toggle', {
@@ -2489,7 +2403,7 @@ async function addOAuthUser(e) {
 
 async function removeOAuthUser(btn) {
   const name = btn.dataset.user;
-  if (!confirm('不再允许 ' + name + ' 用 GitHub 登录？\n\n它已经登录的会话不受影响；要立即踢出，再点「其它设备 → 全部退出」。')) return;
+  if (!confirm('不再允许 ' + name + ' 登录？\n\n它已登录的设备不会马上退出，需要的话再点「其它设备 → 全部退出」。')) return;
   await postOAuth((oauthState().allowed_users || []).filter((u) => u !== name), {}, btn);
 }
 
@@ -2502,7 +2416,7 @@ async function saveOAuth(e) {
 }
 
 async function revokeOtherSessions() {
-  if (!confirm('让其它所有设备上的登录立即失效？\n\n这台设备会换一张新凭证，继续保持登录。')) return;
+  if (!confirm('让其它所有设备立即退出？\n\n这台设备保持登录。')) return;
   await withBusy($('#btnRevokeOthers'), async () => {
     try {
       const r = await api('/api/auth/sessions/revoke', { method: 'POST' });
@@ -2512,15 +2426,10 @@ async function revokeOtherSessions() {
   });
 }
 
-let _modulesBound = false;
-async function loadOps() {
-  if (!_modulesBound) {
-    const b = $('#btnReloadModules');
-    if (b) { b.addEventListener('click', () => { invalidateCache(); loadModules(); }); _modulesBound = true; }
-  }
+function loadOps() {
+  $('#opsRoleExtra').hidden = window.PANEL_ROLE !== 'cn-resolver';
   loadModules();
   loadBackups();
-  renderRoleExtra();
 }
 
 async function loadDohInfo() {
@@ -2543,8 +2452,8 @@ async function loadDohInfo() {
         <div class="set-main">
           <div class="set-k">DoH 私密路径</div>
           <div class="set-v">${d.is_default
-            ? html`${stateTag('warn', '未启用')}还在默认路径 /dns-query，谁都能拿这台服务器当公共 DNS 用`
-            : html`${stateTag('ok', '已启用')}轮换后旧地址立即失效，所有客户端都要换新地址`}</div>
+            ? html`${stateTag('warn', '未启用')}还在用默认路径，谁都能把这台服务器当公共 DNS`
+            : html`${stateTag('ok', '已启用')}轮换后旧地址立刻失效`}</div>
         </div>
         <button class="danger sm" data-op="rotate_doh_path">轮换</button>
       </div>`);
@@ -2575,7 +2484,7 @@ const MOD_STATE = {
   unknown: { dot: 'idle', text: '未知' },
 };
 
-const IMPL_LABEL = { go: 'Go 原生', shell: 'Shell 脚本', external: '外部组件' };
+const IMPL_LABEL = { go: 'Go', shell: 'Shell', external: '外部' };
 
 function until(ts) {
   if (!ts) return '';
@@ -2602,15 +2511,14 @@ function moduleRow(m) {
   if (art && art.exists && art.lines) facts.push('产出 ' + fmtNum(art.lines) + ' 条');
   else if (art && !art.exists) facts.push('尚无产出文件');
 
-  return html`<div class="mod ${m.state}">
+  return html`<div class="mod ${m.state}" title="${m.purpose}">
     <span class="dot ${st.dot}"></span>
     <div class="mod-main">
       <div class="mod-title">
         <b>${m.name}</b>
         ${m.critical ? html`<span class="badge warn">关键</span>` : ''}
-        <span class="mod-unit mono dim" title="systemd 单元名">${m.unit}</span>
+        <span class="mod-unit mono dim">${m.unit}</span>
       </div>
-      <div class="mod-purpose">${m.purpose}</div>
     </div>
     <div class="mod-side">
       <span class="mod-state ${m.state}">${m.note || st.text}</span>
@@ -2619,43 +2527,14 @@ function moduleRow(m) {
   </div>`;
 }
 
-function renderSysBar(modules, health) {
-  if (modules) state.sysModules = modules;
-  if (health) state.sysHealth = health;
-  const d = state.sysModules;
-  const bar = $('#sysBar');
-  if (!bar || !d) return;
-  const extra = (state.sysHealth && state.sysHealth.level === 'warn') ? state.sysHealth.reasons : [];
-  const verdict = (d.verdict === 'ok' && extra.length) ? 'warn' : d.verdict;
-  const headline = (d.verdict === 'ok' && extra.length) ? '模块正常，但解析链路降级' : d.headline;
-  const st = MOD_STATE[verdict] || MOD_STATE.unknown;
-  const c = d.counts || {};
-  const issues = extra.concat(d.attention || []);
-  const detail = (verdict === 'ok')
-    ? html`<span class="dim">${d.total} 个模块协同工作，全部就绪</span>`
-    : issues.length
-      ? html`<ul class="sys-issues">${issues.slice(0, 4).map((x) => html`<li>${x}</li>`)}</ul>`
-      : html`<span class="dim">${c.unknown || 0} 个模块查不到状态，其余正常——
-        多半是 helper 没应答，用 systemctl is-active dns-stack-helper 确认</span>`;
-  setHtml(bar, html`<div class="sys-card ${verdict}">
-    <div class="sys-head">
-      <span class="dot ${st.dot}"></span>
-      <b class="sys-headline">${headline}</b>
-      <span class="sys-counts mono dim">正常 ${c.ok || 0} · 关注 ${c.warn || 0} · 中断 ${c.down || 0}${
-        c.unknown ? ' · 查不到 ' + c.unknown : ''}</span>
-      <button class="ghost sm" data-page-jump="settings" data-tab="services">查看模块</button>
-    </div>
-    <div class="sys-body">${detail}</div>
-  </div>`);
-}
-
 async function loadModules() {
   const box = $('#moduleGroups');
   try {
     const d = await apiCached('/api/modules');
-    renderSysBar(d);
+    state.sysModules = d;
+    renderAlert();
     const impl = d.impl || {};
-    setHtml($('#moduleImpl'), html`共 ${d.total} 个模块：${
+    setHtml($('#moduleImpl'), html`${d.total} 个：${
       Object.keys(IMPL_LABEL).filter((k) => impl[k])
         .map((k) => IMPL_LABEL[k] + ' ' + impl[k]).join(' · ')}`);
     if (!box) return;
@@ -2673,67 +2552,78 @@ async function loadModules() {
     })}`);
   } catch (e) {
     setHtml(box, errState(e));
-    setHtml($('#sysBar'), stateHtml('模块状态加载失败：' + e.message, 'error'));
   }
 }
 
 async function loadBackups() {
   try {
     const d = await api('/api/backups');
-    const list = (items, empty) => (items && items.length)
-      ? html`<div class="table-wrap"><table>
-          <thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead>
-          <tbody>${items.map((x) => html`<tr>
-            <td class="mono wrap">${x.name}</td>
-            <td class="mono">${fmtBytes(x.size)}</td>
-            <td class="mono dim">${fmtTime(x.mtime)}</td></tr>`)}</tbody>
-        </table></div>`
-      : EMPTY(empty);
-    setHtml($('#backupList'), list(d.backups, '暂无备份文件'));
-    setHtml($('#exportList'), list(d.exports, '暂无导出包'));
+    const backups = d.backups || [], exports = d.exports || [];
+    const size = backups.reduce((n, x) => n + x.size, 0);
+    setHtml($('#backupSummary'), backups.length
+      ? html`${backups.length} 份，共 ${fmtBytes(size)}，最新 ${ago(backups[0].mtime)}`
+      : raw(d.error ? esc(d.error) : '还没有备份'));
+    setHtml($('#backupList'), backups.length ? html`<table class="mini"><tbody>${backups.slice(0, 8).map((x) => html`<tr>
+        <td class="mono wrap">${x.name}</td><td class="mono dim">${fmtBytes(x.size)}</td>
+        <td class="mono dim">${fmtTime(x.mtime)}</td></tr>`)}</tbody></table>` : raw(''));
+    setHtml($('#exportSummary'), exports.length
+      ? html`导出包 ${exports.length} 个，最新 ${ago(exports[0].mtime)}；迁移包不含任何密钥`
+      : raw('迁移包不含任何密钥'));
+    const policy = d.policy || {};
+    state.syncingSelects = true;
+    syncSelect('#bkInterval', policy.interval_hours);
+    syncSelect('#bkDaily', policy.keep_daily);
+    syncSelect('#bkWeekly', policy.keep_weekly);
+    state.syncingSelects = false;
   } catch (e) {
-    setHtml($('#backupList'), errState(e));
+    setHtml($('#backupSummary'), errState(e));
   }
 }
 
-function renderRoleExtra() {
-  if (window.PANEL_ROLE === 'cn-resolver') {
-    setHtml($('#opsRoleExtra'), raw(
-      '<div class="card"><h3>递归分流数据</h3>' +
-      '<div class="row"><button class="primary sm" data-op="refresh_routing">刷新 direct4 / 权威 / ECS</button>' +
-      '</div><div class="hint">只刷新数据产物并执行校验，不修改防火墙、WireGuard 配置或监听端口。</div></div>'));
-    return;
-  }
-  setHtml($('#opsRoleExtra'), raw(''));
+function backupPolicyArgs() {
+  return {
+    interval_hours: Number($('#bkInterval').value),
+    keep_daily: Number($('#bkDaily').value),
+    keep_weekly: Number($('#bkWeekly').value),
+  };
 }
 
-let _auditBound = false;
 async function loadAudit() {
-  if (!_auditBound) {
-    const b = $('#btnReloadAudit');
-    if (b) { b.addEventListener('click', () => { invalidateCache(); loadAudit(); }); _auditBound = true; }
-  }
   const body = $('#auditBody');
   try {
     const d = await api('/api/audit?limit=200');
-    if (!d.items.length) { setHtml(body, rowSpan(6, EMPTY('暂无审计记录'))); return; }
-    setHtml(body, html`${d.items.map((x) => html`<tr>
+    if (!d.items.length) { setHtml(body, rowSpan(6, EMPTY('没有记录'))); return; }
+    setHtml(body, html`${d.items.map((x) => {
+      const msg = /^(.*：)?执行(成功|失败)$/.test(x.message || '') ? '' : (x.message || '').slice(0, 200);
+      return html`<tr>
       <td class="mono dim">${fmtTime(x.ts)}</td>
-      <td class="mono">${x.operation}</td>
+      <td title="${x.operation}">${x.label || x.operation}</td>
       <td><span class="badge ${x.ok ? 'ok' : 'err'}">${x.ok ? '成功' : '失败'}</span></td>
-      <td class="mono dim audit-args" title="${x.args || ''}">${x.args || '—'}</td>
-      <td class="wrap mono audit-msg">${(x.message || '').slice(0, 200)}</td>
+      <td class="mono dim audit-args" title="${x.args || ''}">${auditArgs(x.args)}</td>
+      <td class="wrap audit-msg">${msg}</td>
       <td>${x.id === null || x.id === undefined ? ''
-          : html`<button class="row-del" data-aid="${x.id}" title="删除这条审计记录">删除</button>`}</td>
-    </tr>`)}`);
+          : html`<button class="row-del" data-aid="${x.id}" title="删除这条记录" aria-label="删除">${ICON_DEL}</button>`}</td>
+    </tr>`;
+    })}`);
   } catch (e) {
     setHtml(body, rowSpan(6, errState(e)));
   }
 }
 
+function auditArgs(text) {
+  if (!text) return '';
+  try {
+    const args = JSON.parse(text);
+    return Object.keys(args).filter((k) => k !== 'list')
+      .map((k) => (Array.isArray(args[k]) ? args[k].join(' ') : String(args[k]))).join(' · ');
+  } catch (e) {
+    return text;
+  }
+}
+
 function deleteAudit(id, btn) {
   return deleteRecord('delete_audit', { id: Number(id) }, {
-    confirm: '删除这条审计记录？', btn, done: '已删除该条记录', after: loadAudit,
+    confirm: '删除这条审计记录？', btn, done: '已删除', after: loadAudit,
   });
 }
 
@@ -2748,24 +2638,21 @@ async function loadOpsMeta() {
 }
 
 const CONFIRM_NOTE = {
-  rotate_doh_path: '新路径生效后，所有客户端（sing-box / Surge / iOS 描述文件）'
-    + '都必须换成新地址，未更新的客户端会立即解析失败。\n'
-    + '轮换过程会重启 mosproxy 并自动校验，校验不过会自动回滚。',
-  prune_backups: '按保留策略删除超出份数的旧备份包，删掉就找不回来了。',
-  drop_stale_logs: '删除已不属于任何现存模块、且 14 天没人写过的日志文件。',
-  restart_mosproxy: 'DoH / DoT 入口会中断几秒，期间所有客户端的解析请求都会失败。',
-  restart_unbound: '本机递归会中断几秒，缓存全部清空；重启后一段时间内查询都要重新递归，会明显变慢。',
-  flush_cache: '清空全部解析缓存；之后一段时间内每个域名都要重新递归，查询会明显变慢。',
-  cert_renew: '立即检查入口证书：剩余不到 3 天或证书里的 IP 对不上时向 CA 续签，否则什么也不做。'
-    + '\n真正续签后会同步面板证书并重启面板，这个页面会断开几秒。',
-  clear_domains: '删除 7 天未出现的域名，同时删除全部 7 天前的查询记录，然后压缩数据库。'
-    + '\n压缩期间采集器写入会暂停，数据量大时可能持续数十秒。删掉的统计找不回来。',
-  clear_domains_all: '清空全部域名统计和全部查询记录，面板上的所有历史数字归零，然后压缩数据库。删掉的找不回来。',
-  purge_legacy: '删除统计起点之前的全部查询记录和域名，然后压缩数据库。删掉的找不回来。',
-  set_arch_epoch: '把统计起点设为现在：面板上所有「近 24 小时」的数字会立刻归零，从此刻重新累计。'
-    + '\n不删除任何数据，但要回到之前的口径需要手工改回起点。',
-  vacuum_logs: '删除 7 天之前的全部系统日志（journald），包括与本项目无关的服务的日志。删掉的找不回来。',
-  clear_audit: '删除全部审计记录，之后就查不到谁在什么时候做过什么操作了。',
+  rotate_doh_path: '换一个新的 DoH 路径，旧地址立刻失效，所有客户端都要改成新地址。'
+    + '\n会重启 mosproxy 并自动验证，失败会自动退回。',
+  prune_backups: '按保留份数删除多出来的旧备份，删了找不回来。',
+  drop_stale_logs: '删除不再属于任何模块、14 天没人写过的日志文件。',
+  restart_mosproxy: 'DoH / DoT 入口会断几秒，这期间所有客户端都解析不了。',
+  restart_unbound: '递归会断几秒并清空缓存，之后一段时间解析会变慢。',
+  flush_cache: '清掉的名字下次都要重新递归，短时间会变慢。',
+  cert_renew: '证书剩不到 3 天或 IP 对不上时才真的续签，否则什么也不做。'
+    + '\n续签后面板会重启，这个页面会断开几秒。',
+  clear_domains: '删除 7 天没出现过的域名，以及 7 天前的请求记录，删了找不回来。',
+  clear_domains_all: '清空所有域名统计和请求记录，面板上的历史数字全部归零，删了找不回来。',
+  purge_legacy: '删除统计起点之前的所有请求记录和域名，删了找不回来。',
+  set_arch_epoch: '「近 24 小时」的数字会从现在重新累计，旧数据不删。',
+  vacuum_logs: '删除 7 天前的全部系统日志，包括其它服务的，删了找不回来。',
+  clear_audit: '清空后就查不到以前做过哪些操作了。',
 };
 
 const _runningOps = new Set();
@@ -2787,17 +2674,17 @@ async function runOp(op, label, args, isDangerous) {
   }
   _runningOps.add(op);
   markOpBusy(op, true);
-  toast('正在执行：' + label, '请稍候…');
+  toast('执行中：' + label, '');
   try {
     const d = await api('/api/action/' + op, { method: 'POST', body: JSON.stringify(args) });
-    if (d.ok) toast(label + ' 完成', (d.message || d.stdout || '').slice(0, 800), 'ok');
-    else toast(label + ' 失败', (d.message || d.stderr || '').slice(0, 800), 'err');
+    if (d.ok) toast(label + '：完成', (d.message || d.stdout || '').slice(0, 800), 'ok');
+    else toast(label + '：失败', (d.message || d.stderr || '').slice(0, 800), 'err');
 
     invalidateCache();
-    if (['cert_check', 'cert_renew'].indexOf(op) >= 0
-      && state.page === 'settings') loadRules();
+    if (['cert_check', 'cert_renew'].indexOf(op) >= 0) loadCert();
     if (['restart_mosproxy', 'restart_unbound'].indexOf(op) >= 0) setTimeout(loadModules, 1500);
-    if (['backup', 'export', 'prune_backups'].indexOf(op) >= 0) loadBackups();
+    if (['backup', 'export', 'prune_backups', 'set_backup_policy'].indexOf(op) >= 0) loadBackups();
+    if (['set_cache_ttl', 'set_min_ttl', 'flush_cache'].indexOf(op) >= 0 && state.page === 'settings') loadCacheInfo();
     if (op === 'rotate_doh_path') { loadDohInfo(); setTimeout(loadModules, 1500); }
     if (op === 'clear_audit') loadAudit();
     if (['clear_domains', 'clear_domains_all', 'purge_legacy'].indexOf(op) >= 0) {
@@ -2816,18 +2703,24 @@ async function runOp(op, label, args, isDangerous) {
       }
       return;
     }
-    toast(label + ' 出错', e.message, 'err');
+    toast(label + '：出错', e.message, 'err');
   } finally {
     _runningOps.delete(op);
     markOpBusy(op, false);
   }
 }
 
-function jumpTo(page, tab) {
+function jumpTo(page, tab, metric) {
   switchPage(page);
-  if (!tab) return;
-  const btn = $('#settingTabs button[data-stab="' + tab + '"]');
-  if (btn) btn.click();
+  if (tab) {
+    const btn = $$('#page-' + page + ' .main-tabs button').find((b) =>
+      Object.values(b.dataset).indexOf(tab) >= 0);
+    if (btn && !btn.classList.contains('active')) btn.click();
+  }
+  if (metric) {
+    const m = $('#domTabs button[data-metric="' + metric + '"]');
+    if (m) m.click();
+  }
 }
 
 function bindEvents() {
@@ -2837,70 +2730,83 @@ function bindEvents() {
   });
 
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-page-jump]');
-    if (btn) jumpTo(btn.dataset.pageJump, btn.dataset.tab);
+    const btn = e.target.closest('[data-page-jump]');
+    if (btn) { e.preventDefault(); jumpTo(btn.dataset.pageJump, btn.dataset.tab, btn.dataset.metric); }
   });
 
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-access-remove]');
-    if (!btn) return;
-    if (btn.dataset.accessRemove === 'blocklist') {
-      accessAction('blocklist_remove', '移出域名黑名单', { domains: [btn.dataset.value] });
-    } else {
-      accessAction('acl_remove', '收回网段', { prefixes: [btn.dataset.value] });
+    const rm = e.target.closest('button[data-list-remove]');
+    if (rm) { listRemove(rm); return; }
+    const route = e.target.closest('button[data-route-add], button[data-route-remove]');
+    if (route) { routeChange(route); return; }
+    const flush = e.target.closest('button[data-flush]');
+    if (flush) {
+      runOp('flush_cache', '清缓存 ' + flush.dataset.flush, { domain: flush.dataset.flush, confirm: true }, false);
     }
   });
+  document.addEventListener('submit', (e) => {
+    const form = e.target.closest('form[data-list-form], #aclForm');
+    if (!form) return;
+    e.preventDefault();
+    listAdd(form);
+  });
+  $('#testForm').addEventListener('submit', (e) => { e.preventDefault(); runDnsTest(); });
+  $('#flushForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const domain = $('#flushDomain').value.trim();
+    if (!confirm('清理' + (domain ? '「' + domain + '」及子域' : '全部') + '的缓存？\n\n'
+      + CONFIRM_NOTE.flush_cache)) return;
+    const args = { confirm: true };
+    if (domain) args.domain = domain;
+    await runOp('flush_cache', '清缓存', args, false);
+    $('#flushDomain').value = '';
+  });
+  $('#cacheTtl').addEventListener('change', (e) => applySetting(e.target, 'set_cache_ttl', '过期后继续使用',
+    () => ({ ttl: Number(e.target.value) }), 'Unbound 马上生效，mosproxy 要重启后生效。'));
+  $('#minTtl').addEventListener('change', (e) => applySetting(e.target, 'set_min_ttl', '最短缓存',
+    () => ({ ttl: Number(e.target.value) }), '调高会让 CDN 换节点变慢。'));
+  ['#bkInterval', '#bkDaily', '#bkWeekly'].forEach((id) => $(id).addEventListener('change', (e) =>
+    applySetting(e.target, 'set_backup_policy', '备份策略', backupPolicyArgs, '')));
+  $('#btnReloadModules').addEventListener('click', () => { invalidateCache(); loadModules(); });
+  $('#btnReloadAudit').addEventListener('click', () => { invalidateCache(); loadAudit(); });
+  $('#btnReloadCollected').addEventListener('click', () => { invalidateCache(); loadCollected(); });
+  bindCollected();
 
   const bindTabs = (tabsSel, attr, onSwitch) => {
     const tabs = $(tabsSel);
     if (!tabs) return;
-    tabs.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[' + attr + ']');
-      if (!btn) return;
+    const show = (btn) => {
       $$(tabsSel + ' button').forEach((b) => b.classList.toggle('active', b === btn));
       const name = btn.getAttribute(attr);
       $$('.tab-panel', tabs.closest('.page')).forEach((p) =>
         p.classList.toggle('active', p.id === attr.replace('data-', '') + '-' + name));
+      return name;
+    };
+    let saved = null;
+    try { saved = localStorage.getItem('dns-stack-tab' + tabsSel); } catch (e) {  }
+    const restore = saved && tabs.querySelector('button[' + attr + '="' + saved + '"]');
+    if (restore) show(restore);
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[' + attr + ']');
+      if (!btn) return;
+      const name = show(btn);
+      try { localStorage.setItem('dns-stack-tab' + tabsSel, name); } catch (err) {  }
       if (onSwitch) onSwitch(name);
     });
   };
   bindTabs('#queryTabs', 'data-qtab', (name) => {
-    if (name !== 'live' && state.liveOn) stopLive();
-    if (name === 'domains') loadDomains(1);
+    if (name === 'live') initLivePage();
+    else { if (state.liveOn) stopLive(); loadDomains(1); }
   });
-  bindTabs('#toolTabs', 'data-ttab', (name) => {
-    if (name !== 'logs' && state.logFollow) stopLogFollow();
-    if (name === 'location') loadMyLocation();
-    if (name === 'ip' && !$('#ipResult').firstChild) loadIpLookup();
-    if (name === 'cdn' && !$('#cdnHitResult').firstChild) loadCdnHit('');
-  });
+  bindTabs('#toolTabs', 'data-ttab', openToolTab);
 
-  $('#btnCdnHit').addEventListener('click', () => loadCdnHit('refresh'));
-  $('#btnCdnFresh').addEventListener('click', async () => {
-    const btn = $('#btnCdnFresh');
-    btn.disabled = true;
-    try { await loadCdnHit('fresh'); } finally { btn.disabled = false; }
-  });
-  $('#cdnSubnet').addEventListener('change', () => loadCdnHit(''));
+  $('#btnCdnHit').addEventListener('click', (e) => withBusy(e.currentTarget, () => loadCdnHit('refresh')));
+  $('#btnCdnFresh').addEventListener('click', (e) => withBusy(e.currentTarget, () => loadCdnHit('fresh')));
 
-  $('#btnBlAdd').addEventListener('click', () => {
-    const el = $('#blInput');
-    const items = splitEntries(el.value);
-    if (!items.length) { toast('请先输入要拦截的域名', '', 'err'); return; }
-    el.value = '';
-    accessAction('blocklist_add', '加入域名黑名单', { domains: items });
-  });
-  $('#btnAclAdd').addEventListener('click', () => {
-    const el = $('#aclInput');
-    const items = splitEntries(el.value);
-    if (!items.length) { toast('请先输入要放行的网段', '', 'err'); return; }
-    el.value = '';
-    accessAction('acl_add', '放行网段', { prefixes: items });
-  });
-  $('#btnAclApply').addEventListener('click', () => accessAction('acl_apply', '下发访问控制', {}));
+  $('#btnAclApply').addEventListener('click', () => accessAction('acl_apply', '已下发访问控制', {}));
   $('#btnAclDisable').addEventListener('click', () => {
-    if (!confirm('关闭访问控制后，DoH/DoT 入口会对全网开放。\n\n确认继续？')) return;
-    accessAction('acl_disable', '关闭访问控制', {}, true);
+    if (!confirm('停用后所有人都能使用这台 DNS。\n\n确认停用？')) return;
+    accessAction('acl_disable', '已停用访问控制', {}, true);
   });
   bindTabs('#settingTabs', 'data-stab', (name) => loadSettingTab(name));
 
@@ -2911,7 +2817,7 @@ function bindEvents() {
   $('#btnSearch').addEventListener('click', () => loadQueries(1));
   $('#fDomain').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadQueries(1); });
   $('#btnReset').addEventListener('click', () => {
-    ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#fRespBy'].forEach((s) => { $(s).value = ''; });
+    ['#fDomain', '#fQtype', '#fRoute', '#fRcode'].forEach((s) => { $(s).value = ''; });
     $('#fSince').value = '0';
     syncFilterCount();
     loadQueries(1);
@@ -2929,9 +2835,10 @@ function bindEvents() {
   $('#btnNext').addEventListener('click', () => {
     if (state.queryPage < state.queryPages) loadQueries(state.queryPage + 1);
   });
-  $('#btnLiveToggle').addEventListener('click', () => { state.liveOn ? stopLive() : startLive(); });
-  $('#btnClearLive').addEventListener('click', () => {
-    setHtml($('#liveBody'), rowSpan(9, EMPTY('已清空')));
+  $('#btnLiveToggle').addEventListener('click', () => {
+    if (state.liveOn) { stopLive(true); return; }
+    if (state.queryPage !== 1) loadQueries(1);
+    startLive();
   });
   const bindExport = (id, dataset, format) => {
     const el = $(id);
@@ -2941,6 +2848,10 @@ function bindEvents() {
   bindExport('#btnExportQueriesCsv', 'queries', 'csv');
   bindExport('#btnExportDomainsJson', 'domains', 'json');
   bindExport('#btnExportDomainsCsv', 'domains', 'csv');
+  document.addEventListener('click', (e) => {
+    const inMenu = e.target.closest('details.menu');
+    $$('details.menu[open]').forEach((m) => { if (m !== inMenu || e.target.closest('.menu-list button')) m.open = false; });
+  });
   const btnMigration = $('#btnExportMigration');
   if (btnMigration) btnMigration.addEventListener('click', () => downloadBundle(
     '/api/migration-export', 'dns-stack-migration.tar.gz'));
@@ -2995,43 +2906,12 @@ function bindEvents() {
     if (state.domPage < state.domPages) loadDomains(state.domPage + 1);
   });
 
-  $('#btnSetCacheTtl').addEventListener('click', async () => {
-    const ttl = Number($('#cacheTtl').value);
-    const label = $('#cacheTtl').selectedOptions[0].textContent;
-    if (!confirm('把乐观缓存时长设为「' + label + '」？\n\n'
-      + 'Unbound 立即生效；mosproxy 需要重启后才生效。')) return;
-    await runOp('set_cache_ttl', '调整乐观缓存时长', { ttl: ttl }, false);
-    loadCacheInfo();
-  });
-
-  $('#btnSetMinTtl').addEventListener('click', async () => {
-    const ttl = Number($('#minTtl').value);
-    const label = $('#minTtl').selectedOptions[0].textContent;
-    if (!confirm('把强制最小 TTL 设为「' + label + '」？\n\n'
-      + '命中率会上升，但 CDN 的短 TTL 会一并被抬高，就近调度与故障转移随之变慢。')) return;
-    await runOp('set_min_ttl', '调整强制最小 TTL', { ttl: ttl }, false);
-    loadCacheInfo();
-  });
-
-  $('#btnFlushCache').addEventListener('click', async () => {
-    const domain = $('#flushDomain').value.trim();
-    const scope = domain ? '「' + domain + '」及其子域' : '全部缓存';
-    if (!confirm('清理 ' + scope + '？\n\n'
-      + '这些名字接下来都要重新走完整递归，短时间内延迟会明显升高。')) return;
-    const args = { confirm: true };
-    if (domain) args.domain = domain;
-    await runOp('flush_cache', '清理解析缓存', args, false);
-    loadCacheInfo();
-  });
-
-  $('#btnTest').addEventListener('click', runDnsTest);
   document.addEventListener('click', (e) => {
     const ex = e.target.closest('button[data-example]');
     if (!ex) return;
     $('#testDomain').value = ex.dataset.example;
     runDnsTest();
   });
-  $('#testDomain').addEventListener('keydown', (e) => { if (e.key === 'Enter') runDnsTest(); });
 
   $('#btnLogRefresh').addEventListener('click', loadLogs);
   $('#btnLogFollow').addEventListener('click', () => {
@@ -3040,6 +2920,7 @@ function bindEvents() {
   $('#btnLogClear').addEventListener('click', () => { state.logLines = []; renderLogs(); });
   $('#logSearch').addEventListener('input', debounce(renderLogs, 120));
   $('#logUnit').addEventListener('change', () => {
+    try { localStorage.setItem('dns-stack-log-unit', $('#logUnit').value); } catch (e) {  }
     state.logLines = [];
     if (state.logFollow) { stopLogFollow(); startLogFollow(); }
     loadLogs();
@@ -3070,7 +2951,7 @@ function bindEvents() {
 }
 
 function resetFilterControls() {
-  ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#fRespBy', '#domSearch', '#domRoute', '#logSearch']
+  ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#domSearch', '#domRoute', '#logSearch']
     .forEach((s) => { const el = $(s); if (el) el.value = ''; });
   const defaults = { '#fSince': '0', '#domLimit': '50', '#logLines': '200', '#logPriority': '', '#tsSpan': '3600' };
   Object.keys(defaults).forEach((s) => { const el = $(s); if (el) el.value = defaults[s]; });
@@ -3095,6 +2976,9 @@ async function loadBootstrap() {
   const sel = $('#logUnit');
   if (sel && d.log_units && d.log_units.length) {
     setHtml(sel, html`${d.log_units.map((u) => html`<option value="${u}">${u}</option>`)}`);
+    let saved = null;
+    try { saved = localStorage.getItem('dns-stack-log-unit'); } catch (e) {  }
+    if (saved && d.log_units.indexOf(saved) >= 0) sel.value = saved;
   }
 }
 

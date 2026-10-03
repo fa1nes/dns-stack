@@ -4,7 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0e15">
 <title>DNS Stack 管理面板</title>
+<script>
+try {
+  var t = localStorage.getItem('dns-stack-theme');
+  if (t !== 'light' && t !== 'dark') {
+    t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  document.documentElement.dataset.theme = t;
+} catch (e) {  }
+</script>
 <link rel="stylesheet" href="assets/panel.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polyline points='20 12 16.5 12 13.8 19 10 5 7.3 12 4 12' fill='none' stroke='%232dd4bf' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 </head>
@@ -24,9 +34,7 @@
       </div>
 
       <span class="brand-actions">
-        <button class="icon mobile-only" id="themeToggleMobile" title="切换主题" aria-label="切换主题">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-        </button>
+        <button class="icon mobile-only theme-btn" id="themeToggleMobile" title="主题" aria-label="切换主题"></button>
         <button class="icon mobile-only auth-only" id="btnLogoutMobile" hidden title="退出登录" aria-label="退出登录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
@@ -42,12 +50,10 @@
     </nav>
     <div class="sidebar-foot">
       <div class="row">
-        <button id="themeToggle" class="grow-1">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="lbl">主题</span></button>
+        <button id="themeToggle" class="grow-1 theme-btn" title="主题"></button>
         <button id="btnLogout" class="auth-only" hidden title="退出登录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="lbl">退出</span></button>
       </div>
-
       <div class="hint access-line">
         <span class="dot idle" id="accessDot"></span><span id="accessText">—</span>
       </div>
@@ -56,7 +62,6 @@
 
   <main class="main">
     <header class="topbar">
-
       <button class="icon fold-btn mobile-never" id="btnSideFold" title="收起侧栏" aria-label="收起侧栏">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17.5" x2="20" y2="17.5"/></svg>
       </button>
@@ -64,7 +69,7 @@
         <h2 id="pageTitle">概览</h2>
         <span class="page-desc" id="pageDesc"></span>
       </div>
-      <button class="icon" id="btnDiag" title="环境诊断（显示异常时点这里）" aria-label="环境诊断">
+      <button class="icon" id="btnDiag" title="环境诊断" aria-label="环境诊断">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
              stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/>
@@ -76,69 +81,73 @@
     <div class="content">
 
       <section class="page active" id="page-overview">
-        <div class="sysbar" id="sysBar"><div class="state"><span class="spinner"></span> 正在检查各模块…</div></div>
-        <div class="grid c3" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
-        <div class="grid c2">
+        <div id="ovAlert"></div>
+        <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+        <div class="grid ov-main">
           <div class="card">
-            <h3>请求量趋势 <select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
-              <option value="3600">近 1 小时</option>
-              <option value="21600">近 6 小时</option>
-              <option value="86400">近 24 小时</option>
+            <h3>请求趋势 <select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
+              <option value="3600">1 小时</option>
+              <option value="21600">6 小时</option>
+              <option value="86400">24 小时</option>
             </select></h3>
             <div class="chart" id="tsChart"></div>
             <div class="legend">
-              <span><i class="lg-accent"></i>本机递归</span>
-              <span><i class="lg-blue"></i>香港递归</span>
-              <span><i class="lg-purple"></i>缓存命中</span>
-              <span><i class="lg-err"></i>已拒绝</span>
+              <span><i class="lg-accent"></i>本机</span>
+              <span><i class="lg-blue"></i>香港</span>
+              <span><i class="lg-purple"></i>缓存</span>
+              <span><i class="lg-err"></i>拦截</span>
             </div>
           </div>
           <div class="card">
-            <h3>系统资源</h3>
-            <div id="ovSystem"><div class="state"><span class="spinner"></span></div></div>
+            <h3>线路</h3>
+            <div id="ovRoute"><div class="state"><span class="spinner"></span></div></div>
           </div>
         </div>
         <div class="grid c2">
-          <div class="card"><h3>mosproxy</h3><div id="ovMosproxy"></div></div>
-          <div class="card"><h3>本机 Unbound</h3><div id="ovUnbound"></div></div>
+          <div class="card flush">
+            <h3 class="pad">上游</h3>
+            <div class="table-wrap card-rows"><table class="card-rows">
+              <thead><tr><th>上游</th><th style="width:64px">状态</th><th style="width:84px">转发</th>
+                <th style="width:72px">出错</th><th style="width:72px">平均</th><th style="width:72px">P95</th></tr></thead>
+              <tbody id="ovUpstreamBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <h3>系统</h3>
+            <div id="ovSystem"><div class="state"><span class="spinner"></span></div></div>
+          </div>
         </div>
         <div class="card">
-          <h3>上游健康</h3>
-          <div class="table-wrap card-rows"><table class="card-rows">
-            <thead><tr><th>上游</th><th style="width:72px">状态</th><th style="width:88px">成功率</th>
-              <th style="width:88px">平均延迟</th><th style="width:88px">P95</th><th class="dim">方向</th></tr></thead>
-            <tbody id="ovUpstreamBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
-          </table></div>
+          <h3>解析器</h3>
+          <div id="ovResolver"></div>
         </div>
       </section>
 
       <section class="page" id="page-queries">
         <div class="tabs main-tabs" id="queryTabs">
-          <button data-qtab="live" class="active">实时请求</button>
-          <button data-qtab="domains">域名统计</button>
+          <button data-qtab="live" class="active">请求</button>
+          <button data-qtab="domains">域名</button>
         </div>
 
         <div class="tab-panel active" id="qtab-live">
           <div class="filters">
-            <input type="search" id="fDomain" class="grow" placeholder="域名包含…（回车搜索）" autocomplete="off"
+            <input type="search" id="fDomain" class="grow" placeholder="搜索域名" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
-            <button id="btnSearch" class="primary">查询</button>
+            <button id="btnSearch" class="primary">搜索</button>
             <button id="btnFilterMore" aria-expanded="false" aria-controls="filterMore">
-              更多筛选<span class="filter-count" id="filterCount" hidden>0</span></button>
+              筛选<span class="filter-count" id="filterCount" hidden>0</span></button>
             <div class="filter-more" id="filterMore" hidden>
-            <select id="fQtype" title="记录类型" autocomplete="off"><option value="">全部类型</option>
+            <select id="fQtype" title="类型" autocomplete="off"><option value="">全部类型</option>
               <option>A</option><option>AAAA</option><option>CNAME</option><option>HTTPS</option>
               <option>MX</option><option>TXT</option><option>NS</option><option>SOA</option><option>PTR</option></select>
-            <select id="fRoute" title="出口路由" autocomplete="off"><option value="">全部路由</option>
-              <option value="cn">本机递归</option><option value="foreign">香港递归</option>
-              <option value="cache">缓存命中</option><option value="reject">已拒绝</option></select>
-            <select id="fRcode" title="响应状态" autocomplete="off"><option value="">全部状态</option>
+            <select id="fRoute" title="来源" autocomplete="off"><option value="">全部来源</option>
+              <option value="cache">缓存</option><option value="cn">本机</option><option value="foreign">香港</option>
+              <option value="reject">拦截</option><option value="failed">失败</option></select>
+            <select id="fRcode" title="结果" autocomplete="off"><option value="">全部结果</option>
               <option>NOERROR</option><option>NXDOMAIN</option><option>SERVFAIL</option><option>REFUSED</option></select>
-            <select id="fRespBy" title="按实际响应的上游筛选" autocomplete="off"><option value="">全部上游</option>
-              <option value="cache">缓存直接返回</option></select>
-            <select id="fSince" title="时间范围" autocomplete="off"><option value="0">不限时间</option>
-              <option value="300">近 5 分钟</option><option value="3600">近 1 小时</option>
-              <option value="86400">近 24 小时</option><option value="604800">近 7 天</option></select>
+            <select id="fSince" title="时间" autocomplete="off"><option value="0">不限时间</option>
+              <option value="300">5 分钟内</option><option value="3600">1 小时内</option>
+              <option value="86400">24 小时内</option><option value="604800">7 天内</option></select>
             <button id="btnReset">重置</button>
             </div>
           </div>
@@ -146,28 +155,27 @@
             <div class="card-toolbar">
               <div class="row nowrap fs-12">
                 <span class="dot idle" id="liveDot"></span>
-                <span id="liveStatus" class="dim">实时流未连接</span>
+                <span id="liveStatus" class="dim">连接中…</span>
               </div>
               <div class="row">
-                <button class="sm" id="btnLiveToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6.5 4.8 19.5 12 6.5 19.2" fill="currentColor" stroke="none"/></svg>开启实时</button>
-                <button class="sm" id="btnClearLive">清空</button>
-                <button class="sm" id="btnExportQueriesJson" title="导出全部查询事件（最多 10 万条）">JSON</button>
-                <button class="sm" id="btnExportQueriesCsv" title="导出全部查询事件（最多 10 万条）">CSV</button>
+                <button class="sm" id="btnLiveToggle">暂停</button>
+                <details class="menu">
+                  <summary class="btn sm">导出</summary>
+                  <div class="menu-list">
+                    <button class="sm" id="btnExportQueriesCsv">CSV</button>
+                    <button class="sm" id="btnExportQueriesJson">JSON</button>
+                  </div>
+                </details>
               </div>
             </div>
-
             <div class="table-wrap card-rows">
               <table class="card-rows">
                 <thead><tr>
-                  <th style="width:74px">时间</th><th>域名</th><th style="width:58px">类型</th>
-                  <th style="width:104px">响应</th>
-                  <th style="width:88px">路由</th>
-                  <th style="width:104px">响应来源</th>
-                  <th style="width:82px">耗时</th>
-                  <th style="width:56px">缓存</th>
-                  <th style="width:72px">操作</th>
+                  <th style="width:76px">时间</th><th>域名</th><th style="width:64px">类型</th>
+                  <th style="width:100px">结果</th><th style="width:72px">来源</th>
+                  <th style="width:78px">耗时</th><th style="width:40px"></th>
                 </tr></thead>
-                <tbody id="liveBody"><tr><td colspan="9"><div class="state">点击「查询」加载历史请求，或开启实时流</div></td></tr></tbody>
+                <tbody id="liveBody"><tr><td colspan="7"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
               </table>
             </div>
             <div class="pager padded">
@@ -184,39 +192,39 @@
         <div class="tab-panel" id="qtab-domains">
           <div class="grid c4" id="domSummary"></div>
           <div class="grid c2">
-            <div class="card"><h3>查询类型分布（近 24 小时）</h3><div id="domQtype"></div></div>
-            <div class="card"><h3>响应状态分布（近 24 小时）</h3><div id="domRcode"></div></div>
-          </div>
-          <div class="row mb-10">
-            <button class="sm" id="btnReloadDomains">刷新</button>
-            <button class="sm" id="btnExportDomainsJson" title="导出全部域名统计（最多 10 万条）">JSON</button>
-            <button class="sm" id="btnExportDomainsCsv" title="导出全部域名统计（最多 10 万条）">CSV</button>
-            <button class="danger sm" data-op="clear_domains">清理陈旧域名</button>
-            <button class="danger sm" data-op="clear_domains_all">清空全部统计</button>
+            <div class="card"><h3>类型分布</h3><div id="domQtype"></div></div>
+            <div class="card"><h3>结果分布</h3><div id="domRcode"></div></div>
           </div>
           <div class="tabs" id="domTabs">
-            <button data-metric="new" class="active">最近新增</button>
+            <button data-metric="new" class="active">新出现</button>
             <button data-metric="recent">最近活跃</button>
             <button data-metric="count">请求最多</button>
             <button data-metric="fail">失败最多</button>
-            <button data-metric="slow">解析最慢</button>
+            <button data-metric="slow">最慢</button>
           </div>
           <div class="filters">
-            <input type="search" id="domSearch" class="grow" placeholder="域名包含…" autocomplete="off"
+            <input type="search" id="domSearch" class="grow" placeholder="搜索域名" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
-            <select id="domRoute" title="出口路由" autocomplete="off"><option value="">全部路由</option>
-              <option value="cn">本机递归</option><option value="foreign">香港递归</option>
-              <option value="cache">缓存命中</option></select>
-            <select id="domLimit" title="每页条数" autocomplete="off"><option value="50">每页 50</option><option value="100">每页 100</option>
+            <select id="domRoute" title="来源" autocomplete="off"><option value="">全部来源</option>
+              <option value="cache">缓存</option><option value="cn">本机</option><option value="foreign">香港</option></select>
+            <select id="domLimit" title="每页" autocomplete="off"><option value="50">每页 50</option><option value="100">每页 100</option>
               <option value="200">每页 200</option></select>
-            <button id="btnDomSearch" class="primary">查询</button>
+            <button id="btnDomSearch" class="primary">搜索</button>
+            <button class="sm" id="btnReloadDomains">刷新</button>
+            <details class="menu">
+              <summary class="btn sm">导出</summary>
+              <div class="menu-list">
+                <button class="sm" id="btnExportDomainsCsv">CSV</button>
+                <button class="sm" id="btnExportDomainsJson">JSON</button>
+              </div>
+            </details>
           </div>
           <div class="card flush"><div class="table-wrap card-rows">
             <table class="card-rows">
               <thead><tr id="domHead">
-                <th>域名</th><th style="width:160px">解析节点</th>
-                <th style="width:80px">请求次数</th><th style="width:70px">失败次数</th>
-                <th style="width:88px">最近状态</th><th style="width:130px">最后请求</th>
+                <th>域名</th><th style="width:170px">解析到</th>
+                <th style="width:80px">请求</th><th style="width:70px">失败</th>
+                <th style="width:96px">最近结果</th><th style="width:130px">最后请求</th>
               </tr></thead>
               <tbody id="domBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
             </table>
@@ -241,52 +249,43 @@
           <button data-ttab="logs">日志</button>
         </div>
 
-        <div class="tab-panel" id="ttab-cdn">
-          <div class="card">
-            <div class="filters flat m0">
-              <label>客户端子网
-                <select id="cdnSubnet" title="以哪个运营商的身份询问" autocomplete="off">
-                  <option value="219.141.136.0/24">北京电信</option>
-                  <option value="202.106.0.0/24">北京联通</option>
-                  <option value="221.130.33.0/24">北京移动</option>
-                </select>
-              </label>
-              <button class="primary sm" id="btnCdnHit">重新探测</button>
-              <button class="sm" id="btnCdnFresh" title="先清掉这些域名及其 CNAME 链的缓存再查，判据才不会被缓存骗过">清缓存重查</button>
-            </div>
-            <div class="hint">以真实中国网段发查询，答案落在 CDN 规则集的大陆段或 direct4 里即算就近命中。
-              「清缓存重查」会先清掉缓存，让「无 ECS 回显」变成可判定的结论，10 分钟限一次。</div>
-          </div>
-          <div id="cdnHitResult"></div>
-        </div>
-
         <div class="tab-panel active" id="ttab-test">
           <div class="card">
-            <div class="filters flat m0">
-              <input type="text" id="testDomain" class="grow" placeholder="要测试的域名，如 www.example.com" autocomplete="off"
+            <form class="filters flat m0" id="testForm">
+              <input type="text" id="testDomain" class="grow" placeholder="域名或 IP" autocomplete="off"
                      enterkeyhint="go" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false">
-              <select id="testQtype" title="查询类型" autocomplete="off"><option>A</option><option>AAAA</option><option>CNAME</option>
-                <option>HTTPS</option><option>MX</option><option>TXT</option><option>NS</option><option>SOA</option></select>
-              <input type="text" id="testSubnet" style="width:11.5rem"
-                     placeholder="客户端子网（可选）" autocomplete="off"
+              <select id="testQtype" title="记录类型" autocomplete="off"><option value="">自动</option>
+                <option>A</option><option>AAAA</option><option>CNAME</option><option>HTTPS</option><option>MX</option>
+                <option>TXT</option><option>NS</option><option>SOA</option><option>SRV</option><option>PTR</option></select>
+              <input type="text" id="testSubnet" class="subnet-input" placeholder="子网（可选）" autocomplete="off"
                      enterkeyhint="go" autocapitalize="none" autocorrect="off" spellcheck="false"
-                     title="以指定网段的身份询问权威，用来查看按地区调度的真实结果。">
-              <button class="primary" id="btnTest">开始测试</button>
-            </div>
-            <div class="hint">对比本机与香港两侧的解析结果。结果不同通常是 GeoDNS 按地区调度所致。</div>
-            <div class="examples">试试：<button type="button" class="example" data-example="www.qq.com">www.qq.com</button><button type="button" class="example" data-example="img.alicdn.com">img.alicdn.com</button><button type="button" class="example" data-example="www.apple.com">www.apple.com</button><button type="button" class="example" data-example="www.wikipedia.org">www.wikipedia.org</button></div>
+                     title="以这个网段的身份去问，看按地区调度的真实结果">
+              <button type="submit" class="primary" id="btnTest">测试</button>
+            </form>
+            <div class="examples"><button type="button" class="example" data-example="www.qq.com">www.qq.com</button><button type="button" class="example" data-example="www.apple.com">www.apple.com</button><button type="button" class="example" data-example="sb.sb">sb.sb</button><button type="button" class="example" data-example="223.5.5.5">223.5.5.5</button></div>
           </div>
           <div id="testResult"></div>
+        </div>
+
+        <div class="tab-panel" id="ttab-cdn">
+          <div class="card">
+            <h3>CDN 就近
+              <span class="row">
+                <button class="sm" id="btnCdnFresh" title="清掉这些域名的缓存再查，10 分钟一次">复核</button>
+                <button class="primary sm" id="btnCdnHit">重新检测</button>
+              </span>
+            </h3>
+            <div id="cdnHitResult"></div>
+          </div>
         </div>
 
         <div class="tab-panel" id="ttab-ip">
           <div class="card">
             <div class="filters flat m0">
-              <input type="text" id="ipQuery" class="grow mono" placeholder="IP 地址，留空查询你自己的出口地址" autocomplete="off"
+              <input type="text" id="ipQuery" class="grow mono" placeholder="IP，留空查自己" autocomplete="off"
                      enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
               <button class="primary" id="btnIpLookup">查询</button>
             </div>
-            <div class="hint">每个归属库各自独立查询，互不参考。只有 ASN 与国家码可机器比对，其余按各源原样并列。</div>
           </div>
           <div id="ipResult"></div>
         </div>
@@ -294,7 +293,7 @@
         <div class="tab-panel" id="ttab-location">
           <div class="card">
             <h3>我的位置
-              <button class="ghost sm" id="btnMyLocRefresh" title="重新探测">刷新</button>
+              <button class="sm" id="btnMyLocRefresh" title="重新探测">刷新</button>
             </h3>
             <div id="myLocation"></div>
           </div>
@@ -302,35 +301,27 @@
 
         <div class="tab-panel" id="ttab-logs">
           <div class="filters">
-            <label>服务
-              <select id="logUnit" title="日志来源" autocomplete="off">
-              </select>
-            </label>
-            <label>等级
-              <select id="logPriority" title="日志级别" autocomplete="off">
-                <option value="">全部</option><option value="err">错误及以上</option>
-                <option value="warning">警告及以上</option><option value="info">信息及以上</option>
-              </select>
-            </label>
-            <label>行数
-              <select id="logLines" title="显示行数" autocomplete="off"><option value="200">200</option><option value="500">500</option>
-                <option value="1000">1000</option><option value="2000">2000</option></select>
-            </label>
-            <input type="search" id="logSearch" class="grow" placeholder="关键字过滤…" autocomplete="off"
+            <select id="logUnit" title="服务" autocomplete="off"></select>
+            <select id="logPriority" title="级别" autocomplete="off">
+              <option value="">全部级别</option><option value="err">错误</option>
+              <option value="warning">警告及以上</option><option value="info">信息及以上</option>
+            </select>
+            <select id="logLines" title="行数" autocomplete="off"><option value="200">200 行</option><option value="500">500 行</option>
+              <option value="1000">1000 行</option><option value="2000">2000 行</option></select>
+            <input type="search" id="logSearch" class="grow" placeholder="过滤" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
             <button id="btnLogRefresh" class="primary">刷新</button>
-            <button id="btnLogFollow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6.5 4.8 19.5 12 6.5 19.2" fill="currentColor" stroke="none"/></svg>实时</button>
+            <button id="btnLogFollow">跟随</button>
             <button id="btnLogClear">清屏</button>
           </div>
-          <div class="log-view" id="logView"><div class="state">选择服务后点击「刷新」加载日志</div></div>
-          <div class="hint">「清屏」只清当前显示，不动服务器日志。日志经 helper 统一脱敏。</div>
+          <div class="log-view" id="logView"><div class="state">选好服务后点刷新</div></div>
         </div>
       </section>
 
       <section class="page" id="page-account">
         <div class="callout err" id="acctNoAuth" hidden>
-          面板还没有设置密码，能连到这个端口的人都能直接操作它。在服务器上执行
-          <code>sudo dns-stack panel-password</code> 设好用户名和密码。
+          面板还没设密码，能连上这个端口的人都能操作它。请在服务器执行
+          <code>sudo dns-stack panel-password</code>
         </div>
 
         <div class="acct-hero" id="acctHero">
@@ -366,7 +357,7 @@
                   <input type="password" id="userPw" class="w-full" autocomplete="current-password" enterkeyhint="go">
                 </div>
               </div>
-              <div class="note-xs mt-8">2–32 位，字母、数字和 . _ -，以字母或数字开头，不区分大小写。</div>
+              <div class="note-xs mt-8">2–32 位字母、数字或 . _ -，不区分大小写</div>
               <div class="login-msg" id="userMsg" role="alert"></div>
               <button type="submit" class="primary sm mt-12" id="btnUser">保存</button>
             </form>
@@ -379,6 +370,7 @@
               <button class="sm" data-edit="pwEdit" data-label="修改" aria-expanded="false">修改</button>
             </div>
             <form class="set-edit" id="pwEdit" hidden autocomplete="off">
+              <input type="text" class="pw-user" autocomplete="username" hidden readonly tabindex="-1" aria-hidden="true">
               <div class="set-fields">
                 <div class="set-wide">
                   <label class="f-label" for="pwOld">当前密码</label>
@@ -415,28 +407,29 @@
             <div class="set-edit" id="totpEdit" hidden>
               <ol class="steps" id="totpSetup" hidden>
                 <li>
-                  <div class="step-title">把密钥添加到验证器</div>
-                  <div class="note-xs">Google Authenticator、Microsoft Authenticator、1Password 都可以：选「手动输入密钥」粘贴这串，或导入 otpauth 链接。</div>
+                  <div class="step-title">把密钥加进验证器</div>
+                  <div class="note-xs">在验证器 App 里手动输入密钥，或导入下面的链接</div>
                   <div class="copy-field mt-8">
                     <code id="totpSecret" class="mono"></code>
                     <button type="button" class="sm" data-copy-target="totpSecret" data-copy-what="密钥">复制</button>
                   </div>
                   <div class="copy-field mt-8">
                     <code id="totpUri" class="mono clip"></code>
-                    <button type="button" class="sm" data-copy-target="totpUri" data-copy-what="otpauth 链接">复制</button>
+                    <button type="button" class="sm" data-copy-target="totpUri" data-copy-what="链接">复制</button>
                   </div>
                 </li>
                 <li>
-                  <div class="step-title">填入验证器上显示的 6 位数字</div>
+                  <div class="step-title">输入验证器上的 6 位数字</div>
                   <div class="row mt-8">
                     <input type="text" id="totpCode" class="totp-code" inputmode="numeric" maxlength="6"
                            autocomplete="one-time-code" enterkeyhint="done" placeholder="000000" aria-label="6 位验证码">
                     <button class="primary sm" id="btnTotpEnable">验证并启用</button>
                   </div>
-                  <div class="note-xs mt-8">密钥 10 分钟内有效。启用后验证器丢了，在服务器上执行 <code>sudo dns-stack panel-2fa-reset</code> 关闭。</div>
+                  <div class="note-xs mt-8">密钥 10 分钟内有效。验证器丢了可在服务器执行 <code>sudo dns-stack panel-2fa-reset</code></div>
                 </li>
               </ol>
               <form id="totpOff" hidden>
+                <input type="text" class="pw-user" autocomplete="username" hidden readonly tabindex="-1" aria-hidden="true">
                 <label class="f-label" for="totpOffPw">输入密码确认停用</label>
                 <div class="row">
                   <input type="password" id="totpOffPw" class="grow-1 set-input" autocomplete="current-password" enterkeyhint="done">
@@ -471,24 +464,24 @@
                 </div>
                 <div>
                   <label class="f-label" for="oaSecret">Client Secret</label>
-                  <input type="password" id="oaSecret" class="w-full" placeholder="留空表示不修改" autocomplete="new-password">
+                  <input type="password" id="oaSecret" class="w-full" placeholder="留空则不改" autocomplete="off" data-1p-ignore data-lpignore="true">
                 </div>
               </div>
-              <div class="f-label mt-12">回调地址，填进 GitHub OAuth App 的 Authorization callback URL</div>
+              <div class="f-label mt-12">回调地址（填到 GitHub OAuth App）</div>
               <div class="copy-field">
                 <code id="oaCallback" class="mono"></code>
                 <button type="button" class="sm" data-copy-target="oaCallback" data-copy-what="回调地址">复制</button>
               </div>
-              <div class="note-xs mt-8">Secret 只写不回显。换了 Client ID 或 Secret，要再用 GitHub 成功登录一次，才能关闭密码登录。</div>
+              <div class="note-xs mt-8">Secret 保存后不再显示。换了凭据要重新用 GitHub 登录一次</div>
               <button type="submit" class="primary sm mt-12" id="btnSaveOAuth">保存</button>
             </form>
 
             <div class="set-row">
               <div class="set-main">
-                <div class="set-k">允许登录的账号</div>
-                <div class="set-v">只有这些账号进得来。每个账号第一次登录时会记下它的数字 ID，之后改名、或别人注册同名账号都进不来。</div>
-                <div class="user-chips" id="oaUsers"></div>
-                <form class="row oa-add" id="oaUserForm">
+                <div class="set-k">允许的账号</div>
+                <div class="set-v">首次登录会绑定账号 ID，改名或同名新号都进不来</div>
+                <div class="chips" id="oaUsers"></div>
+                <form class="row add-form" id="oaUserForm">
                   <input type="text" id="oaUserAdd" class="grow-1" placeholder="GitHub 用户名" autocomplete="off"
                          autocapitalize="none" spellcheck="false" maxlength="39" enterkeyhint="done"
                          aria-label="要添加的 GitHub 用户名">
@@ -511,7 +504,7 @@
           <div class="set-row" id="revokeRow">
             <div class="set-main">
               <div class="set-k">其它设备</div>
-              <div class="set-v">让其它浏览器、手机上的登录立即失效，这台设备不受影响。改密码也有同样的效果。</div>
+              <div class="set-v">让其它浏览器和手机立即退出，这台不受影响</div>
             </div>
             <button class="danger sm" id="btnRevokeOthers">全部退出</button>
           </div>
@@ -521,200 +514,289 @@
       <section class="page" id="page-settings">
         <div class="tabs main-tabs" id="settingTabs">
           <button data-stab="entry" class="active">接入</button>
-          <button data-stab="rules">数据与证书</button>
-          <button data-stab="access">递归管控</button>
-          <button data-stab="services">服务与备份</button>
+          <button data-stab="rules">域名规则</button>
+          <button data-stab="data">缓存与数据</button>
+          <button data-stab="ops">维护</button>
           <button data-stab="audit">审计</button>
         </div>
 
-        <div class="tab-panel active" id="stab-entry">
-          <h3 class="set-head">DNS 接入地址</h3>
+        <div class="tab-panel active narrow" id="stab-entry">
+          <h3 class="set-head">接入地址</h3>
           <div class="card set-list" id="dohBox"><div class="state"><span class="spinner"></span> 加载中…</div></div>
-          <p class="set-foot">证书是签给这个 IP 的，客户端要按 IP 访问，不要另配域名。各客户端怎么填，见文档「客户端接入」。</p>
-        </div>
+          <p class="set-foot">证书签给的是 IP，客户端要按 IP 连接。</p>
 
-        <div class="tab-panel" id="stab-access">
-          <div class="grid c2">
-            <div class="card">
-              <h3>域名黑名单 <span id="blBadge"></span></h3>
-              <div class="filters flat m0">
-                <input type="text" id="blInput" class="grow mono" placeholder="要拦截的域名，空格或逗号分隔"
-                       autocomplete="off" enterkeyhint="done" inputmode="url"
-                       autocapitalize="none" autocorrect="off" spellcheck="false">
-                <button class="primary sm" id="btnBlAdd">加入</button>
+          <h3 class="set-head">证书</h3>
+          <div class="card set-list">
+            <div class="set-row">
+              <div class="set-main">
+                <div class="set-k">TLS 证书</div>
+                <div class="set-v" id="certInfo"></div>
               </div>
-              <div class="hint">命中即回 NXDOMAIN，匹配含全部子域。拒绝顶级域。</div>
-              <div id="blList"></div>
-            </div>
-
-            <div class="card">
-              <h3>访问控制 <span id="aclBadge"></span></h3>
-              <div class="filters flat m0">
-                <input type="text" id="aclInput" class="grow mono" placeholder="授权网段 CIDR，空格或逗号分隔"
-                       autocomplete="off" enterkeyhint="done"
-                       autocapitalize="none" autocorrect="off" spellcheck="false">
-                <button class="primary sm" id="btnAclAdd">放行</button>
-                <button class="sm" id="btnAclApply" title="把当前列表重新下发到内核">重新下发</button>
-                <button class="danger sm" id="btnAclDisable" title="移除内核里的访问控制链，入口恢复对全网开放">关闭</button>
-              </div>
-              <div class="hint">列表为空 = 不启用。回环与隧道始终放行。
-                <b>家宽地址会变</b>，被挡在外面时用 SSH 跑 <span class="mono">dns-stack acl disable</span>。</div>
-              <div id="aclList"></div>
+              <span class="row">
+                <button class="sm" data-op="cert_check">检查</button>
+                <button class="danger sm" data-op="cert_renew">续签</button>
+              </span>
             </div>
           </div>
         </div>
 
         <div class="tab-panel" id="stab-rules">
-          <div class="grid c4" id="collectStats"></div>
+          <div class="grid c2">
+            <div class="card">
+              <h3>国内解析 <span class="count" id="routeCnCount"></span></h3>
+              <p class="card-note">从国内直接问权威，拿国内节点。适合国内能访问、却被解析到境外的网站。</p>
+              <form class="row add-form" data-list-form="route_cn">
+                <input type="text" class="grow-1" placeholder="域名，如 sb.sb" autocomplete="off" enterkeyhint="done"
+                       inputmode="url" autocapitalize="none" spellcheck="false" aria-label="加入国内解析的域名">
+                <button type="submit" class="primary sm">加入</button>
+              </form>
+              <div class="chips" id="routeCnList"></div>
+            </div>
+            <div class="card">
+              <h3>香港解析 <span class="count" id="routeHkCount"></span></h3>
+              <p class="card-note">整条解析交给香港。适合国内解析结果被污染或不完整的域名。</p>
+              <form class="row add-form" data-list-form="route_hk">
+                <input type="text" class="grow-1" placeholder="域名" autocomplete="off" enterkeyhint="done"
+                       inputmode="url" autocapitalize="none" spellcheck="false" aria-label="加入香港解析的域名">
+                <button type="submit" class="primary sm">加入</button>
+              </form>
+              <div class="chips" id="routeHkList"></div>
+            </div>
+          </div>
+          <div class="grid c2">
+            <div class="card">
+              <h3>拦截 <span class="count" id="blCount"></span></h3>
+              <p class="card-note">直接返回「不存在」，含全部子域。</p>
+              <form class="row add-form" data-list-form="blocklist">
+                <input type="text" class="grow-1" placeholder="域名" autocomplete="off" enterkeyhint="done"
+                       inputmode="url" autocapitalize="none" spellcheck="false" aria-label="要拦截的域名">
+                <button type="submit" class="primary sm">加入</button>
+              </form>
+              <div class="chips" id="blList"></div>
+            </div>
+            <div class="card">
+              <h3>访问控制 <span id="aclBadge"></span></h3>
+              <p class="card-note">只让这些网段使用 DNS，留空不限制。被挡在外面时用 SSH 执行 <code>dns-stack acl disable</code></p>
+              <form class="row add-form" id="aclForm">
+                <input type="text" id="aclInput" class="grow-1 mono" placeholder="网段，如 1.2.3.0/24" autocomplete="off"
+                       enterkeyhint="done" autocapitalize="none" spellcheck="false" aria-label="要放行的网段">
+                <button type="submit" class="primary sm">放行</button>
+              </form>
+              <div class="chips" id="aclList"></div>
+              <div class="row mt-12" id="aclActions">
+                <button class="sm" id="btnAclApply">重新下发</button>
+                <button class="danger sm" id="btnAclDisable">停用</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
+        <div class="tab-panel" id="stab-data">
+          <h3 class="set-head">缓存</h3>
+          <div class="card set-list narrow-card">
+            <div class="set-row">
+              <div class="set-main">
+                <div class="set-k">过期后继续使用</div>
+                <div class="set-v">记录过期后先回旧结果、后台再刷新，掉线也能解析</div>
+              </div>
+              <select id="cacheTtl" title="过期后继续使用" data-custom="{n} 秒" autocomplete="off">
+                <option value="0">关闭</option>
+                <option value="3600">1 小时</option>
+                <option value="86400">1 天</option>
+                <option value="259200">3 天</option>
+                <option value="604800">7 天</option>
+                <option value="1209600">14 天</option>
+                <option value="2592000">30 天</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="set-main">
+                <div class="set-k">最短缓存</div>
+                <div class="set-v">调高能省查询，但 CDN 换节点会变慢</div>
+              </div>
+              <select id="minTtl" title="最短缓存" data-custom="{n} 秒" autocomplete="off">
+                <option value="0">不限</option>
+                <option value="30">30 秒</option>
+                <option value="60">60 秒</option>
+                <option value="120">2 分钟</option>
+                <option value="300">5 分钟</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="set-main">
+                <div class="set-k">清缓存</div>
+                <div class="set-v" id="cacheInfo"></div>
+                <form class="row add-form" id="flushForm">
+                  <input type="text" id="flushDomain" class="grow-1" placeholder="域名，留空清全部" autocomplete="off"
+                         enterkeyhint="go" inputmode="url" autocapitalize="none" spellcheck="false" aria-label="要清缓存的域名">
+                  <button type="submit" class="danger sm" id="btnFlushCache">清理</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <h3 class="set-head">分流数据</h3>
+          <div class="grid c4" id="collectStats"></div>
           <div class="card">
-            <h3>分流数据集
+            <h3>
+              <span class="tabs inline" id="dataTabs">
+                <button data-set="cn_zones" class="active">直连域名</button>
+                <button data-set="polluted">污染 IP</button>
+              </span>
               <span class="row">
-                <input type="text" id="dataSearch" class="ipt-sm" placeholder="筛选…" autocomplete="off"
-                        enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
-                <button class="sm" id="btnExportDataset" title="导出当前数据集全量">导出</button>
+                <input type="search" id="dataSearch" class="ipt-sm" placeholder="筛选" autocomplete="off"
+                       enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
+                <button class="sm" id="btnExportDataset">导出</button>
                 <button class="sm" id="btnReloadCollected">刷新</button>
               </span>
             </h3>
-            <div class="tabs" id="dataTabs">
-              <button data-set="cn_zones" class="active">直连域名</button>
-              <button data-set="polluted">污染 IP</button>
-            </div>
             <div id="dataList"></div>
           </div>
-
           <div class="grid c2">
             <div class="card">
-              <h3>解析失败最多的域名</h3>
+              <h3>失败最多的域名</h3>
               <div id="failingDomains"></div>
             </div>
             <div class="card">
-              <h3>CDN 直连规则集</h3>
+              <h3>CDN 规则集</h3>
               <div id="rulesInfo"></div>
             </div>
           </div>
-
-          <div class="grid c2">
-            <div class="card">
-              <h3>TLS 证书</h3>
-              <div id="certInfo"></div>
-              <div class="row mt-10">
-                <button class="sm" data-op="cert_check">检查</button>
-                <button class="danger sm" data-op="cert_renew">立即续签</button>
-              </div>
-            </div>
-            <div class="card">
-              <h3>缓存策略</h3>
-              <div id="cacheInfo"></div>
-              <div class="filters flat">
-                <label>乐观缓存
-                  <select id="cacheTtl" title="缓存 TTL" autocomplete="off">
-                    <option value="0">关闭</option>
-                    <option value="3600">1 小时</option>
-                    <option value="86400">1 天</option>
-                    <option value="259200">3 天</option>
-                    <option value="604800">7 天</option>
-                    <option value="1209600">14 天</option>
-                    <option value="2592000">30 天</option>
-                  </select>
-                </label>
-                <button class="primary sm" id="btnSetCacheTtl">应用</button>
-              </div>
-              <div class="filters flat">
-                <label>最小 TTL
-                  <select id="minTtl" title="强制最小 TTL" autocomplete="off">
-                    <option value="0">不强制</option>
-                    <option value="30">30 秒</option>
-                    <option value="60">60 秒</option>
-                    <option value="120">120 秒</option>
-                    <option value="300">300 秒</option>
-                  </select>
-                </label>
-                <button class="primary sm" id="btnSetMinTtl">应用</button>
-              </div>
-              <div class="hint">抬高最小 TTL 提升命中率，但也会拖慢 CDN 的故障转移与就近调度，上限 300 秒。</div>
-              <div class="filters flat">
-                <input type="text" id="flushDomain" class="grow mono" placeholder="要清理的域名，留空表示全部"
-                       autocomplete="off" enterkeyhint="go" inputmode="url"
-                       autocapitalize="none" autocorrect="off" spellcheck="false">
-                <button class="danger sm" id="btnFlushCache">清理缓存</button>
-              </div>
-            </div>
-          </div>
-
-          <details class="card">
-            <summary>维护操作与历史</summary>
-            <div class="row mt-12">
-              <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
-              <button class="danger sm" data-op="set_arch_epoch">重设统计起点</button>
-              <button class="danger sm" data-op="purge_legacy">清理旧架构数据</button>
-            </div>
-          </details>
         </div>
 
-        <div class="tab-panel" id="stab-services">
-          <div class="grid c2">
-            <div class="card">
-              <h3>服务控制</h3>
-              <div class="row">
-                <button class="sm" data-op="healthcheck">健康检查</button>
-                <button class="sm" data-op="reload_mosproxy">重载 mosproxy</button>
-                <button class="danger sm" data-op="restart_mosproxy">重启 mosproxy</button>
-                <button class="danger sm" data-op="restart_unbound">重启 Unbound</button>
-              </div>
-              <div class="row mt-8">
-                <button class="danger sm" data-op="vacuum_logs">清理系统日志</button>
-                <button class="danger sm" data-op="drop_stale_logs">清除僵尸日志</button>
-              </div>
-              <div class="hint">所有操作通过受限 helper 白名单执行，标红按钮需二次确认。</div>
-            </div>
-            <div class="card">
-              <h3>备份与迁移</h3>
-              <div class="row">
-                <button class="sm" data-op="backup">立即备份</button>
-                <button class="sm" data-op="export" data-args='{"mode":"state"}'>导出（配置+数据）</button>
-                <button class="sm" data-op="export" data-args='{"mode":"full"}'>导出完整包</button>
-                <button class="sm" id="btnExportMigration">导出迁移数据</button>
-                <button class="danger sm" data-op="prune_backups">清理旧备份</button>
-              </div>
-              <div class="row">
-                <input type="file" id="migrationFile" accept=".gz,.tgz,application/gzip" class="sm">
-                <button class="sm" id="btnMigrationDryRun">试算导入</button>
-                <button class="sm danger" id="btnMigrationImport">导入并覆盖</button>
-              </div>
-              <div id="migrationImportResult" class="hint"></div>
-              <div class="hint">只接受本面板导出的包，逐文件校验 sha256，覆盖前自动备份。
-                整机迁移用 <code>sudo dns-stack migrate root@新服务器</code></div>
-            </div>
-          </div>
-          <div class="grid c2" id="opsRoleExtra"></div>
-          <div class="grid c2">
-            <div class="card"><h3>备份文件</h3><div id="backupList"></div></div>
-            <div class="card"><h3>导出包</h3><div id="exportList"></div></div>
-          </div>
-          <div class="card">
-            <h3>系统模块
+        <div class="tab-panel narrow" id="stab-ops">
+          <h3 class="set-head">服务</h3>
+          <div class="card set-list">
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">mosproxy</div><div class="set-v">DoH / DoT / DoQ 入口，重启时会断几秒</div></div>
               <span class="row">
-                <span class="hint m0" id="moduleImpl"></span>
-                <button class="sm" id="btnReloadModules">刷新</button>
+                <button class="sm" data-op="reload_mosproxy">重载名单</button>
+                <button class="danger sm" data-op="restart_mosproxy">重启</button>
               </span>
-            </h3>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">Unbound</div><div class="set-v">递归解析器，重启会清空缓存</div></div>
+              <button class="danger sm" data-op="restart_unbound">重启</button>
+            </div>
+            <div class="set-row" id="opsRoleExtra" hidden>
+              <div class="set-main"><div class="set-k">分流数据</div><div class="set-v">重建大陆网段、国内权威与 ECS 白名单，不动防火墙</div></div>
+              <span class="row">
+                <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
+                <button class="sm" data-op="refresh_routing">重建</button>
+              </span>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">健康检查</div><div class="set-v">逐项检查各服务与分流状态</div></div>
+              <button class="sm" data-op="healthcheck">检查</button>
+            </div>
+          </div>
+
+          <h3 class="set-head">备份</h3>
+          <div class="card set-list">
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">自动备份</div><div class="set-v">数据库、配置与规则</div></div>
+              <select id="bkInterval" title="自动备份" data-custom="每 {n} 小时" autocomplete="off">
+                <option value="24">每天</option>
+                <option value="72">每 3 天</option>
+                <option value="168">每周</option>
+                <option value="0">关闭</option>
+              </select>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">保留份数</div><div class="set-v">超出的旧备份会在下次备份后删除</div></div>
+              <span class="row">
+                <select id="bkDaily" title="保留最近" data-custom="最近 {n} 份" autocomplete="off">
+                  <option value="1">最近 1 份</option><option value="3">最近 3 份</option>
+                  <option value="7">最近 7 份</option><option value="14">最近 14 份</option><option value="30">最近 30 份</option>
+                </select>
+                <select id="bkWeekly" title="每周另存一份，保留几周" data-custom="另留 {n} 周" autocomplete="off">
+                  <option value="1">另留 1 周</option><option value="2">另留 2 周</option>
+                  <option value="4">另留 4 周</option><option value="8">另留 8 周</option>
+                </select>
+              </span>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">现有备份</div><div class="set-v" id="backupSummary"></div></div>
+              <span class="row">
+                <button class="sm" data-op="backup">立即备份</button>
+                <button class="danger sm" data-op="prune_backups">按份数清理</button>
+              </span>
+            </div>
+            <div class="set-edit" id="backupList"></div>
+          </div>
+
+          <h3 class="set-head">迁移</h3>
+          <div class="card set-list">
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">导出</div><div class="set-v" id="exportSummary">迁移包不含任何密钥</div></div>
+              <span class="row">
+                <button class="sm" id="btnExportMigration">迁移包</button>
+                <button class="sm" data-op="export" data-args='{"mode":"state"}'>配置+数据</button>
+                <button class="sm" data-op="export" data-args='{"mode":"full"}'>完整包</button>
+              </span>
+            </div>
+            <div class="set-row">
+              <div class="set-main">
+                <div class="set-k">导入迁移包</div>
+                <div class="set-v">只认本面板导出的包，覆盖前自动备份</div>
+                <div class="row mt-8">
+                  <input type="file" id="migrationFile" accept=".gz,.tgz,application/gzip" class="sm">
+                  <button class="sm" id="btnMigrationDryRun">试算</button>
+                  <button class="sm danger" id="btnMigrationImport">导入</button>
+                </div>
+                <div id="migrationImportResult"></div>
+              </div>
+            </div>
+          </div>
+
+          <h3 class="set-head">清理</h3>
+          <div class="card set-list">
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">系统日志</div><div class="set-v">删除 7 天前的 journald 日志</div></div>
+              <span class="row">
+                <button class="danger sm" data-op="drop_stale_logs">清废弃日志</button>
+                <button class="danger sm" data-op="vacuum_logs">清理</button>
+              </span>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">查询统计</div><div class="set-v">删掉的统计找不回来</div></div>
+              <span class="row">
+                <button class="danger sm" data-op="clear_domains">清理 7 天未见</button>
+                <button class="danger sm" data-op="clear_domains_all">全部清空</button>
+              </span>
+            </div>
+            <div class="set-row">
+              <div class="set-main"><div class="set-k">统计起点</div><div class="set-v">从现在重新累计「近 24 小时」</div></div>
+              <span class="row">
+                <button class="danger sm" data-op="purge_legacy">删起点前数据</button>
+                <button class="danger sm" data-op="set_arch_epoch">设为现在</button>
+              </span>
+            </div>
+          </div>
+
+          <h3 class="set-head">模块 <span class="hint m0" id="moduleImpl"></span>
+            <button class="sm" id="btnReloadModules">刷新</button></h3>
+          <div class="card">
             <div id="moduleGroups"><div class="state"><span class="spinner"></span> 加载中…</div></div>
           </div>
         </div>
 
         <div class="tab-panel" id="stab-audit">
-          <div class="row mb-10">
-            <button class="sm" id="btnReloadAudit">刷新</button>
-            <button class="danger sm" data-op="clear_audit">清空审计记录</button>
+          <div class="card flush">
+            <div class="card-toolbar">
+              <span class="fs-12 dim">面板上的每一次操作</span>
+              <div class="row">
+                <button class="sm" id="btnReloadAudit">刷新</button>
+                <button class="danger sm" data-op="clear_audit">清空</button>
+              </div>
+            </div>
+            <div class="table-wrap card-rows"><table class="card-rows">
+              <thead><tr><th style="width:140px">时间</th><th style="width:170px">操作</th>
+                <th style="width:64px">结果</th><th style="width:170px">参数</th><th>输出</th>
+                <th style="width:40px"></th></tr></thead>
+              <tbody id="auditBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
+            </table></div>
           </div>
-          <div class="card flush"><div class="table-wrap card-rows"><table class="card-rows">
-            <thead><tr><th style="width:150px">时间</th><th style="width:170px">操作</th>
-              <th style="width:70px">结果</th><th style="width:170px">参数</th><th>输出摘要</th>
-              <th style="width:52px"></th></tr></thead>
-            <tbody id="auditBody"><tr><td colspan="6"><div class="state"><span class="spinner"></span> 加载中…</div></td></tr></tbody>
-          </table></div></div>
-          <div class="hint">helper 侧另有独立审计日志 <code>/var/log/dns-stack/helper.log</code></div>
         </div>
       </section>
     </div>
@@ -725,7 +807,7 @@
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
   <div class="drawer-head">
     <h3 id="drawerTitle">详情</h3>
-    <button class="icon" id="drawerClose" aria-label="关闭详情">
+    <button class="icon" id="drawerClose" aria-label="关闭">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>

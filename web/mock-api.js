@@ -37,7 +37,7 @@
       available: true, queries: 118766, cache_hits: 91204, cache_miss: 27562,
       cache_hit_ratio: 76.8, prefetch: 6132,
       recursion_time_avg_ms: 214.7, recursion_time_median_ms: 88.2,
-      requestlist_current: 3,
+      requestlist_current: 3, subnet_queries: 31204, subnet_cache_hits: 20117,
     },
     system: {
       disk: { total: 42949672960, used: 12884901888, free: 30064771072, percent: 30.0 },
@@ -45,7 +45,7 @@
       load: { '1m': 0.34, '5m': 0.41, '15m': 0.38 }, cpu_count: 4,
       uptime_seconds: 1904400,
     },
-    events: { last_5m: 214, last_1h: 4389, domains: 853,
+    events: { last_5m: 214, last_1h: 4389, domains: 853, total_24h: 19457, failed_24h: 60,
               latency: { samples: 49137, avg: 12.4, p50: 1.2, p95: 486,
                          sampled: true, sampled_from: 10000, slow_1s: 7 } },
     routing: { direct4_count: 5813, cn_zones_count: 270, cn_authority_count: 387,
@@ -72,19 +72,17 @@
       rcode, rcode_name,
       resp_by: cached ? 'cache' : (foreign ? 'foreign-hk' : 'local-unbound'),
       route: cached ? 'cache' : (foreign ? 'foreign' : 'cn'),
-      route_name: cached ? '缓存命中' : (foreign ? '香港递归' : '本机递归'),
+      route_name: cached ? '缓存' : (foreign ? '香港' : '本机'),
       cache_hit: cached,
       elapsed_ms: i % 11 === 0 ? null : (cached ? 0.42 : 186.3),
     };
   }
 
   const ROUTING_DETAIL = {
-    manual_rule: null, direction: 'adaptive', zone: null,
-    reason: '各级权威尚未观测到大陆 IP，按每跳权威的 IP 归属分流',
-    zone_queried: 'example.com',
+    rule: null, rule_domain: null, zone: 'example.com', path: 'mixed',
     authorities: [
-      { ns: 'ns1.example.com', ip: '203.0.113.10', in_cn: true, geo: CN_NODE, exit: 'direct' },
-      { ns: 'ns2.example.net', ip: '198.51.100.20', in_cn: false, geo: OVERSEAS, exit: 'tunnel' },
+      { ns: 'ns1.example.com', ip: '203.0.113.10', geo: CN_NODE, exit: 'direct' },
+      { ns: 'ns2.example.net', ip: '198.51.100.20', geo: OVERSEAS, exit: 'tunnel' },
     ],
     exits: { available: true, direct: '203.0.113.1', tunnel: '198.51.100.1', tunnel_note: null },
     geoip_status: { available: true, degraded: false },
@@ -93,6 +91,7 @@
       { ip: '203.0.113.30', in_cn: true, geo: CN_NODE },
       { ip: '203.0.113.31', in_cn: true, geo: NEAR_NODE },
     ],
+    viewer_subnet: null,
   };
 
   const RECORDS = (type) => ({
@@ -105,7 +104,8 @@
 
   const OPS = [
     ['collect_polluted_ip', '采集污染 IP', false], ['rotate_doh_path', '轮换 DoH 私密路径', true],
-    ['prune_backups', '清理旧备份', true], ['drop_stale_logs', '清除僵尸日志', true],
+    ['prune_backups', '按保留份数清理旧备份', true], ['drop_stale_logs', '清理废弃日志', true],
+    ['set_backup_policy', '调整备份策略', false],
     ['set_cache_ttl', '调整乐观缓存时长', false], ['reload_mosproxy', '重载 mosproxy 域名表', false],
     ['restart_mosproxy', '重启 mosproxy', true], ['restart_unbound', '重启 Unbound', true],
     ['healthcheck', '执行健康检查', false], ['cert_check', '检查证书', false],
@@ -130,7 +130,7 @@
     ['分流数据', 'dns-stack-collect-polluted', '污染 IP 采集', '采集 GFW 投毒返回的假地址，作为判定域名被污染的证据', 'job', 'go', 0],
     ['面板与运维', 'dns-stack-panel', '管理面板', '就是你现在看的这个界面', 'daemon', 'go', 0],
     ['面板与运维', 'dns-stack-helper', '特权助手', '面板要动系统时经它代办，只放行白名单内的操作', 'daemon', 'go', 1],
-    ['面板与运维', 'dns-stack-maintenance', '例行维护', '检查并续签 TLS 证书，每天备份数据库、配置与规则', 'job', 'go', 0],
+    ['面板与运维', 'dns-stack-maintenance', '例行维护', '检查并续签 TLS 证书，按设定的周期备份数据库、配置与规则', 'job', 'go', 0],
   ];
   const UNITS = MODULES.map((m) => m[1]);
 
@@ -183,7 +183,7 @@
             occurrence_count: 940 - i * 31, fail_count: i % 5 === 0 ? i : 0,
             last_rcode: rcode, last_rcode_name: rcode_name,
             last_route: i % 7 === 0 ? 'foreign' : 'cn',
-            last_route_name: i % 7 === 0 ? '香港递归' : '本机递归',
+            last_route_name: i % 7 === 0 ? '香港' : '本机',
             node: i === 3 ? undefined
               : { ip: '203.0.113.' + (20 + i), geo: i % 4 === 0 ? geoDown : CN_NODE },
           }));
@@ -193,9 +193,9 @@
     },
 
     '/api/domains/summary': () => ({
-      by_route: [{ route: 'cn', route_name: '本机递归', count: 731 },
-                 { route: 'cache', route_name: '缓存命中', count: 96 },
-                 { route: 'foreign', route_name: '香港递归', count: 26 }],
+      by_route: [{ route: 'cn', route_name: '本机', count: 731 },
+                 { route: 'cache', route_name: '缓存', count: 96 },
+                 { route: 'foreign', route_name: '香港', count: 26 }],
       by_exit: [{ path: 'cache', count: 5210 },
                 { path: 'recursive', count: 4004 },
                 { path: 'hongkong', count: 12 }],
@@ -212,7 +212,7 @@
       return {
         domain: name,
         aggregate: { occurrence_count: 612, fail_count: 3, last_rcode_name: 'NOERROR',
-                     last_route_name: '本机递归', first_seen_at: now() - 604800,
+                     last_route_name: '本机', first_seen_at: now() - 604800,
                      last_seen_at: now() - 42 },
         by_upstream: [{ resp_by: 'local-unbound', count: 431 }, { resp_by: 'cache', count: 181 }],
         recent: [0, 1, 2, 3, 4].map(mkEvent),
@@ -254,21 +254,6 @@
       };
     },
 
-    '/api/dns-test': () => ({
-      domain: 'shhkjrqtsn-fbi-hangzhou-01.cdn.example.com.example.net',
-      qtype: 'A',
-      results: {
-        'local-unbound': { status: 'NOERROR', elapsed_ms: 18.4, records: [
-          { type: 'CNAME', ttl: 60, value: 'shhkjrqtsn-fbi-hangzhou-01.cdn.example.com.example.net.example.org' },
-          { type: 'A', ttl: 60, value: '203.0.113.31', geo: CN_NODE },
-          { type: 'A', ttl: 60, value: '203.0.113.32', geo: NEAR_NODE } ] },
-        'foreign-hk': { status: 'NOERROR', elapsed_ms: 186.2, records: [
-          { type: 'A', ttl: 60, value: '198.51.100.77', geo: OVERSEAS } ] },
-      },
-      same: false,
-      note: '两侧结果不同，通常是 GeoDNS 按地区调度所致。',
-    }),
-
     '/api/my-location': () => ({
       client_ip: '203.0.113.77', geo: CN_NODE, ecs: '203.0.113.0/24',
       nodes: [
@@ -308,7 +293,7 @@
 
     '/api/cert': () => ({ exists: true, not_before: 'Jan  1 00:00:00 2026 GMT',
                           not_after: 'Jan  7 00:00:00 2026 GMT', issuer: 'CN=Example CA',
-                          san: 'IP Address:203.0.113.1', days_left: 5 }),
+                          san: '203.0.113.1', days_left: 5, expires_at: now() + 5 * 86400 }),
 
     '/api/cache': () => ({ mosproxy: { optimistic_ttl: 86400, maximum_ttl: 3600 },
                            unbound: { 'serve-expired-ttl': 604800,
@@ -317,42 +302,42 @@
                                       'cache-max-ttl': 86400 },
                            hit: { queries: 118766, hits: 91204, rate: 76.79 } }),
 
-    '/api/cdn-hit': () => ({
-      resolver: '127.0.0.1:5335', subnet: '219.141.136.0/24',
-      generated_at: Math.floor(Date.now() / 1000), ruleset_at: Math.floor(Date.now() / 1000) - 41000,
-      fresh: false,
-      mainland: 4, no_node: 1, no_steering: 1, not_delivered: 0, undecided: 1, comparable: 6,
-      probes: [
-        { domain: 'www.taobao.com', label: '淘宝', provider: '阿里云', provider_id: 'alibaba',
-          has_mainland: true, mainland_prefixes: 86, ecs_echoed: true, ecs_scope: 24,
-          addrs: ['220.181.10.93'], verdict: 'mainland', verdict_short: '命中大陆节点', verdict_text: '命中大陆节点' },
-        { domain: 'www.qq.com', label: '腾讯', provider: '腾讯云', provider_id: 'tencent',
-          has_mainland: true, mainland_prefixes: 114, ecs_echoed: true, ecs_scope: 24,
-          addrs: ['121.14.77.201'], verdict: 'mainland', verdict_short: '命中大陆节点', verdict_text: '命中大陆节点' },
-        { domain: 'www.baidu.com', label: '百度', provider: '', provider_id: '',
-          has_mainland: false, mainland_prefixes: 0, ecs_echoed: true, ecs_scope: 24,
-          addrs: ['220.181.111.1'], verdict: 'mainland', verdict_short: '命中大陆节点', verdict_text: '命中大陆节点' },
-        { domain: 'www.apple.com', label: 'Apple', provider: '', provider_id: '',
-          has_mainland: false, mainland_prefixes: 0, ecs_echoed: true, ecs_scope: 24,
-          addrs: ['211.100.8.175'], verdict: 'mainland', verdict_short: '命中大陆节点', verdict_text: '命中大陆节点' },
-        { domain: 'www.huawei.com', label: '华为', provider: 'Akamai', provider_id: 'akamai',
-          has_mainland: false, mainland_prefixes: 0, ecs_echoed: false, ecs_scope: 0,
-          addrs: ['184.87.97.63'], verdict: 'no_echo',
-          verdict_short: '无回显，判不出', verdict_text: '这次没有 ECS 回显，多半命中了缓存，本次判不出' },
-        { domain: 'd1.awsstatic.com', label: 'AWS 静态资源', provider: 'AWS', provider_id: 'amazon',
-          has_mainland: true, mainland_prefixes: 35, ecs_echoed: true, ecs_scope: 24,
-          addrs: ['13.225.117.71'], verdict: 'no_node',
-          verdict_short: '大陆无节点', verdict_text: '权威按你的子网挑过了，仍给境外（这个服务在大陆没有节点）' },
-        { domain: 'www.office.com', label: 'Office', provider: 'Microsoft', provider_id: 'microsoft',
-          has_mainland: true, mainland_prefixes: 5, ecs_echoed: true, ecs_scope: 0,
-          addrs: ['13.107.6.156'], verdict: 'no_steering',
-          verdict_short: '不按位置调度', verdict_text: '权威收到了子网但声明不按位置调度' },
-      ],
-    }),
+    '/api/cdn-hit': () => {
+      const sites = [['www.taobao.com', '淘宝'], ['www.qq.com', '腾讯'], ['www.baidu.com', '百度'],
+                     ['www.huawei.com', '华为'], ['www.apple.com', 'Apple'], ['www.microsoft.com', '微软'],
+                     ['www.bing.com', '必应'], ['www.cloudflare.com', 'Cloudflare']];
+      const verdicts = {
+        mainland: ['国内节点', '拿到了国内节点'],
+        no_steering: ['不分地区', '权威不分地区，所有人拿到同一个地址'],
+        no_node: ['无国内节点', '按你的地区挑过了仍给境外，这家在国内没有节点'],
+        no_echo: ['待复核', '答案来自缓存，看不出是否按地区挑过，复核会清缓存重查'],
+      };
+      const pick = (i, v) => (i === 7 ? 'no_steering' : (i === 6 && v === 2 ? 'no_echo' : (i === 5 && v === 1 ? 'no_node' : 'mainland')));
+      const isps = [['219.141.136.0/24', '北京电信'], ['202.106.0.0/24', '北京联通'], ['221.130.33.0/24', '北京移动']];
+      const reports = isps.map(([prefix, isp], v) => {
+        const probes = sites.map(([domain, label], i) => {
+          const verdict = pick(i, v);
+          const local = verdict === 'mainland';
+          return { domain, label, provider: '', provider_id: '', has_mainland: local, mainland_prefixes: local ? 20 : 0,
+            addrs: [local ? '220.181.' + v + '.' + i : '104.16.' + v + '.' + i], ecs_scope: verdict === 'no_steering' ? 0 : 24,
+            ecs_echoed: verdict !== 'no_echo', flushed: false, prefix: '', foreign: !local, mismatch: false,
+            verdict, verdict_short: verdicts[verdict][0], verdict_text: verdicts[verdict][1],
+            geo: local ? '中国 北京 ' + isp.slice(2) : '美国 Cloudflare' };
+        });
+        const count = (k) => probes.filter((p) => p.verdict === k).length;
+        return { resolver: '127.0.0.1:5335', subnet: prefix, generated_at: now(), ruleset_at: now() - 41000,
+          fresh: false, probes, mainland: count('mainland'), no_node: count('no_node'),
+          no_steering: count('no_steering'), not_delivered: 0, undecided: count('no_echo'),
+          comparable: probes.length - count('no_echo') };
+      });
+      return { vantages: isps.map(([prefix, label]) => ({ prefix, label })), reports, fresh: false, generated_at: now() };
+    },
 
     '/api/access': () => ({
       role: 'cn-resolver',
       blocklist: ['ads.example.com', 'tracker.example.net'],
+      route_cn: ['sb.sb', 'example.cn'],
+      route_hk: ['example.org'],
       acl: ['203.0.113.0/24', '198.51.100.7/32'],
       acl_installed: true,
       client_ip: '127.0.0.1', client_loopback: true, client_covered: false,
@@ -398,14 +383,17 @@
     },
 
     '/api/backups': () => ({
-      backups: [{ name: 'backup-20260101.tar.zst', size: 4194304, mtime: now() - 3600 }],
+      backups: [{ name: 'daily-20260101030000.tar.zst', size: 4194304, mtime: now() - 3600 },
+                { name: 'weekly-20251228030000.tar.zst', size: 4096000, mtime: now() - 5 * 86400 }],
       exports: [{ name: 'export-state-20260101.tar.zst', size: 8388608, mtime: now() - 7200 }],
+      policy: { interval_hours: 24, keep_daily: 3, keep_weekly: 2 },
     }),
 
     '/api/audit': () => ({
       items: [0, 1, 2, 3].map((i) => ({
         id: 40 - i, ts: now() - i * 900, actor: 'panel',
-        operation: OPS[i % OPS.length][0], args: '', ok: i !== 2,
+        operation: OPS[i % OPS.length][0], label: OPS[i % OPS.length][1],
+        args: i === 1 ? '{"list":"cn","domains":["sb.sb"]}' : '', ok: i !== 2,
         message: i === 2 ? '执行失败(示例)' : '执行成功',
       })),
     }),
@@ -438,11 +426,25 @@
 
   function postResult(path, body) {
     if (path === '/api/dns-test') {
-      return { domain: (body && body.domain) || 'www.example.com',
-               qtype: (body && body.qtype) || 'A',
-               results: { 'local-unbound': Object.assign({ panel_elapsed_ms: 31 }, RECORDS('A')),
-                          'foreign-hk': { error: '上游不可用(示例)', panel_elapsed_ms: 12 } },
-               routing: ROUTING_DETAIL };
+      const input = ((body && body.domain) || 'www.example.com').toLowerCase();
+      const ip = /^[0-9.]+$/.test(input) || input.indexOf(':') >= 0;
+      const name = ip ? input.split('.').reverse().join('.') + '.in-addr.arpa' : input;
+      const qtypes = ip ? ['PTR'] : (body && body.qtype ? [body.qtype] : ['A', 'AAAA']);
+      const local = ip
+        ? { status: 'NOERROR', query_time_ms: 18, records: [{ name: name + '.', ttl: 300, class: 'IN', type: 'PTR', value: 'public1.example.com.' }] }
+        : Object.assign({ ips_geo: [{ ip: '203.0.113.30', in_cn: true, geo: CN_NODE }] }, RECORDS('A'));
+      const hk = ip ? { status: 'NOERROR', query_time_ms: 120, records: local.records }
+        : { status: 'NOERROR', query_time_ms: 186, records: [{ name: name + '.', ttl: 60, class: 'IN', type: 'A', value: '198.51.100.77' }],
+            ips_geo: [{ ip: '198.51.100.77', in_cn: false, geo: OVERSEAS }] };
+      return { domain: name, input, qtypes,
+               results: { 'local-unbound': Object.assign({ panel_elapsed_ms: 31 }, local),
+                          'foreign-hk': Object.assign({ panel_elapsed_ms: 190 }, hk) },
+               routing: ip ? null : Object.assign({}, ROUTING_DETAIL, {
+                 rule: input.endsWith('sb.sb') ? 'cn' : null, rule_domain: input.endsWith('sb.sb') ? 'sb.sb' : null,
+                 zone: input.split('.').slice(-2).join('.') }) };
+    }
+    if (path === '/api/access') {
+      return { ok: true, message: '（预览模式）' + ((body && (body.domains || body.prefixes)) || []).join(' ') + ' 已生效' };
     }
     if (path.startsWith('/api/action/')) {
       const op = path.slice('/api/action/'.length);

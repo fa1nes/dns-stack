@@ -68,6 +68,7 @@ try {
                  spellcheck="false" enterkeyhint="go" placeholder="6 位数字">
         </div>
 
+        <label class="check remember"><input type="checkbox" id="remember"> 在这台设备上保持 7 天</label>
         <button type="submit" class="primary" id="btnLogin">登录</button>
       </form>
       <a class="login-oauth" id="btnOauth" hidden
@@ -231,6 +232,7 @@ try {
       body: JSON.stringify({
         username: user.value,
         password: pw.value,
+        remember: document.getElementById('remember').checked,
         totp_code: (document.getElementById('totp') || {}).value || ''
       })
     }).then(function (r) {
