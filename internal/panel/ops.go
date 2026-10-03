@@ -38,7 +38,7 @@ var operationOrder = []string{
 	"healthcheck", "cert_check", "cert_renew", "backup", "purge_legacy",
 	"clear_audit", "vacuum_logs", "clear_domains", "clear_domains_all",
 	"set_arch_epoch", "export", "refresh_routing",
-	"prune_backups", "drop_stale_logs",
+	"prune_backups", "drop_stale_logs", "set_backup_policy",
 	"delete_query", "delete_domain", "delete_audit",
 }
 
@@ -63,8 +63,9 @@ var operationSpecs = map[string]operationSpec{
 	"set_arch_epoch":      {Label: "重设统计起点", Dangerous: true, Timeout: 30},
 	"export":              {Label: "导出迁移包", Timeout: 300},
 	"refresh_routing":     {Label: "刷新递归分流数据", Timeout: 2220, Role: "cn-resolver"},
-	"prune_backups":       {Label: "清理旧备份", Dangerous: true, Timeout: 60},
-	"drop_stale_logs":     {Label: "清除僵尸日志", Dangerous: true, Timeout: 60},
+	"prune_backups":       {Label: "按保留份数清理旧备份", Dangerous: true, Timeout: 60},
+	"set_backup_policy":   {Label: "调整备份策略", Timeout: 30},
+	"drop_stale_logs":     {Label: "清理废弃日志", Dangerous: true, Timeout: 60},
 	"delete_query":        {Label: "删除一条查询记录"},
 	"delete_domain":       {Label: "删除一个域名的统计"},
 	"delete_audit":        {Label: "删除一条审计记录"},
@@ -205,7 +206,9 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request) {
 			message = "执行失败"
 		}
 	}
-	s.writeAudit(op, args, resultOK, message)
+	if op != "clear_audit" || !resultOK {
+		s.writeAudit(op, args, resultOK, message)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": resultOK, "operation": op, "label": spec.Label, "message": message, "stdout": stdout, "stderr": stderr})
 }
 
@@ -341,9 +344,7 @@ func (s *Server) passwordChange(w http.ResponseWriter, r *http.Request) {
 	s.writeAudit("set_panel_password", nil, true, "面板访问密码已更新")
 	newRec, _ := s.loadAuth()
 	respBody := map[string]any{"ok": true, "message": "密码已更新，其它设备上的会话已全部失效"}
-	if token, e := issueSession(newRec); e == nil {
-		setSessionCookie(w, token)
-	}
+	_ = startSession(w, newRec, renewalTTL(r))
 	writeJSON(w, http.StatusOK, respBody)
 }
 

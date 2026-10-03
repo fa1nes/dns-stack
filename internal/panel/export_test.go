@@ -59,9 +59,9 @@ func TestExportQueriesCSVBytes(t *testing.T) {
 	checkedEqual(t, "content type", response.Header().Get("Content-Type"), "text/csv; charset=utf-8")
 	checkedEqual(t, "disposition", response.Header().Get("Content-Disposition"), `attachment; filename="dns-stack-queries.csv"`)
 	want := "id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path,qtype_name,rcode_name,route_name,cache_hit\n" +
-		"1,1700000001,www.example.com,1,0,cache,cache,cache,true,5,,A,NOERROR,缓存命中,true\n" +
-		"2,1700000002,api.example.net,28,3,local-unbound,cn,local-unbound,false,12.34,direct,AAAA,NXDOMAIN,本机递归,false\n" +
-		"3,1700000003,\"we\"\"ird,example.org\",99,0,local-unbound,foreign,foreign-hk,false,,tunnel,SPF,NOERROR,香港递归,false\n"
+		"1,1700000001,www.example.com,1,0,cache,cache,cache,true,5,,A,NOERROR,缓存,true\n" +
+		"2,1700000002,api.example.net,28,3,local-unbound,cn,local-unbound,false,12.34,direct,AAAA,NXDOMAIN,本机,false\n" +
+		"3,1700000003,\"we\"\"ird,example.org\",99,0,local-unbound,foreign,foreign-hk,false,,tunnel,SPF,NOERROR,香港,false\n"
 	checkedEqual(t, "csv bytes", response.Body.String(), want)
 }
 
@@ -75,7 +75,7 @@ func TestExportQueriesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkedEqual(t, "row count", len(items), 3)
-	checkedEqual(t, "first row", items[0], map[string]any{"id": 1, "ts": 1700000001, "domain": "www.example.com", "qtype": 1, "qtype_name": "A", "rcode": 0, "rcode_name": "NOERROR", "resp_by": "cache", "route": "cache", "route_name": "缓存命中", "server_tag": "cache", "prefetch": true, "cache_hit": true, "elapsed_ms": 5})
+	checkedEqual(t, "first row", items[0], map[string]any{"id": 1, "ts": 1700000001, "domain": "www.example.com", "qtype": 1, "qtype_name": "A", "rcode": 0, "rcode_name": "NOERROR", "resp_by": "cache", "route": "cache", "route_name": "缓存", "server_tag": "cache", "prefetch": true, "cache_hit": true, "elapsed_ms": 5})
 	checkedEqual(t, "null fields omitted", map[string]any{"elapsed": items[2]["elapsed_ms"], "exit": items[0]["exit_path"]}, map[string]any{"elapsed": nil, "exit": nil})
 	checkedEqual(t, "spf name", items[2]["qtype_name"], "SPF")
 
@@ -93,7 +93,7 @@ func TestExportDomainsCSVBytes(t *testing.T) {
 	checkedEqual(t, "content type", response.Header().Get("Content-Type"), "text/csv; charset=utf-8")
 	checkedEqual(t, "disposition", response.Header().Get("Content-Disposition"), `attachment; filename="dns-stack-domains.csv"`)
 	want := "domain,first_seen_at,last_seen_at,occurrence_count,fail_count,last_rcode,last_route,last_rcode_name,last_route_name\n" +
-		"www.example.com,1700000000,1700000100,42,1,0,cn,NOERROR,本机递归\n" +
+		"www.example.com,1700000000,1700000100,42,1,0,cn,NOERROR,本机\n" +
 		"api.example.net,1699999000,1700000200,7,0,,,,未知\n"
 	checkedEqual(t, "csv bytes", response.Body.String(), want)
 }

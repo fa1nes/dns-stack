@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -204,6 +205,16 @@ func TestDatabaseHandlersStopOnCancelledRequest(t *testing.T) {
 				t.Fatalf("cancelled request returned %d, want 503; body: %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestQueryStreamOpensBeforeTheFirstEvent(t *testing.T) {
+	server := newExportServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	response := serve(server, localRequest(http.MethodGet, "/api/queries/stream").WithContext(ctx))
+	if !strings.HasPrefix(response.Body.String(), ":") {
+		t.Fatalf("没有新查询时流里一个字节都不发，浏览器会一直停在「连接中」：%q", response.Body.String())
 	}
 }
 

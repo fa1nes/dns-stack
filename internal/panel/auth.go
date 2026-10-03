@@ -124,18 +124,37 @@ func (s *Server) revokeSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeAudit("revoke_sessions", nil, true, "其它设备上的登录已全部失效")
 	rec, _ := s.loadAuth()
-	if token, err := issueSession(rec); err == nil {
-		setSessionCookie(w, token)
-	}
+	_ = startSession(w, rec, renewalTTL(r))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "其它设备上的登录已全部失效，这台设备已续上新的会话"})
 }
 
-func issueSession(rec authRecord) (string, error) {
+const (
+	sessionTTL  = 12 * time.Hour
+	rememberTTL = 7 * 24 * time.Hour
+)
+
+func renewalTTL(r *http.Request) time.Duration {
+	if exp := sessionExpiry(r); exp > time.Now().Add(sessionTTL+time.Minute).Unix() {
+		return rememberTTL
+	}
+	return sessionTTL
+}
+
+func startSession(w http.ResponseWriter, rec authRecord, ttl time.Duration) error {
+	token, err := issueSession(rec, ttl)
+	if err != nil {
+		return err
+	}
+	setSessionCookie(w, token, ttl)
+	return nil
+}
+
+func issueSession(rec authRecord, ttl time.Duration) (string, error) {
 	key, err := base64.StdEncoding.DecodeString(rec.SessionKey)
 	if err != nil {
 		return "", err
 	}
-	body := []byte(fmt.Sprintf(`{"exp": %d}`, time.Now().Add(12*time.Hour).Unix()))
+	body := []byte(fmt.Sprintf(`{"exp": %d}`, time.Now().Add(ttl).Unix()))
 	m := hmac.New(sha256.New, key)
 	_, _ = m.Write(body)
 	return base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(m.Sum(nil)), nil
@@ -204,6 +223,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		Code     string `json:"totp_code"`
+		Remember bool   `json:"remember"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 16*1024)).Decode(&p) != nil {
 		writeJSON(w, 400, map[string]any{"ok": false, "message": "请求参数无效"})
@@ -227,12 +247,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.authSuccess(ip)
-	token, err := issueSession(rec)
-	if err != nil {
+	ttl := sessionTTL
+	if p.Remember {
+		ttl = rememberTTL
+	}
+	if err := startSession(w, rec, ttl); err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "message": "会话创建失败"})
 		return
 	}
-	setSessionCookie(w, token)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -320,7 +342,11 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 			}
 			return true
 		})
-		s.revoked.Store(c.Value, now.Add(13*time.Hour))
+		until := now.Add(sessionTTL + time.Hour)
+		if exp := sessionExpiry(r); exp > 0 {
+			until = time.Unix(exp, 0).Add(time.Hour)
+		}
+		s.revoked.Store(c.Value, until)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "dns_stack_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true})
 	writeJSON(w, 200, map[string]any{"ok": true})

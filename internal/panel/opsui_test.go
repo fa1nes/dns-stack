@@ -29,7 +29,7 @@ func TestEveryOperationHasAButtonOrADedicatedControl(t *testing.T) {
 	for _, m := range opButtonRe.FindAllStringSubmatch(markup, -1) {
 		wired[m[1]] = true
 	}
-	drivenByDedicatedControl := []string{"set_cache_ttl", "set_min_ttl", "flush_cache",
+	drivenByDedicatedControl := []string{"set_cache_ttl", "set_min_ttl", "flush_cache", "set_backup_policy",
 		"import", "refresh_routing",
 		"delete_query", "delete_domain", "delete_audit"}
 	for _, op := range drivenByDedicatedControl {

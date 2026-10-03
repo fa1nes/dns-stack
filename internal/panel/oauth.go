@@ -37,7 +37,7 @@ func oauthReady(rec authRecord) bool {
 	return id != "" && secret != "" && len(oauthUsers(rec)) > 0
 }
 
-func setSessionCookie(w http.ResponseWriter, token string) {
+func setSessionCookie(w http.ResponseWriter, token string, ttl time.Duration) {
 	sameSite := http.SameSiteLaxMode
 	switch strings.ToLower(os.Getenv("PANEL_COOKIE_SAMESITE")) {
 	case "strict":
@@ -45,7 +45,7 @@ func setSessionCookie(w http.ResponseWriter, token string) {
 	case "none":
 		sameSite = http.SameSiteNoneMode
 	}
-	http.SetCookie(w, &http.Cookie{Name: "dns_stack_session", Value: token, Path: "/", MaxAge: 43200, HttpOnly: true, Secure: true, SameSite: sameSite})
+	http.SetCookie(w, &http.Cookie{Name: "dns_stack_session", Value: token, Path: "/", MaxAge: int(ttl.Seconds()), HttpOnly: true, Secure: true, SameSite: sameSite})
 }
 
 func (s *Server) oauthStart(w http.ResponseWriter, r *http.Request) {
@@ -192,11 +192,9 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		fail("面板认证数据缺失")
 		return
 	}
-	session, err := issueSession(rec)
-	if err != nil {
+	if err := startSession(w, rec, sessionTTL); err != nil {
 		fail("会话创建失败")
 		return
 	}
-	setSessionCookie(w, session)
 	http.Redirect(w, r, "/", http.StatusFound)
 }

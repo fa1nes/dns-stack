@@ -13,8 +13,10 @@ import (
 )
 
 var accessActions = map[string]string{
-	"blocklist_add":    "加入域名黑名单",
-	"blocklist_remove": "移出域名黑名单",
+	"blocklist_add":    "加入拦截名单",
+	"blocklist_remove": "移出拦截名单",
+	"route_add":        "加入分流名单",
+	"route_remove":     "移出分流名单",
 	"acl_add":          "放行网段",
 	"acl_remove":       "收回网段",
 	"acl_apply":        "下发访问控制",
@@ -29,6 +31,8 @@ var dedicatedOpRoles = map[string]string{
 	"acl_apply":        stack.RoleCNResolver,
 	"acl_disable":      stack.RoleCNResolver,
 	"acl_status":       stack.RoleCNResolver,
+	"route_add":        stack.RoleCNResolver,
+	"route_remove":     stack.RoleCNResolver,
 }
 
 func (s *Server) accessStore() access.Store {
@@ -75,19 +79,27 @@ func (s *Server) accessList(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"role":      s.role(),
 		"blocklist": []string{},
+		"route_cn":  []string{},
+		"route_hk":  []string{},
 		"acl":       []string{},
 		"client_ip": remoteIP(r),
 	}
 	if s.role() != stack.RoleCNResolver {
-		out["note"] = "域名黑名单与访问控制只作用在承载 DoH/DoT 入口的国内节点上，本机不是"
+		out["note"] = "域名规则与访问控制只在国内节点上生效，本机不是"
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	blocked, err := store.Blocklist()
-	if err != nil {
-		out["blocklist_error"] = err.Error()
-	} else if blocked != nil {
-		out["blocklist"] = blocked
+	for key, read := range map[string]func() ([]string, error){
+		"blocklist": store.Blocklist,
+		"route_cn":  func() ([]string, error) { return store.Routes(access.RouteCN) },
+		"route_hk":  func() ([]string, error) { return store.Routes(access.RouteHK) },
+	} {
+		entries, err := read()
+		if err != nil {
+			out[key+"_error"] = err.Error()
+		} else if entries != nil {
+			out[key] = entries
+		}
 	}
 	prefixes, err := store.ACL()
 	if err != nil {
@@ -118,6 +130,7 @@ func clientIsLoopback(r *http.Request) bool {
 func (s *Server) accessMutate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Action   string   `json:"action"`
+		List     string   `json:"list"`
 		Domains  []string `json:"domains"`
 		Prefixes []string `json:"prefixes"`
 		Confirm  bool     `json:"confirm"`
@@ -134,12 +147,20 @@ func (s *Server) accessMutate(w http.ResponseWriter, r *http.Request) {
 	if want := dedicatedOpRoles[body.Action]; want != "" && s.role() != want {
 		s.writeAudit(body.Action, nil, false, "角色不匹配，拒绝执行")
 		writeJSON(w, http.StatusForbidden, map[string]any{"ok": false,
-			"message": "只有承载 DoH/DoT 入口的国内节点才有黑名单与访问控制，本机角色是 " + s.role()})
+			"message": "只有国内节点才有域名规则与访问控制，本机角色是 " + s.role()})
 		return
 	}
 
 	args := map[string]any{"confirm": true}
-	if strings.HasPrefix(body.Action, "blocklist_") {
+	if strings.HasPrefix(body.Action, "route_") {
+		list, err := access.ParseRouteList(body.List)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		args["list"] = string(list)
+	}
+	if strings.HasPrefix(body.Action, "blocklist_") || strings.HasPrefix(body.Action, "route_") {
 		if len(body.Domains) == 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "没有给出任何域名"})
 			return

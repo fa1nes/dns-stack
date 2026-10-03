@@ -151,6 +151,8 @@ func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
 	if last == 0 {
 		_ = db.QueryRowContext(r.Context(), "SELECT COALESCE(MAX(id),0) FROM query_events").Scan(&last)
 	}
+	_, _ = w.Write([]byte(": connected\n\n"))
+	fl.Flush()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	idle := 0
@@ -488,8 +490,15 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
 			return
 		}
+		var total24, failed24 int
+		if err := db.QueryRowContext(r.Context(),
+			"SELECT COUNT(*), COALESCE(SUM(rcode = 2), 0) FROM query_events WHERE ts >= ?",
+			s.statsWindowStart(now)).Scan(&total24, &failed24); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "数据库查询失败"})
+			return
+		}
 		out["events"] = map[string]any{"last_5m": last5, "last_1h": last1, "domains": domains,
-			"latency": latency}
+			"latency": latency, "total_24h": total24, "failed_24h": failed24}
 	} else {
 		out["events"] = map[string]any{"error": "数据库不可用"}
 	}

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -269,57 +268,73 @@ func (s *Server) detailInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
-func routingReason(zone string, authorities, viaAuthorityTable int, domestic bool) string {
-	switch {
-	case domestic:
-		return ""
-	case zone == "":
-		return "认不出这个名字的注册域，没有查过任何权威——下面的判定只反映实际解析结果"
-	case authorities == 0:
-		return zone + " 的权威这次没问到（超时或拿不到地址），不代表它没有大陆权威"
-	case viaAuthorityTable > 0:
-		return "查过 " + zone + " 的 " + strconv.Itoa(authorities) + " 个权威地址，没有一个落在 direct4 里；" +
-			"其中 " + strconv.Itoa(viaAuthorityTable) + " 个在国内权威表里，这几跳仍走直连——" +
-			"但那张表是派生出来的、可能已经过期，不作为「这是国内域名」的证据"
-	default:
-		return "查过 " + zone + " 的 " + strconv.Itoa(authorities) +
-			" 个权威地址，都不在 direct4 或国内权威表里，每一跳按权威 IP 归属走隧道"
+func matchesList(name string, entries []string) string {
+	for _, rule := range entries {
+		rule = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(rule), "."))
+		if rule != "" && (name == rule || strings.HasSuffix(name, "."+rule)) {
+			return rule
+		}
 	}
+	return ""
+}
+
+func (s *Server) manualRule(name string) (string, string) {
+	if hit := matchesList(name, dataLines(s.statePath("manual-cn-zones.txt"))); hit != "" {
+		return "cn", hit
+	}
+	if matchesList(name, dataLines(s.statePath("manual-exclude.txt"))) != "" {
+		return "", ""
+	}
+	if hit := matchesList(name, dataLines(s.statePath("manual-gfw.txt"))); hit != "" {
+		return "hk", hit
+	}
+	return "", ""
+}
+
+func authorityPath(rule string, authorities []map[string]any) string {
+	if rule == "hk" {
+		return "hongkong"
+	}
+	direct, tunnel := 0, 0
+	for _, item := range authorities {
+		if item["exit"] == "direct" {
+			direct++
+		} else {
+			tunnel++
+		}
+	}
+	switch {
+	case direct+tunnel == 0:
+		return "unknown"
+	case tunnel == 0:
+		return "direct"
+	case direct == 0:
+		return "tunnel"
+	}
+	return "mixed"
 }
 
 func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive bool) (map[string]any, map[string]any) {
 	direct := loadedPrefixes(s.statePath("chnroute/direct4.txt"))
 	authority := loadedPrefixes(s.statePath("chnroute/cn-authority.txt"))
-	routing := map[string]any{"manual_rule": nil, "direction": "adaptive", "zone": nil}
-	for _, file := range []string{"manual-exclude.txt", "manual-gfw.txt"} {
-		for _, rule := range dataLines(s.statePath(file)) {
-			rule = strings.ToLower(rule)
-			if name == rule || strings.HasSuffix(name, "."+rule) {
-				routing["manual_rule"] = file
-				break
-			}
-		}
-		if routing["manual_rule"] != nil {
-			break
-		}
+	rule, ruleDomain := s.manualRule(name)
+	routing := map[string]any{"rule": nil, "rule_domain": nil}
+	if rule != "" {
+		routing["rule"], routing["rule_domain"] = rule, ruleDomain
 	}
 
 	psl, _ := domain.LoadPSL(nil)
 	labels := strings.Split(name, ".")
 	zone := ""
-	if psl != nil {
-		for index := len(labels) - 2; index >= 0; index-- {
-			candidate := strings.Join(labels[index:], ".")
-			if domain.ZoneDefect(candidate, psl) == "" {
-				zone = candidate
-				break
-			}
+	for index := len(labels) - 2; index >= 0; index-- {
+		candidate := strings.Join(labels[index:], ".")
+		if domain.ZoneDefect(candidate, psl) == "" {
+			zone = candidate
+			break
 		}
 	}
-	routing["zone_queried"] = zone
+	routing["zone"] = zone
 	authorities := []map[string]any{}
-	hasDomesticAuthority := false
-	viaAuthorityTable := 0
 	if zone != "" {
 		nsReply := dnsProbe(ctx, zone, "NS", "local-unbound", "")
 		records, _ := nsReply["records"].([]map[string]any)
@@ -333,38 +348,28 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 			if !validDNSName(ns) {
 				continue
 			}
-			for _, qtype := range []string{"A", "AAAA"} {
-				for _, ip := range parsedGlobalIPs(dnsProbe(ctx, ns, qtype, "local-unbound", "")) {
-					inCN := prefixContains(direct, ip)
-					inAuthority := prefixContains(authority, ip)
-					exit := "tunnel"
-					if inCN || inAuthority {
-						exit = "direct"
-					}
-					authorities = append(authorities, map[string]any{"ns": ns, "ip": ip, "in_cn": inCN, "in_cn_authority": inAuthority, "geo": s.geoLookup(ip), "exit": exit})
-					hasDomesticAuthority = hasDomesticAuthority || inCN
-					if inAuthority && !inCN {
-						viaAuthorityTable++
-					}
+			for _, ip := range parsedGlobalIPs(dnsProbe(ctx, ns, "A", "local-unbound", "")) {
+				exit := "tunnel"
+				if prefixContains(direct, ip) || prefixContains(authority, ip) {
+					exit = "direct"
 				}
+				authorities = append(authorities, map[string]any{"ns": ns, "ip": ip, "geo": s.geoLookup(ip), "exit": exit})
 			}
-			if len(authorities) >= 16 {
+			if len(authorities) >= 12 {
 				break
 			}
 		}
 	}
 	routing["authorities"] = authorities
-	if reason := routingReason(zone, len(authorities), viaAuthorityTable, hasDomesticAuthority); reason != "" {
-		routing["reason"] = reason
-	}
+	routing["path"] = authorityPath(rule, authorities)
 	routing["exits"] = s.exitAddresses(ctx)
 	routing["geoip_status"] = s.geoipStatus()
 
 	var live map[string]any
-	finalIPs := []string{}
 	if wantLive {
 		live = liveResolve(ctx, name, subnet)
 		local := live["local-unbound"].(map[string]any)
+		finalIPs := []string{}
 		for _, qtype := range []string{"A", "AAAA"} {
 			parsed := local[qtype].(map[string]any)
 			finalIPs = append(finalIPs, parsedGlobalIPs(parsed)...)
@@ -372,22 +377,11 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 				routing["ecs"] = parsed["ecs"]
 			}
 		}
-		if len(finalIPs) > 0 {
-			routing["result_ip"] = finalIPs[0]
-			routing["result_in_cn"] = prefixContains(direct, finalIPs[0])
-			routing["result_geo"] = s.geoLookup(finalIPs[0])
-		}
+		s.resultGeoFields(routing, finalIPs)
 		routing["viewer_subnet"] = nil
 		if subnet != "" {
 			routing["viewer_subnet"] = subnet
 		}
-	}
-	if hasDomesticAuthority {
-		routing["direction"], routing["zone"] = "direct", zone
-		routing["reason"] = zone + " 的实时权威里有落在 direct4 或国内权威表的地址，这一跳直连"
-	}
-	if routing["manual_rule"] == "manual-gfw.txt" {
-		routing["direction"], routing["zone"], routing["reason"] = "hongkong", nil, "人工规则强制走香港递归器"
 	}
 	return routing, live
 }

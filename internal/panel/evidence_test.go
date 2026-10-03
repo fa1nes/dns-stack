@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestGlobalEvidenceBoundaries(t *testing.T) {
 }
 
 func TestDNSTestRejectsBadInputBeforeHelper(t *testing.T) {
-	for _, payload := range []string{`{"domain":"1.2.3.4"}`, `{"domain":""}`, `{"domain":"example..com"}`, `{"domain":"example.com","subnet":"192.0.2.0/24"}`, `{"domain":"example.com","subnet":"1.2.3.4/24"}`} {
+	for _, payload := range []string{`{"domain":"example.com","qtype":"AXFR"}`, `{"domain":""}`, `{"domain":"example..com"}`, `{"domain":"example.com","subnet":"192.0.2.0/24"}`, `{"domain":"example.com","subnet":"1.2.3.4/24"}`} {
 		t.Run(payload, func(t *testing.T) {
 			calls := fakeHelper(t, func(request map[string]any) map[string]any { return map[string]any{"ok": true} })
 			server := New(Config{})
@@ -36,7 +37,26 @@ func TestDNSTestRejectsBadInputBeforeHelper(t *testing.T) {
 	}
 }
 
-func TestStaleListsDoNotProveDomesticRouting(t *testing.T) {
+func TestDNSTestPicksTheRecordTypeFromTheInput(t *testing.T) {
+	for input, want := range map[string]string{
+		"1.2.3.4":               "4.3.2.1.in-addr.arpa PTR",
+		"2001:db8::1":           "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa PTR",
+		"_dmarc.example.com":    "_dmarc.example.com TXT",
+		"_sip._tcp.example.com": "_sip._tcp.example.com SRV",
+		"www.example.com":       "www.example.com A+AAAA",
+	} {
+		name, types := autoQuery(input, "")
+		got := name + " " + strings.Join(types, "+")
+		if got != want {
+			t.Errorf("%s 自动选成了 %q，期望 %q", input, got, want)
+		}
+	}
+	if name, types := autoQuery("example.com", "MX"); name != "example.com" || len(types) != 1 || types[0] != "MX" {
+		t.Errorf("手动指定的类型应当照用，得到 %s %v", name, types)
+	}
+}
+
+func TestAuthorityHopsShowTheirRealExit(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "chnroute"), 0700); err != nil {
 		t.Fatal(err)
@@ -74,5 +94,10 @@ func TestStaleListsDoNotProveDomesticRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkedEqual(t, "domain normalization", out["domain"], "www.foreign.com")
-	checkedEqual(t, "foreign authority is not domestic evidence", out["routing"].(map[string]any)["direction"], "adaptive")
+	routing := out["routing"].(map[string]any)
+	hops, _ := routing["authorities"].([]any)
+	if len(hops) != 1 || hops[0].(map[string]any)["exit"] != "direct" || routing["path"] != "direct" {
+		t.Fatalf("8.8.8.8 在国内权威表里，nft 会让这一跳直连，面板也要照实显示：%v", routing)
+	}
+	checkedEqual(t, "answer outside direct4", routing["result_in_cn"], false)
 }

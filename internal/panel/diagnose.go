@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -18,6 +19,62 @@ import (
 	"github.com/dns-stack/dns-stack/internal/ipset"
 )
 
+func autoQuery(input, qtype string) (string, []string) {
+	if addr, err := netip.ParseAddr(input); err == nil {
+		if name, err := reverseName(addr.Unmap()); err == nil {
+			return name, []string{"PTR"}
+		}
+	}
+	if qtype != "" && qtype != "AUTO" {
+		return input, []string{qtype}
+	}
+	switch {
+	case strings.HasPrefix(input, "_") && (strings.Contains(input, "._tcp.") || strings.Contains(input, "._udp.")):
+		return input, []string{"SRV"}
+	case strings.HasPrefix(input, "_"):
+		return input, []string{"TXT"}
+	}
+	return input, []string{"A", "AAAA"}
+}
+
+func mergeProbes(parts []map[string]any) map[string]any {
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	out := map[string]any{"records": []map[string]any{}, "status": nil, "query_time_ms": nil, "ecs": nil}
+	seen := map[string]bool{}
+	records := []map[string]any{}
+	slowest := -1
+	for _, part := range parts {
+		if status, _ := part["status"].(string); status != "" && (out["status"] == nil || status == "NOERROR") {
+			out["status"] = status
+		}
+		if part["error"] != nil && out["error"] == nil {
+			out["error"] = part["error"]
+		}
+		if out["ecs"] == nil {
+			out["ecs"] = part["ecs"]
+		}
+		if ms, ok := part["query_time_ms"].(int); ok && ms > slowest {
+			slowest = ms
+			out["query_time_ms"] = ms
+		}
+		list, _ := part["records"].([]map[string]any)
+		for _, record := range list {
+			key := fmt.Sprint(record["type"], record["name"], record["value"])
+			if !seen[key] {
+				seen[key] = true
+				records = append(records, record)
+			}
+		}
+	}
+	if out["status"] != nil {
+		delete(out, "error")
+	}
+	out["records"] = records
+	return out
+}
+
 func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -31,26 +88,24 @@ func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
 		Subnet  string   `json:"subnet"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&p) != nil || strings.TrimSpace(p.Domain) == "" {
-		writeJSON(w, 400, map[string]any{"detail": "请输入要测试的域名"})
+		writeJSON(w, 400, map[string]any{"detail": "请输入要测试的域名或 IP"})
 		return
 	}
-	p.Domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(p.Domain), "."))
-	if !validDNSName(p.Domain) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不是合法 DNS 名"})
-		return
-	}
-	p.QType = strings.ToUpper(strings.TrimSpace(p.QType))
-	if p.QType == "" {
-		p.QType = "A"
-	}
-	if !dnsTestQTypes[p.QType] {
+	input := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(p.Domain), "."))
+	qtype := strings.ToUpper(strings.TrimSpace(p.QType))
+	if qtype != "" && qtype != "AUTO" && !dnsTestQTypes[qtype] {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的查询类型"})
+		return
+	}
+	name, qtypes := autoQuery(input, qtype)
+	if !validDNSName(name) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不是合法的域名或 IP"})
 		return
 	}
 	if strings.TrimSpace(p.Subnet) == "" {
 		p.Subnet = clientSubnet(r)
 	} else if !validClientSubnet(p.Subnet) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "客户端子网必须是规范的全局 IPv4 /24 网段"})
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "子网要写成 a.b.c.0/24，且必须是公网地址"})
 		return
 	}
 	servers := p.Servers
@@ -72,54 +127,52 @@ func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	servers = unique
+	subnet := strings.TrimSpace(p.Subnet)
 	results := map[string]any{}
-	type probeResult struct {
-		server string
-		parsed map[string]any
-	}
-	ch := make(chan probeResult, len(servers))
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, server := range servers {
 		wg.Add(1)
 		go func(server string) {
 			defer wg.Done()
 			started := time.Now()
-			parsed := dnsProbe(r.Context(), p.Domain, p.QType, server, strings.TrimSpace(p.Subnet))
+			parts := make([]map[string]any, len(qtypes))
+			var inner sync.WaitGroup
+			for i, qt := range qtypes {
+				inner.Add(1)
+				go func(i int, qt string) {
+					defer inner.Done()
+					parts[i] = dnsProbe(r.Context(), name, qt, server, subnet)
+				}(i, qt)
+			}
+			inner.Wait()
+			parsed := mergeProbes(parts)
 			parsed["panel_elapsed_ms"] = time.Since(started).Milliseconds()
-			ch <- probeResult{server: server, parsed: parsed}
+			if geoList := s.probeIPsGeo(r.Context(), parsed); len(geoList) > 0 {
+				parsed["ips_geo"] = geoList
+			}
+			mu.Lock()
+			results[server] = parsed
+			mu.Unlock()
 		}(server)
 	}
 	wg.Wait()
-	close(ch)
-	for probe := range ch {
-		if geoList := s.probeIPsGeo(r.Context(), probe.parsed); len(geoList) > 0 {
-			probe.parsed["ips_geo"] = geoList
-		}
-		results[probe.server] = probe.parsed
-	}
 
-	routing, _ := s.routingInfo(r.Context(), p.Domain, strings.TrimSpace(p.Subnet), false)
-	if p.Subnet != "" {
-		routing["viewer_subnet"] = p.Subnet
-	}
-	if local, ok := results["local-unbound"].(map[string]any); ok {
-		if ecs, ok := local["ecs"]; ok && ecs != nil {
-			routing["ecs"] = ecs
+	out := map[string]any{"domain": name, "input": input, "qtypes": qtypes, "results": results, "routing": nil}
+	if qtypes[0] != "PTR" {
+		routing, _ := s.routingInfo(r.Context(), name, subnet, false)
+		if p.Subnet != "" {
+			routing["viewer_subnet"] = p.Subnet
 		}
-
-		var ips []string
-		records, _ := local["records"].([]map[string]any)
-		for _, record := range records {
-			if record["type"] != "A" && record["type"] != "AAAA" {
-				continue
+		if local, ok := results["local-unbound"].(map[string]any); ok {
+			if ecs, ok := local["ecs"]; ok && ecs != nil {
+				routing["ecs"] = ecs
 			}
-			if value, _ := record["value"].(string); value != "" {
-				ips = append(ips, value)
-			}
+			s.resultGeoFields(routing, parsedGlobalIPs(local))
 		}
-		s.resultGeoFields(routing, ips)
+		out["routing"] = routing
 	}
-	writeJSON(w, 200, map[string]any{"domain": p.Domain, "qtype": p.QType, "results": results, "routing": routing})
+	writeJSON(w, 200, out)
 }
 
 var dnsTestServers = map[string]bool{
@@ -130,7 +183,7 @@ var dnsTestServers = map[string]bool{
 
 var dnsTestQTypes = map[string]bool{
 	"A": true, "AAAA": true, "CNAME": true, "MX": true, "TXT": true,
-	"NS": true, "SOA": true, "HTTPS": true, "SVCB": true, "PTR": true,
+	"NS": true, "SOA": true, "HTTPS": true, "SVCB": true, "PTR": true, "SRV": true,
 }
 
 func validClientSubnet(raw string) bool {
