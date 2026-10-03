@@ -42,7 +42,15 @@ func cmdRoute(args []string) error {
 		}
 		list, args = parsed, args[1:]
 	}
-	if err := fs.Parse(args); err != nil {
+	rest := args[:0:0]
+	for _, arg := range args {
+		if arg == "--no-apply" || arg == "-no-apply" {
+			*noApply = true
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	if err := fs.Parse(rest); err != nil {
 		return err
 	}
 	store := accessStore(*state)
