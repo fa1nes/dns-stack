@@ -27,11 +27,15 @@ const (
 
 var domainRe = regexp.MustCompile(`^[a-z0-9.-]+$`)
 
-var manualRules = []struct {
+type manualRule struct {
 	file, label, route string
-}{
-	{"manual-exclude.txt", "人工排除", "本机递归"},
-	{"manual-gfw.txt", "人工 GFW", "香港递归"},
+	local              bool
+}
+
+var manualRules = []manualRule{
+	{"manual-cn-zones.txt", "国内解析名单", "本机递归，权威直连并带上客户端子网", true},
+	{"manual-exclude.txt", "移出香港名单", "本机递归", true},
+	{"manual-gfw.txt", "香港解析名单", "香港递归", false},
 }
 
 func (c *Ctl) TestDomain(ctx context.Context, domain, subnet string) error {
@@ -54,10 +58,13 @@ func (c *Ctl) TestDomain(ctx context.Context, domain, subnet string) error {
 	}
 	fmt.Fprintf(c.Out, "正在测试域名: %s%s\n", domain, note)
 
-	if matched := c.matchManualRule(domain); matched != "" {
-		fmt.Fprintf(c.Out, "  规则判定: %s\n", matched)
+	rule, suffix := c.matchManualRule(domain)
+	if rule.file != "" {
+		fmt.Fprintf(c.Out, "  规则判定: %s (%s) -> %s\n", rule.label, suffix, rule.route)
 	} else {
-		fmt.Fprintln(c.Out, "  规则判定: 未命中人工规则 -> 本机递归(出口按权威 IP 分流)")
+		fmt.Fprintln(c.Out, "  规则判定: 不在任何名单 -> 本机递归，每台权威按所在位置选直连或隧道")
+	}
+	if rule.file == "" || rule.local {
 		c.explainRouting(ctx, domain, ecs)
 	}
 
@@ -75,11 +82,11 @@ func (c *Ctl) TestDomain(ctx context.Context, domain, subnet string) error {
 	return nil
 }
 
-func (c *Ctl) matchManualRule(domain string) string {
+func (c *Ctl) matchManualRule(domain string) (manualRule, string) {
 	for suffix := domain; suffix != ""; {
 		for _, rule := range manualRules {
 			if fileHasLine(c.state(rule.file), suffix) {
-				return fmt.Sprintf("%s (%s) -> %s", rule.label, suffix, rule.route)
+				return rule, suffix
 			}
 		}
 		dot := strings.IndexByte(suffix, '.')
@@ -88,7 +95,7 @@ func (c *Ctl) matchManualRule(domain string) string {
 		}
 		suffix = suffix[dot+1:]
 	}
-	return ""
+	return manualRule{}, ""
 }
 
 func (c *Ctl) explainRouting(ctx context.Context, domain string, ecs netip.Prefix) {
@@ -119,7 +126,7 @@ func (c *Ctl) explainRouting(ctx context.Context, domain string, ecs netip.Prefi
 			fmt.Fprintf(c.Out, "    权威 %s (%s)%s 在大陆 -> 直连\n", strings.TrimSuffix(ns, "."), addr, label)
 			servesCN = true
 		case c.inNFTSet(ctx, "cn_authority", addr):
-			fmt.Fprintf(c.Out, "    权威 %s (%s)%s 属墙内域名 -> 直连\n", strings.TrimSuffix(ns, "."), addr, label)
+			fmt.Fprintf(c.Out, "    权威 %s (%s)%s 在国内权威表 -> 直连\n", strings.TrimSuffix(ns, "."), addr, label)
 			servesCN = true
 		default:
 			fmt.Fprintf(c.Out, "    权威 %s (%s)%s 在境外 -> 经隧道\n", strings.TrimSuffix(ns, "."), addr, label)
