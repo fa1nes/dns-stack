@@ -42,7 +42,7 @@ func cmdRoutingData(args []string) error {
 	}
 
 	if !*dryRun {
-		unlock, err := statefile.TryLock("/run/lock/dns-stack-routing-data.lock")
+		unlock, err := statefile.TryLock(routingLock)
 		if errors.Is(err, statefile.ErrLocked) {
 			if *force {
 				return fmt.Errorf("另一轮 routing-data 正在运行（定时器或面板刚触发过），等它结束再试")

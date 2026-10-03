@@ -15,7 +15,7 @@ func cmdTrimLogs(args []string) error {
 	fs := flag.NewFlagSet("trim-logs", flag.ContinueOnError)
 	dir := fs.String("dir", "/var/log/dns-stack", "日志目录")
 	keepBytes := fs.Int64("keep-bytes", 2<<20, "每份日志保留的末尾字节数")
-	dropStale := fs.Bool("drop-stale", false, "删除已不属于任何现存模块的僵尸日志")
+	dropStale := fs.Bool("drop-stale", false, "删除已不属于任何现存模块的废弃日志")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -25,9 +25,9 @@ func cmdTrimLogs(args []string) error {
 			return err
 		}
 		if len(removed) == 0 {
-			fmt.Println("没有僵尸日志")
+			fmt.Println("没有废弃日志")
 		} else {
-			fmt.Printf("已删除 %d 份僵尸日志，回收 %.1f MB: %s\n",
+			fmt.Printf("已删除 %d 份废弃日志，回收 %.1f MB: %s\n",
 				len(removed), float64(freed)/1024/1024, strings.Join(removed, " "))
 		}
 	}

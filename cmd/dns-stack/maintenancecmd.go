@@ -18,8 +18,8 @@ func cmdMaintenance(args []string) error {
 	fs := flag.NewFlagSet("maintenance", flag.ContinueOnError)
 	state := fs.String("state", envOr("STATE_DIR", pipeline.DefaultStateDir), "状态目录")
 	conf := fs.String("config", envOr("CONFIG_FILE", pipeline.DefaultConfigFile), "配置文件")
-	names := make([]string, 0, len(pipeline.MaintenanceSteps()))
-	for _, step := range pipeline.MaintenanceSteps() {
+	names := []string{}
+	for _, step := range pipeline.MaintenanceSteps(pipeline.Config{}) {
 		names = append(names, step.Name)
 	}
 	only := fs.String("only", "", "只跑指定步骤："+strings.Join(names, ","))
@@ -61,7 +61,7 @@ func cmdMaintenance(args []string) error {
 		Only:     selected,
 		Force:    *force,
 		Out:      os.Stdout,
-	}, rt, pipeline.MaintenanceSteps())
+	}, rt, pipeline.MaintenanceSteps(cfg))
 	fmt.Printf("[汇总] 执行 %d / 跳过 %d / 失败 %d\n", report.Ran, report.Skipped, report.Failed)
 	return runErr
 }

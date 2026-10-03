@@ -139,7 +139,7 @@ func applyDoHPath(configPath, mosPath, newPath string) error {
 		return rollback("新路径自验失败")
 	}
 
-	if err := upsertConfigKey(configPath, "DOH_PATH", newPath); err != nil {
+	if err := config.Upsert(configPath, map[string]string{"DOH_PATH": newPath}); err != nil {
 		return err
 	}
 	fmt.Println("[成功] DoH 路径已生效并自验通过")
@@ -148,30 +148,6 @@ func applyDoHPath(configPath, mosPath, newPath string) error {
 	fmt.Println("[信息] 请把所有客户端(sing-box / Surge / iOS 描述文件)的 DoH 地址换成上面的 DOH_URL")
 	fmt.Println("[信息] 旧地址即刻失效，未更新的客户端会解析失败")
 	return nil
-}
-
-func upsertConfigKey(path, key, value string) error {
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(strings.TrimRight(string(body), "\n"), "\n")
-	replaced := false
-	for i, line := range lines {
-		if strings.HasPrefix(line, key+"=") {
-			lines[i] = key + "=" + value
-			replaced = true
-		}
-	}
-	if !replaced {
-		lines = append(lines, key+"="+value)
-	}
-	info, err := os.Stat(path)
-	mode := os.FileMode(0o640)
-	if err == nil {
-		mode = info.Mode().Perm()
-	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), mode)
 }
 
 func selfBinary() string {
