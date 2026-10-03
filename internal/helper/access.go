@@ -103,7 +103,7 @@ func (h *Helper) routeCommand(verb string, args map[string]any) result {
 	if message != "" {
 		return failure(message)
 	}
-	return h.run(append([]string{h.goBin, "route", verb, list}, names...), 150*time.Second, true)
+	return h.run(pipelineCapped(append([]string{h.goBin, "route", verb, list}, names...)), 150*time.Second, true)
 }
 
 func (h *Helper) opRouteAdd(args map[string]any) result { return h.routeCommand("add", args) }

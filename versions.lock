@@ -55,7 +55,8 @@
     "config_command": "mosproxy router -c /etc/dns-stack/mosproxy/config.yaml",
     "api_endpoints": {
       "metrics": "GET /metrics (prometheus)",
-      "reload": "GET /ctl/reload (只重载domain_sets/ecs zone等资源文件，不是全量配置热重载)"
+      "reload": "GET /ctl/reload (只重载domain_sets/ecs zone等资源文件，不是全量配置热重载)",
+      "flush": "GET /ctl/flush[?domain=] (v0.2.1 起；清掉某个域名及其子域的缓存，不带参数清全部，返回删除条数)"
     }
   }
 }

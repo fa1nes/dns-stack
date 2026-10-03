@@ -22,7 +22,10 @@ func TestCLIFlagsNeverPrecedeTheSubcommand(t *testing.T) {
 			run(args)
 		}()
 		for _, argv := range seen {
-			if len(argv) < 2 || !strings.Contains(argv[0], "dns-stack") {
+			for len(argv) > 0 && !strings.Contains(argv[0], "dns-stack") {
+				argv = argv[1:]
+			}
+			if len(argv) < 2 {
 				continue
 			}
 			if strings.HasPrefix(argv[1], "-") {

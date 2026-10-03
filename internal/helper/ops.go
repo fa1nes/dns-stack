@@ -298,7 +298,17 @@ func (h *Helper) opRefreshRouting(map[string]any) result {
 	if missing := h.routingPrerequisiteError(); missing != "" {
 		return failure("缺少 " + missing + "，未改动分流产物")
 	}
-	return h.run([]string{h.goBin, "routing-data", "--force"}, 1800*time.Second, false)
+	return h.run(pipelineCapped([]string{h.goBin, "routing-data", "--force"}), 1800*time.Second, false)
+}
+
+var pipelineMemoryCap = []string{"MemoryHigh=384M", "MemoryMax=512M"}
+
+func pipelineCapped(argv []string) []string {
+	out := []string{"systemd-run", "--scope", "--quiet", "--collect"}
+	for _, property := range pipelineMemoryCap {
+		out = append(out, "-p", property)
+	}
+	return append(out, argv...)
 }
 
 func (h *Helper) opBackup(args map[string]any) result {
