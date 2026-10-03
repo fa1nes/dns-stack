@@ -53,7 +53,7 @@ func cmdDoHPath(args []string) error {
 }
 
 func renderDoHPath(configPath string) string {
-	keys := config.ReadKeys(configPath, "DOH_PATH", "PUBLIC_IPV4", "DOH_PORT")
+	keys := config.ReadKeys(configPath, "DOH_PATH", "PUBLIC_IPV4", "DOH_PORT", "DOT_PORT")
 	path := keys["DOH_PATH"]
 	if path == "" {
 		path = defaultDoHPath
@@ -70,12 +70,16 @@ func renderDoHPath(configPath string) string {
 	if port != "443" {
 		hostport = host + ":" + port
 	}
+	dotPort := keys["DOT_PORT"]
+	if dotPort == "" {
+		dotPort = "853"
+	}
 	isDefault := "0"
 	if path == defaultDoHPath {
 		isDefault = "1"
 	}
-	return fmt.Sprintf("DOH_PATH=%s\nDOH_URL=https://%s%s\nDOH_PATH_IS_DEFAULT=%s\n",
-		path, hostport, path, isDefault)
+	return fmt.Sprintf("DOH_PATH=%s\nDOH_URL=https://%s%s\nDOH_PATH_IS_DEFAULT=%s\nDOT_URL=tls://%s:%s\nDOQ_URL=quic://%s:%s\n",
+		path, hostport, path, isDefault, host, dotPort, host, dotPort)
 }
 
 func rewriteDoHPath(body []byte, newPath string) ([]byte, error) {
