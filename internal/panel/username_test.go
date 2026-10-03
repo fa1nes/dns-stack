@@ -22,12 +22,7 @@ func serverWithUsername(t *testing.T, username string) *Server {
 
 func TestOnceAUsernameIsSetLoginNeedsIt(t *testing.T) {
 	server := serverWithUsername(t, "alice")
-	login := func(user string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest("POST", "/api/login",
-			strings.NewReader(`{"username":"`+user+`","password":"`+testPassword+`"}`))
-		request.RemoteAddr = "203.0.113.9:5000"
-		return serve(server, request)
-	}
+	login := func(user string) *httptest.ResponseRecorder { return serve(server, loginWith(t, user)) }
 	wrong := login("mallory")
 	if wrong.Code != http.StatusUnauthorized {
 		t.Fatalf("用户名不对、密码对，得到 %d——用户名形同虚设", wrong.Code)
@@ -47,6 +42,31 @@ func TestOnceAUsernameIsSetLoginNeedsIt(t *testing.T) {
 	if boot["username_required"] != true {
 		t.Errorf("登录页要靠 bootstrap 的 username_required 决定显不显示用户名框：%v", boot)
 	}
+}
+
+func TestAuthConfigTellsTheAccountPageWhatItShows(t *testing.T) {
+	server := serverWithUsername(t, "alice")
+	body, _ := os.ReadFile(server.cfg.AuthPath)
+	var record map[string]any
+	_ = json.Unmarshal(body, &record)
+	record["created_at"] = 1700000000
+	writeAuthRecord(t, server.cfg.AuthPath, record)
+
+	request := localRequest("GET", "/api/auth/config")
+	request.AddCookie(serve(server, loginWith(t, "alice")).Result().Cookies()[0])
+	var out map[string]any
+	_ = json.Unmarshal(serve(server, request).Body.Bytes(), &out)
+	if out["username"] != "alice" || out["password_set_at"] != float64(1700000000) {
+		t.Fatalf("账号页显示的用户名和「多久前改过密码」取自 auth/config，实际 %v", out)
+	}
+}
+
+func loginWith(t *testing.T, user string) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest("POST", "/api/login",
+		strings.NewReader(`{"username":"`+user+`","password":"`+testPassword+`"}`))
+	request.RemoteAddr = "203.0.113.9:5000"
+	return request
 }
 
 func TestWithoutAUsernamePasswordAloneStillWorks(t *testing.T) {

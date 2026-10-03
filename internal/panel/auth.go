@@ -27,6 +27,7 @@ type authRecord struct {
 	P                int            `json:"p"`
 	SessionKey       string         `json:"session_key"`
 	Username         string         `json:"username"`
+	CreatedAt        int64          `json:"created_at"`
 	PasswordDisabled bool           `json:"password_disabled"`
 	TOTP             map[string]any `json:"totp"`
 	OAuth            map[string]any `json:"oauth"`
@@ -360,5 +361,5 @@ func (s *Server) authConfig(w http.ResponseWriter, r *http.Request) {
 	oauth := map[string]any{"client_id": clientID, "secret_set": secret != "", "allowed_users": oauthUsers(rec), "verified_once": boolValue(rec.OAuth["verified_once"]), "ready": oauthReady(rec)}
 	writeJSON(w, 200, map[string]any{"oauth": oauth, "password_disabled": ok && rec.PasswordDisabled,
 		"totp_enabled": ok && rec.TOTP["enabled"] == true, "auth_enabled": ok, "username": rec.Username,
-		"session_expires_at": sessionExpiry(r)})
+		"password_set_at": rec.CreatedAt, "session_expires_at": sessionExpiry(r)})
 }
