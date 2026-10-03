@@ -12,7 +12,10 @@ func TestEditingAListKeepsTheNotesAroundIt(t *testing.T) {
 	s := newStore(t)
 	path := filepath.Join(s.StateDir, RouteCNFile)
 	original := "# Apple：IP 注册在美国，归属库判不出来\napple.com\nicloud.com\n\n# 权威在境外但服务国内\niqiyi.com\n"
-	if err := os.WriteFile(path, []byte(original), 0o664); err != nil {
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o664); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.AddRoutes(RouteCN, []string{"sb.sb"}); err != nil {
