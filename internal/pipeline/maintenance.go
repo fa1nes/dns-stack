@@ -1,0 +1,306 @@
+package pipeline
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/dns-stack/dns-stack/internal/backup"
+)
+
+const (
+	CertPath      = "/etc/dns-stack/secrets/doh-dot.pem"
+	KeyPath       = "/etc/dns-stack/secrets/doh-dot.key"
+	PanelCertDir  = "/etc/dns-stack/secrets/panel"
+	PanelCertPath = PanelCertDir + "/cert.pem"
+	PanelKeyPath  = PanelCertDir + "/key.pem"
+	AcmeHome      = "/root/.acme.sh"
+	renewWhenDays = 3
+)
+
+type CertStatus struct {
+	NotAfter time.Time
+	DaysLeft int
+	SANHasIP bool
+	KeyMatch bool
+}
+
+func parsePEMCert(path string) (*x509.Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	for len(data) > 0 {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		return x509.ParseCertificate(block.Bytes)
+	}
+	return nil, fmt.Errorf("%s 里没有 CERTIFICATE 块", path)
+}
+
+func parsePEMKey(path string) (any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	for len(data) > 0 {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			break
+		}
+		if key, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+			return key, nil
+		}
+		if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+			return key, nil
+		}
+		if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+			return key, nil
+		}
+	}
+	return nil, fmt.Errorf("%s 里没有可解析的私钥", path)
+}
+
+func publicKeysMatch(cert *x509.Certificate, key any) bool {
+	switch pub := cert.PublicKey.(type) {
+	case *ecdsa.PublicKey:
+		private, ok := key.(*ecdsa.PrivateKey)
+		return ok && pub.Equal(&private.PublicKey)
+	case *rsa.PublicKey:
+		private, ok := key.(*rsa.PrivateKey)
+		return ok && pub.Equal(&private.PublicKey)
+	case ed25519.PublicKey:
+		private, ok := key.(ed25519.PrivateKey)
+		return ok && pub.Equal(private.Public())
+	}
+	return false
+}
+
+func InspectCert(certPath, keyPath, publicIP string, now time.Time) (CertStatus, error) {
+	cert, err := parsePEMCert(certPath)
+	if err != nil {
+		return CertStatus{}, err
+	}
+	status := CertStatus{
+		NotAfter: cert.NotAfter,
+		DaysLeft: int(cert.NotAfter.Sub(now).Hours() / 24),
+	}
+	if publicIP != "" {
+		want := net.ParseIP(publicIP)
+		for _, addr := range cert.IPAddresses {
+			if addr.Equal(want) {
+				status.SANHasIP = true
+				break
+			}
+		}
+	}
+	key, err := parsePEMKey(keyPath)
+	if err != nil {
+		return status, fmt.Errorf("读不到私钥: %w", err)
+	}
+	status.KeyMatch = publicKeysMatch(cert, key)
+	if !status.KeyMatch {
+		return status, fmt.Errorf("证书与私钥不匹配")
+	}
+	return status, nil
+}
+
+func stepRenewCert(ctx context.Context, rt *Runtime) error {
+	publicIP := rt.Config.Value("PUBLIC_IPV4")
+	status, err := InspectCert(CertPath, KeyPath, publicIP, time.Now())
+	if err != nil {
+		return err
+	}
+	rt.Infof("证书剩余有效期 %d 天（到期 %s）",
+		status.DaysLeft, status.NotAfter.Format("2006-01-02 15:04"))
+	if status.SANHasIP {
+		rt.Infof("SAN 包含当前公网 IP(%s)，证书与私钥匹配", publicIP)
+	} else {
+		rt.Warnf("SAN 不包含当前公网 IP(%s)，可能是 IP 已变更", publicIP)
+	}
+	if status.DaysLeft > renewWhenDays && status.SANHasIP {
+		rt.Infof("证书仍然有效(> %d 天)且 SAN 正确，无需续签", renewWhenDays)
+		return syncPanelCertIfStale(ctx, rt)
+	}
+	if publicIP == "" {
+		return fmt.Errorf("需要续签但 config.env 没有 PUBLIC_IPV4，无法确定证书主体")
+	}
+	rt.Infof("开始续签（Let's Encrypt IP 证书约 6 天有效期）")
+	return runAcme(ctx, rt, publicIP)
+}
+
+func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
+	acme := AcmeHome + "/acme.sh"
+	if _, err := os.Stat(acme); err != nil {
+		return fmt.Errorf("找不到 acme.sh: %s", acme)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	self, err := os.Executable()
+	if err != nil {
+		self = "/opt/dns-stack/bin/dns-stack-go"
+	}
+	install := exec.CommandContext(ctx, acme, "--home", AcmeHome, "--install-cert", "-d", publicIP,
+		"--key-file", KeyPath, "--fullchain-file", CertPath,
+		"--reloadcmd", self+" maintenance --reload-mosproxy", "--ecc")
+	install.Stdout, install.Stderr = rt.Out, rt.Out
+	if err := install.Run(); err != nil {
+		return fmt.Errorf("登记证书安装方式失败: %w", err)
+	}
+
+	renew := exec.CommandContext(ctx, acme, "--home", AcmeHome, "--renew", "-d", publicIP, "--ecc", "--force")
+	renew.Stdout, renew.Stderr = rt.Out, rt.Out
+	if err := renew.Run(); err != nil {
+		return fmt.Errorf("续签失败，继续使用旧证书: %w", err)
+	}
+	rt.Infof("续签成功")
+	return SyncPanelCert(ctx, rt)
+}
+
+func syncPanelCertIfStale(ctx context.Context, rt *Runtime) error {
+	source, err := os.ReadFile(CertPath)
+	if err != nil {
+		return nil
+	}
+	if copied, err := os.ReadFile(PanelCertPath); err == nil && bytes.Equal(source, copied) {
+		return nil
+	}
+	rt.Warnf("面板证书副本与入口证书不一致——acme.sh 自己的 cron 续签后只重载 mosproxy，不会同步副本")
+	return SyncPanelCert(ctx, rt)
+}
+
+func SyncPanelCert(ctx context.Context, rt *Runtime) error {
+	const dir = PanelCertDir
+	if _, err := exec.LookPath("install"); err != nil {
+		return nil
+	}
+	if err := exec.CommandContext(ctx, "id", "-u", "dns-stack-panel").Run(); err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	for _, pair := range [][2]string{{CertPath, PanelCertPath}, {KeyPath, PanelKeyPath}} {
+		cmd := exec.CommandContext(ctx, "install",
+			"-o", "dns-stack-panel", "-g", "dns-stack-panel", "-m", "0400", pair[0], pair[1])
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("同步面板证书副本失败: %w", err)
+		}
+	}
+	exec.CommandContext(ctx, "chgrp", "dns-stack-panel", dir).Run()
+	exec.CommandContext(ctx, "systemctl", "restart", "dns-stack-panel").Run()
+	rt.Infof("面板证书副本已同步")
+	return nil
+}
+
+var forkReleaseRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func mosproxyHotReloadsCerts(buildID string) bool {
+	return forkReleaseRe.MatchString(strings.TrimSpace(buildID))
+}
+
+func ReloadMosproxyCert(ctx context.Context, rt *Runtime) error {
+	data, err := os.ReadFile("/opt/dns-stack/bin/mosproxy.build-id")
+	if err == nil && mosproxyHotReloadsCerts(string(data)) {
+		rt.Infof("mosproxy %s 会在 10 秒内自行加载新证书，不重启（保住缓存与在途连接）", strings.TrimSpace(string(data)))
+		return nil
+	}
+	rt.Infof("认不出 mosproxy 的版本，回退为重启")
+	return exec.CommandContext(ctx, "systemctl", "restart", "mosproxy.service").Run()
+}
+
+func BackupInterval(cfg Config) time.Duration {
+	if strings.TrimSpace(cfg.Value("BACKUP_INTERVAL_HOURS")) == "0" {
+		return 0
+	}
+	return time.Duration(cfg.Int("BACKUP_INTERVAL_HOURS", 24)) * time.Hour
+}
+
+func stepBackup(ctx context.Context, rt *Runtime) error {
+	if BackupInterval(rt.Config) == 0 {
+		rt.Infof("自动备份已关闭（BACKUP_INTERVAL_HOURS=0）")
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	cfg := backup.DefaultConfig()
+	cfg.StateDir = rt.Config.StateDir
+	cfg.ConfigFile = rt.Config.ConfigFile
+	cfg.Out = rt.Out
+	_, err := cfg.Backup(ctx, false, true)
+	return err
+}
+
+const (
+	UnboundLogPath = "/var/log/dns-stack/unbound.log"
+	UnboundUser    = "unbound"
+)
+
+func FileOwner(ctx context.Context, path string) string {
+	out, err := exec.CommandContext(ctx, "stat", "-c", "%U", path).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func stepUnboundLog(ctx context.Context, rt *Runtime) error {
+	_, statErr := os.Stat(UnboundLogPath)
+	switch {
+	case statErr != nil:
+		rt.Warnf("unbound 的 logfile 不存在——日志目录 unbound 只有 r-x，它自己建不出来，"+
+			"DNSSEC 校验失败会静默消失（%s）", UnboundLogPath)
+		file, err := os.OpenFile(UnboundLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+		if err != nil {
+			return fmt.Errorf("建不出 %s: %w", UnboundLogPath, err)
+		}
+		file.Close()
+	case FileOwner(ctx, UnboundLogPath) == UnboundUser:
+		rt.Infof("unbound 日志文件在位且属主正确")
+		return nil
+	default:
+		rt.Warnf("%s 的属主不是 %s——unbound 降权后打不开它，写进去的东西全部丢失",
+			UnboundLogPath, UnboundUser)
+	}
+	if err := exec.CommandContext(ctx, "chown", UnboundUser+":"+UnboundUser, UnboundLogPath).Run(); err != nil {
+		return fmt.Errorf("改 %s 属主失败: %w", UnboundLogPath, err)
+	}
+	reopen := exec.CommandContext(ctx, "unbound-control", "-c", "/etc/unbound/unbound.conf", "log_reopen")
+	reopen.Stdout, reopen.Stderr = rt.Out, rt.Out
+	if err := reopen.Run(); err != nil {
+		return fmt.Errorf("让 unbound 重开日志失败: %w", err)
+	}
+	rt.Infof("已修好 unbound 日志文件并让 unbound 重新打开")
+	return nil
+}
+
+func MaintenanceSteps(cfg Config) []Step {
+	backupEvery := BackupInterval(cfg)
+	if backupEvery == 0 {
+		backupEvery = 24 * time.Hour
+	}
+	return []Step{
+		{Name: "unbound-log", Label: "unbound 日志可写", Every: time.Hour, Run: stepUnboundLog},
+		{Name: "renew-cert", Label: "TLS 证书检查与续签", Every: 6 * time.Hour, Run: stepRenewCert},
+		{Name: "backup", Label: "数据库/配置/规则备份", Every: backupEvery, Run: stepBackup},
+	}
+}

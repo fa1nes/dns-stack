@@ -1,0 +1,153 @@
+package pipeline
+
+import (
+	"fmt"
+	"github.com/dns-stack/dns-stack/internal/stack"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dns-stack/dns-stack/internal/config"
+	"github.com/dns-stack/dns-stack/internal/geoip"
+)
+
+type Config struct {
+	StateDir     string
+	ConfigFile   string
+	TunnelIf     string
+	TunnelAddr   string
+	NFTTable     string
+	DirectSet    string
+	AuthoritySet string
+	UnboundCtl   string
+	Resolver     string
+	ResolverPort int
+	ECSConfPath  string
+	Aggregate    int
+	APNICURL     string
+	values       map[string]string
+}
+
+const (
+	DefaultStateDir   = "/var/lib/dns-stack"
+	DefaultConfigFile = "/etc/dns-stack/config.env"
+	DefaultECSConf    = "/etc/unbound/unbound.conf.d/dns-stack-ecs.conf"
+	DefaultAPNICURL   = "https://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest"
+)
+
+func LoadConfig(stateDir, configFile string) Config {
+	if stateDir == "" {
+		stateDir = DefaultStateDir
+	}
+	if configFile == "" {
+		configFile = DefaultConfigFile
+	}
+	values := config.Read(configFile)
+	cfg := Config{
+		StateDir:     stateDir,
+		ConfigFile:   configFile,
+		TunnelIf:     stack.TunnelIf,
+		TunnelAddr:   stack.CNTunnelIP,
+		NFTTable:     pick(values["NFT_TABLE"], "dns_route"),
+		DirectSet:    "direct4",
+		AuthoritySet: "cn_authority",
+		UnboundCtl:   "unbound-control",
+		Resolver:     "127.0.0.1",
+		ResolverPort: stack.UnboundPort,
+		ECSConfPath:  DefaultECSConf,
+		Aggregate:    24,
+		APNICURL:     pick(values["APNIC_URL"], DefaultAPNICURL),
+		values:       values,
+	}
+	if n, err := strconv.Atoi(values["CN_AUTHORITY_AGGREGATE"]); err == nil && n >= 0 && n <= 32 {
+		cfg.Aggregate = n
+	}
+	return cfg
+}
+
+func pick(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (c Config) Value(key string) string { return c.values[key] }
+
+func (c Config) Int(key string, fallback int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(c.values[key])); err == nil && n > 0 {
+		return n
+	}
+	return fallback
+}
+
+func (c Config) Float(key string, fallback float64) float64 {
+	if n, err := strconv.ParseFloat(strings.TrimSpace(c.values[key]), 64); err == nil && n > 0 {
+		return n
+	}
+	return fallback
+}
+
+func (c Config) Duration(key string, fallback time.Duration) time.Duration {
+	if n, err := strconv.Atoi(strings.TrimSpace(c.values[key])); err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return fallback
+}
+
+func (c Config) Path(parts ...string) string {
+	return filepath.Join(append([]string{c.StateDir}, parts...)...)
+}
+
+func (c Config) Chnroute(name string) string { return c.Path("chnroute", name) }
+
+func (c Config) GeoDir() string { return c.Path("geoip") }
+
+type Runtime struct {
+	Config  Config
+	Out     io.Writer
+	Preview bool
+
+	geo    *geoip.GeoDB
+	geoSet bool
+}
+
+func NewRuntime(cfg Config, out io.Writer) *Runtime {
+	if out == nil {
+		out = os.Stdout
+	}
+	return &Runtime{Config: cfg, Out: out}
+}
+
+func (r *Runtime) GeoDB() *geoip.GeoDB {
+	if !r.geoSet {
+		dir := r.Config.GeoDir()
+		r.geo = geoip.NewGeoDB(
+			filepath.Join(dir, "GeoLite2-ASN.mmdb"),
+			filepath.Join(dir, "GeoLite2-City.mmdb"),
+			filepath.Join(dir, "qqwry.ipdb"),
+		)
+		r.geoSet = true
+	}
+	return r.geo
+}
+
+func (r *Runtime) InvalidateGeoDB() {
+	if r.geo != nil {
+		r.geo = nil
+	}
+	r.geoSet = false
+}
+
+func (r *Runtime) Infof(format string, args ...any) {
+	fmt.Fprintf(r.Out, "  "+format+"\n", args...)
+}
+
+func (r *Runtime) Warnf(format string, args ...any) {
+	fmt.Fprintf(r.Out, "  [警告] "+format+"\n", args...)
+}
