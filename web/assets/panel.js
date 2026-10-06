@@ -315,7 +315,7 @@ function applyTheme() {
   const dark = mode === 'dark' || (mode === 'auto' && !prefersLight.matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const meta = $('meta[name="theme-color"]');
-  if (meta) meta.content = dark ? '#080c12' : '#eef1f5';
+  if (meta) meta.content = dark ? '#0a0e15' : '#f6f8fa';
   $$('.theme-btn').forEach((b) => {
     setHtml(b, html`${THEME_ICON[mode]}${b.id === 'themeToggle' ? html`<span class="lbl">${THEME_LABEL[mode]}</span>` : raw('')}`);
     b.title = '主题：' + THEME_LABEL[mode];
@@ -582,18 +582,10 @@ const STAT_KEYS = ['events', 'hit', 'latency', 'failure'];
 
 function patchStat(card, s) {
   const num = card.querySelector('.num');
-  if (num.textContent !== s.num) {
-    const changed = num.textContent !== '';
-    num.textContent = s.num;
-    if (changed && !reducedMotion()) {
-      num.animate([{ opacity: 0.35, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }],
-        { duration: 420, easing: 'cubic-bezier(.2, .8, .2, 1)' });
-    }
-  }
+  if (num.textContent !== s.num) num.textContent = s.num;
   num.className = 'num ' + (s.cls || '');
   num.title = s.title || '';
   setHtml(card.querySelector('.sub'), s.sub || raw(''));
-  setHtml(card.querySelector('.foot'), s.foot || raw(''));
 }
 
 function renderOverviewStats(d) {
@@ -602,45 +594,10 @@ function renderOverviewStats(d) {
   const box = $('#ovStats');
   if (!box.querySelector('[data-stat]')) {
     setHtml(box, html`${STAT_KEYS.map((key) => html`<div class="card stat" data-stat="${key}">
-      <div class="label">${stats[key].label}</div><div class="num"></div><div class="sub"></div><div class="foot"></div>
-      ${SPARKS[key] ? html`<div class="spark" data-spark="${key}"></div>` : raw('')}
+      <div class="label">${stats[key].label}</div><div class="num"></div><div class="sub"></div>
     </div>`)}`);
   }
   STAT_KEYS.forEach((key) => patchStat(box.querySelector('[data-stat="' + key + '"]'), stats[key]));
-  renderSparks();
-}
-
-const SPARKS = {
-  events: { of: (p) => TS_SERIES.reduce((sum, s) => sum + s.of(p), 0), fmt: (v) => fmtNum(Math.round(v)) + ' 次' },
-  hit: {
-    of: (p) => { const all = TS_SERIES.reduce((sum, s) => sum + s.of(p), 0); return all ? p.cache * 100 / all : null; },
-    fmt: (v) => v.toFixed(1) + '%',
-  },
-  failure: { of: (p) => TS_SERIES[3].of(p), fmt: (v) => fmtNum(Math.round(v)) + ' 次' },
-};
-
-function renderSparks() {
-  const points = ts.points;
-  Object.keys(SPARKS).forEach((key) => {
-    const box = document.querySelector('#ovStats [data-spark="' + key + '"]');
-    if (!box) return;
-    const values = points.map(SPARKS[key].of);
-    const known = values.filter((v) => v !== null);
-    if (known.length < 2) { setHtml(box, raw('')); return; }
-    const lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
-    const span = hi - lo || 1;
-    const n = values.length - 1;
-    const coords = [];
-    values.forEach((v, i) => {
-      if (v !== null) coords.push((i * 100 / n).toFixed(2) + ',' + (28 - (v - lo) * 26 / span).toFixed(2));
-    });
-    const last = known[known.length - 1];
-    const label = $('#tsSpan').selectedOptions[0].textContent;
-    setHtml(box, html`<div class="spark-plot"><svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points="${coords.join(' ')}"/></svg>
-      <i class="spark-end" style="top:${((28 - (last - lo) * 26 / span) / 30 * 100).toFixed(1)}%"></i></div>
-      <span class="spark-cap">${label} · 最低 ${SPARKS[key].fmt(lo)} · 最高 ${SPARKS[key].fmt(hi)}</span>`);
-  });
 }
 
 function eventsStat(ev, m) {
@@ -651,10 +608,10 @@ function eventsStat(ev, m) {
   }
   const c = ev.collector;
   const lossy = c && c.dropped_at && Date.now() / 1000 - c.dropped_at < 3600;
+  const sub = '每秒 ' + ((m && m.qps) || 0) + ' 次 · ' + fmtNum(ev.domains || 0) + ' 个域名';
   return Object.assign(out, {
     num: fmtNum(ev.last_1h || 0), title: fmtNumFull(ev.last_1h || 0),
-    sub: '每秒 ' + ((m && m.qps) || 0) + ' 次 · ' + fmtNum(ev.domains || 0) + ' 个域名',
-    foot: lossy ? html`<span class="text-warn" title="写库跟不上时宁可少记，也不拖慢解析">统计在采样 · 少记了 ${fmtNum(c.dropped)} 条</span>` : raw(''),
+    sub: lossy ? html`${sub} · <span class="text-warn" title="写库跟不上时宁可少记，也不拖慢解析">统计在采样，少记 ${fmtNum(c.dropped)} 条</span>` : sub,
   });
 }
 
@@ -667,8 +624,6 @@ function hitStat(m) {
   };
 }
 
-const ROUTE_LAT = [['cache', '缓存'], ['cn', '本机递归'], ['foreign', '香港']];
-
 function latencyStat(lat, m) {
   const out = { label: '响应速度' };
   if (!lat || !lat.samples) {
@@ -678,16 +633,19 @@ function latencyStat(lat, m) {
   }
   const by = lat.by_route || {};
   const rec = by.cn;
-  const recCls = !rec ? '' : (rec.p50 <= 300 ? 'ok' : (rec.p50 <= 800 ? 'warn' : 'err'));
-  const rows = ROUTE_LAT.filter(([key]) => by[key]).map(([key, name]) => html`<span class="lat-row">
-    <i class="sw ${key}"></i><span class="dim">${name}</span><b>${by[key].p50} ms</b><span class="dim">P95 ${by[key].p95}</span></span>`);
+  const title = ['近 1 小时全部请求中位数 ' + dash(lat.p50, ' ms') + '，平均 ' + dash(lat.avg, ' ms')]
+    .concat([['cache', '缓存'], ['cn', '本机递归'], ['foreign', '香港']].filter(([k]) => by[k])
+      .map(([k, name]) => name + '：中位数 ' + by[k].p50 + ' ms，P95 ' + by[k].p95 + ' ms'))
+    .concat(lat.sampled ? ['分位数按最近 ' + fmtNum(lat.sampled_from) + ' 条'] : []).join('\n');
+  const slow = lat.slow_1s ? ' · 超过 1 秒 ' + fmtNum(lat.slow_1s) + ' 次' : '';
+  if (!rec) {
+    return Object.assign(out, { num: dash(lat.p50, ' ms'), cls: 'ok', title: title,
+      sub: '近 1 小时全部是缓存命中 · P95 ' + dash(lat.p95, ' ms') + slow });
+  }
   return Object.assign(out, {
-    num: rec ? rec.p50 + ' ms' : dash(lat.p50, ' ms'),
-    cls: rec ? recCls : 'ok',
-    title: '近 1 小时 · 全部请求中位数 ' + dash(lat.p50, ' ms') + ' · 平均 ' + dash(lat.avg, ' ms'),
-    sub: rec ? '本机递归中位数 · 没命中缓存时等这么久' : '近 1 小时全部是缓存命中',
-    foot: html`${rows}${lat.slow_1s ? html`<span class="lat-row text-warn">超过 1 秒 ${fmtNum(lat.slow_1s)} 次</span>` : raw('')}${
-      lat.sampled ? html`<span class="lat-row dim">分位数按最近 ${fmtNum(lat.sampled_from)} 条</span>` : raw('')}`,
+    num: rec.p50 + ' ms', title: title,
+    cls: rec.p50 <= 300 ? 'ok' : (rec.p50 <= 800 ? 'warn' : 'err'),
+    sub: '本机递归中位数 · P95 ' + rec.p95 + ' ms' + slow,
   });
 }
 
@@ -817,7 +775,6 @@ async function loadTimeseries() {
     state.tsData = null;
     ts.points = [];
     setHtml(wrap, errState(e));
-    setHtml($('#tsComp'), raw(''));
   } finally {
     if (fresh()) wrap.classList.remove('loading');
   }
@@ -889,18 +846,8 @@ function drawChart(d) {
   const label = '请求趋势：' + TS_SERIES.map((s, i) => s.name + ' ' + totals[i] + ' 次').join('，');
   wrap.querySelector('svg').replaceWith(parseFragment(html`<svg width="${w}" height="${h}"
     viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}">${grid}${ticks}${paths}</svg>`));
-  renderTsLegend(totals);
-  renderSparks();
   if (ts.hover >= points.length) ts.hover = points.length - 1;
   if (ts.hover >= 0) showTsHover(ts.hover);
-}
-
-function renderTsLegend(totals) {
-  const all = totals.reduce((a, b) => a + b, 0);
-  setHtml($('#tsComp'), html`${TS_SERIES.map((s, i) => html`<span class="ts-key">
-    <i class="key s-${s.key}"></i><span class="dim">${s.name}</span><b>${fmtNum(totals[i])}</b>${
-    all ? html`<span class="dim">${(totals[i] * 100 / all).toFixed(totals[i] * 100 / all < 1 && totals[i] ? 2 : 1)}%</span>` : raw('')}
-  </span>`)}`);
 }
 
 function tsIndexAt(clientX) {
@@ -1018,7 +965,7 @@ function initLivePage() {
   startLive();
 }
 
-const ROUTE_CLS = { cn: 'cn', foreign: 'foreign', cache: 'cache', reject: 'reject' };
+const ROUTE_CLS = { cn: 'cn', foreign: 'foreign', cache: 'cache', reject: 'reject', failed: 'warn' };
 
 const cnBadge = (inCn) => raw(
   inCn === true ? '<span class="badge cn">国内节点</span>'
@@ -1329,18 +1276,16 @@ function ecsVerdict(e) {
   return html`<span class="badge warn">不分地区</span>`;
 }
 
-const routeBadge = (r) => (r.route === 'failed'
-  ? html`<span class="badge err">${r.route_name || r.route}</span>`
-  : html`<span class="rt ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`);
-const rcodeBadge = (r) => (r.rcode === 0 || r.rcode === 3
-  ? html`<span class="rc${r.rcode === 3 ? ' warn' : ''}">${r.rcode_name}</span>`
-  : html`<span class="badge err">${r.rcode_name}</span>`);
+const routeBadge = (r) =>
+  html`<span class="badge ${ROUTE_CLS[r.route] || 'unknown'}">${r.route_name || r.route}</span>`;
+const rcodeBadge = (r) =>
+  html`<span class="badge ${r.rcode === 0 ? 'ok' : (r.rcode === 3 ? 'warn' : 'err')}">${r.rcode_name}</span>`;
 
 function latencyCell(r) {
   const ms = r.elapsed_ms;
   if (ms !== null && ms !== undefined) {
     const v = ms >= 10 ? ms.toFixed(0) : ms.toFixed(1);
-    const cls = ms < 50 ? 'fast' : (ms < 1000 ? '' : 'slow');
+    const cls = ms <= 50 ? 'ok' : (ms <= 800 ? 'warn' : 'err');
     return html`<span class="lat ${cls}">${v} ms</span>`;
   }
   const avg = r.cache_hit ? undefined : state.upstreamLatency[r.resp_by];
@@ -1511,7 +1456,6 @@ async function loadQueries(page) {
     $('#pageInfo').textContent = d.page + ' / ' + (d.pages || 1) + (d.total_capped ? '+' : '');
     $('#btnPrev').disabled = d.page <= 1;
     $('#btnNext').disabled = d.page >= (d.pages || 1);
-    if (d.page === 1) monSeed();
     if (d.page === 1 && !range) followLiveFrom(d.items.length ? d.items[0].id : 0);
   } catch (e) {
     if (!fresh()) return;
@@ -1613,7 +1557,6 @@ function receiveLive(ev) {
   live.skipped += skipped;
   live.unseen += events.length + skipped;
   live.pending = live.pending.concat(events);
-  monAdd(events);
   if (live.pending.length > LIVE_ROWS) live.pending = live.pending.slice(-LIVE_ROWS);
   scheduleLive();
 }
@@ -1646,7 +1589,6 @@ function startLive() {
   };
   clearInterval(live.clock);
   live.clock = setInterval(renderLiveStatus, 2000);
-  monStart();
   renderLiveStatus();
 }
 
@@ -1655,7 +1597,6 @@ function stopLive() {
   clearInterval(live.clock);
   live.connecting = false;
   if (live.raf) { cancelAnimationFrame(live.raf); live.raf = 0; }
-  monStop();
   renderLiveStatus();
 }
 
@@ -1675,225 +1616,6 @@ function showQueryRange(since, until) {
 function clearQueryRange() {
   state.queryRange = null;
   loadQueries(1);
-}
-
-const MON_SPAN = 600;
-const MON_CAP = 5000;
-const MON_ROUTES = [['cache', '缓存', 's-cache'], ['cn', '本机递归', 's-cn'], ['foreign', '香港', 's-foreign'], ['failed', '失败', 's-fail']];
-const MON_TICKS = [[0.1, '0.1ms'], [1, '1ms'], [10, '10ms'], [100, '100ms'], [1000, '1s'], [10000, '10s']];
-const mon = { points: [], start: 0, end: 0, geo: null, hover: null, raf: 0, timer: 0, seq: 0 };
-
-function monPoint(e) {
-  if (e.elapsed_ms === null || e.elapsed_ms === undefined) return null;
-  const route = e.route === 'reject' ? 'failed' : e.route;
-  return { t: e.ts + (e.id % 997) / 997, ms: Math.max(0.05, e.elapsed_ms), route: route,
-    domain: e.domain, rcode: e.rcode_name, qtype: e.qtype_name, id: e.id };
-}
-
-function monWindow() {
-  if (state.queryRange) return [state.queryRange.since, state.queryRange.until + 1];
-  const now = Date.now() / 1000;
-  return [now - MON_SPAN, now];
-}
-
-function monAdd(events) {
-  if (state.queryRange) return;
-  events.forEach((e) => { const p = monPoint(e); if (p) mon.points.push(p); });
-  const cutoff = Date.now() / 1000 - MON_SPAN - 5;
-  let drop = 0;
-  while (drop < mon.points.length && mon.points[drop].t < cutoff) drop++;
-  if (drop || mon.points.length > MON_CAP) mon.points = mon.points.slice(Math.max(drop, mon.points.length - MON_CAP));
-  scheduleMon();
-}
-
-async function monSeed() {
-  const seq = ++mon.seq;
-  const [since, until] = monWindow();
-  const params = liveFilterParams();
-  params.set('size', '500');
-  params.set('since', String(Math.floor(since)));
-  if (state.queryRange) params.set('until', String(state.queryRange.until));
-  $('#monHint').textContent = state.queryRange ? rangeLabel(state.queryRange) : '最近 10 分钟';
-  try {
-    const d = await api('/api/queries?' + params.toString());
-    if (seq !== mon.seq) return;
-    const seeded = d.items.map(monPoint).filter(Boolean).reverse();
-    const newest = seeded.length ? seeded[seeded.length - 1].id : 0;
-    mon.points = seeded.concat(mon.points.filter((p) => p.id > newest && p.t >= since && p.t <= until));
-    mon.capped = !!d.total_capped || d.total > d.items.length;
-  } catch (e) {
-    if (seq !== mon.seq) return;
-    mon.points = [];
-  }
-  scheduleMon();
-}
-
-function scheduleMon() {
-  if (!mon.raf) mon.raf = requestAnimationFrame(drawMon);
-}
-
-function monColors() {
-  const cs = getComputedStyle(document.documentElement);
-  const v = (name) => cs.getPropertyValue(name).trim();
-  return { cache: v('--s-cache'), cn: v('--s-cn'), foreign: v('--s-foreign'), failed: v('--s-fail'),
-    grid: v('--border-soft'), text: v('--text-dim'), font: '11px ' + v('--mono') };
-}
-
-function drawMon() {
-  mon.raf = 0;
-  const plot = $('#monPlot');
-  const canvas = $('#monCanvas');
-  if (!plot || !plot.offsetParent || state.livePaused) return;
-  const w = plot.clientWidth, h = plot.clientHeight, dpr = window.devicePixelRatio || 1;
-  if (!w || !h) return;
-  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-  }
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  const c = monColors();
-  const pad = { l: 46, r: 8, t: 6, b: 18 };
-  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
-  const [start, end] = monWindow();
-  const lo = Math.log10(0.05), hi = Math.log10(20000);
-  const xAt = (t) => pad.l + cw * (t - start) / (end - start);
-  const yAt = (ms) => pad.t + ch - ch * (Math.log10(Math.min(Math.max(ms, 0.05), 20000)) - lo) / (hi - lo);
-  mon.geo = { xAt: xAt, yAt: yAt, start: start, end: end };
-
-  ctx.font = c.font;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = c.grid;
-  ctx.fillStyle = c.text;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  MON_TICKS.forEach(([ms, label]) => {
-    const y = Math.round(yAt(ms)) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(pad.l + cw, y);
-    ctx.stroke();
-    ctx.fillText(label, pad.l - 6, y);
-  });
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  timeTicks(start, end, cw).forEach((t) => {
-    const x = xAt(t);
-    if (x > pad.l + 16 && x < pad.l + cw - 16) ctx.fillText(fmtShort(t).slice(-5), x, h - 4);
-  });
-
-  const visible = mon.points.filter((p) => p.t >= start && p.t <= end);
-  const counts = {};
-  const size = visible.length > 2000 ? 2 : 3;
-  MON_ROUTES.forEach(([route]) => {
-    ctx.fillStyle = c[route];
-    ctx.globalAlpha = route === 'cache' ? 0.55 : 0.9;
-    let n = 0;
-    visible.forEach((p) => {
-      if (p.route !== route) return;
-      n++;
-      ctx.fillRect(xAt(p.t) - size / 2, yAt(p.ms) - size / 2, size, size);
-    });
-    counts[route] = n;
-  });
-  ctx.globalAlpha = 1;
-  if (mon.hover && visible.indexOf(mon.hover) >= 0) {
-    ctx.strokeStyle = c[mon.hover.route] || c.text;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(xAt(mon.hover.t), yAt(mon.hover.ms), 5, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  renderMonSummary(visible, counts);
-}
-
-function renderMonSummary(visible, counts) {
-  const recursion = visible.filter((p) => p.route === 'cn').map((p) => p.ms).sort((a, b) => a - b);
-  const slow = visible.filter((p) => p.ms >= 1000).length;
-  const parts = [fmtNum(visible.length) + ' 条'];
-  if (recursion.length) parts.push('本机递归 P95 ' + Math.round(recursion[Math.min(recursion.length - 1, Math.floor(recursion.length * 0.95))]) + ' ms');
-  if (slow) parts.push('超过 1 秒 ' + fmtNum(slow) + ' 条');
-  if (mon.capped && state.queryRange) parts.push('只画了其中最新 500 条');
-  if (live.skipped && !state.queryRange) parts.push('流量大，部分请求没有画出');
-  $('#monStats').textContent = parts.join(' · ');
-  setHtml($('#monLegend'), html`${MON_ROUTES.filter(([route]) => counts[route]).map(([route, name, cls]) => html`<span class="ts-key">
-    <i class="sw ${cls}"></i><span class="dim">${name}</span><b>${fmtNum(counts[route])}</b></span>`)}`);
-}
-
-function monNearest(clientX, clientY) {
-  if (!mon.geo) return null;
-  const box = $('#monPlot').getBoundingClientRect();
-  const x = clientX - box.left, y = clientY - box.top;
-  let best = null, bestD = 100;
-  mon.points.forEach((p) => {
-    if (p.t < mon.geo.start || p.t > mon.geo.end) return;
-    const dx = mon.geo.xAt(p.t) - x, dy = mon.geo.yAt(p.ms) - y;
-    const d = dx * dx + dy * dy;
-    if (d < bestD) { bestD = d; best = p; }
-  });
-  return best;
-}
-
-function showMonTip(p) {
-  const tip = $('#monTip');
-  mon.hover = p;
-  scheduleMon();
-  if (!p) { tip.hidden = true; return; }
-  tip.replaceChildren();
-  const head = document.createElement('div');
-  head.className = 'ts-tip-head';
-  head.textContent = fmtTime(Math.floor(p.t)) + ' · ' + (p.qtype || '') + ' · ' + (p.rcode || '');
-  const name = document.createElement('div');
-  name.className = 'mon-tip-domain mono';
-  name.textContent = p.domain;
-  const row = document.createElement('div');
-  row.className = 'ts-tip-row';
-  const key = document.createElement('i');
-  key.className = 'key ' + ((MON_ROUTES.find((r) => r[0] === p.route) || [])[2] || '');
-  const value = document.createElement('b');
-  value.textContent = p.ms >= 10 ? Math.round(p.ms) + ' ms' : p.ms.toFixed(2) + ' ms';
-  const label = document.createElement('span');
-  label.textContent = (MON_ROUTES.find((r) => r[0] === p.route) || [p.route, p.route])[1];
-  row.append(key, value, label);
-  tip.append(head, name, row);
-  tip.hidden = false;
-  const plot = $('#monPlot');
-  const x = mon.geo.xAt(p.t), y = mon.geo.yAt(p.ms);
-  const left = x + 14 + tip.offsetWidth > plot.clientWidth ? x - 14 - tip.offsetWidth : x + 14;
-  const top = Math.min(Math.max(0, y - tip.offsetHeight / 2), plot.clientHeight - tip.offsetHeight);
-  tip.style.transform = 'translate(' + Math.max(0, left).toFixed(0) + 'px,' + top.toFixed(0) + 'px)';
-}
-
-function monStart() {
-  clearInterval(mon.timer);
-  mon.timer = setInterval(scheduleMon, 1000);
-}
-
-function monStop() {
-  clearInterval(mon.timer);
-  mon.timer = 0;
-}
-
-function bindMonitor() {
-  const plot = $('#monPlot');
-  let pending = null;
-  plot.addEventListener('pointermove', (e) => {
-    if (pending) return;
-    pending = requestAnimationFrame(() => {
-      pending = null;
-      const p = monNearest(e.clientX, e.clientY);
-      if (p !== mon.hover) showMonTip(p);
-    });
-  });
-  plot.addEventListener('pointerleave', () => showMonTip(null));
-  plot.addEventListener('click', (e) => {
-    const p = monNearest(e.clientX, e.clientY);
-    if (p) showDomain(p.domain);
-  });
-  new ResizeObserver(scheduleMon).observe(plot);
 }
 
 let _drawerReturnFocus = null;
@@ -3777,32 +3499,18 @@ function bindEvents() {
     state.livePaused = !state.livePaused;
     if (!state.livePaused && state.queryPage !== 1) loadQueries(1);
     scheduleLive();
-    scheduleMon();
   });
   $('#livePill').addEventListener('click', () => {
     if (state.queryPage !== 1) loadQueries(1);
     $('#liveToolbar').scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
   });
   $('#rangeClear').addEventListener('click', clearQueryRange);
-  bindMonitor();
   new IntersectionObserver(([entry]) => {
     const atTop = entry.isIntersecting || entry.boundingClientRect.top > 0;
     if (atTop === live.atTop) return;
     live.atTop = atTop;
     scheduleLive();
   }).observe($('#liveToolbar'));
-  const density = $('#btnDensity');
-  const applyDensity = (dense) => {
-    document.body.classList.toggle('dense', dense);
-    density.textContent = dense ? '宽松' : '紧凑';
-    density.setAttribute('aria-pressed', dense ? 'true' : 'false');
-  };
-  try { applyDensity(localStorage.getItem('dns-stack-density') === 'dense'); } catch (e) { applyDensity(false); }
-  density.addEventListener('click', () => {
-    const dense = !document.body.classList.contains('dense');
-    applyDensity(dense);
-    try { localStorage.setItem('dns-stack-density', dense ? 'dense' : 'comfy'); } catch (e) {  }
-  });
   const bindExport = (id, dataset, format) => {
     const el = $(id);
     if (el) el.addEventListener('click', () => downloadExport(dataset, format));

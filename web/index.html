@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#080c12">
+<meta name="theme-color" content="#0a0e15">
 <title>DNS Stack 管理面板</title>
 <script>
 try {
@@ -76,9 +76,8 @@ try {
         <h2 id="pageTitle">概览</h2>
         <span class="page-desc" id="pageDesc"></span>
       </div>
-      <button class="cmdk-trigger" id="btnCmdk" title="快速跳转（Ctrl+K）" aria-label="快速跳转">
+      <button class="icon" id="btnCmdk" title="快速跳转（Ctrl+K）" aria-label="快速跳转">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><line x1="16" y1="16" x2="20.5" y2="20.5"/></svg>
-        <span class="lbl">域名、IP 或页面</span><kbd>Ctrl K</kbd>
       </button>
       <button class="icon diag-btn" id="btnDiag" title="环境诊断" aria-label="环境诊断">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -96,13 +95,18 @@ try {
         <div class="grid c4" id="ovStats"><div class="state"><span class="spinner"></span> 加载中…</div></div>
         <div class="grid ov-main">
           <div class="card">
-            <h3>请求趋势 <span class="h3-hint">拖选一段可看明细</span><select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
+            <h3>请求趋势 <select id="tsSpan" title="时间跨度" class="sel-sm" autocomplete="off">
               <option value="3600">1 小时</option>
               <option value="21600">6 小时</option>
               <option value="86400">24 小时</option>
             </select></h3>
             <div class="chart" id="tsChart"></div>
-            <div class="ts-comp" id="tsComp"></div>
+            <div class="legend">
+              <span><i class="s-cn"></i>本机</span>
+              <span><i class="s-foreign"></i>香港</span>
+              <span><i class="s-cache"></i>缓存</span>
+              <span><i class="s-fail"></i>失败</span>
+            </div>
           </div>
           <div class="card">
             <h3>线路</h3>
@@ -159,15 +163,6 @@ try {
             <button id="btnReset">重置</button>
             </div>
           </div>
-          <div class="card monitor" id="liveMonitor">
-            <h3>每条请求的耗时 <span class="h3-hint" id="monHint">最近 10 分钟</span>
-              <span class="mon-stats fs-12 dim" id="monStats"></span></h3>
-            <div class="mon-plot" id="monPlot" tabindex="0" aria-label="请求耗时散点图">
-              <canvas id="monCanvas"></canvas>
-              <div class="ts-tip mon-tip" id="monTip" hidden></div>
-            </div>
-            <div class="ts-comp" id="monLegend"></div>
-          </div>
           <button class="live-pill" id="livePill" hidden></button>
           <div class="card flush">
             <div class="card-toolbar" id="liveToolbar">
@@ -177,7 +172,6 @@ try {
               </div>
               <div class="row">
                 <button class="sm" id="btnLiveToggle">暂停</button>
-                <button class="sm" id="btnDensity" aria-pressed="false" title="切换行距">紧凑</button>
                 <details class="menu">
                   <summary class="btn sm">导出</summary>
                   <div class="menu-list">
