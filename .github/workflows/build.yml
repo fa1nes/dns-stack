@@ -1,0 +1,252 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l cmd internal web unbound)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+      - name: shell budget
+        run: |
+          set -Eeuo pipefail
+          allowed="install-hk.sh install.sh"
+          found="$(git ls-files | grep -E '\.sh$' | sort | tr '\n' ' ')"
+          found="${found% }"
+          echo "允许: ${allowed}"
+          echo "实有: ${found}"
+          if [ "$found" != "$allowed" ]; then
+            echo "::error::shell 清单漂移。本项目只保留两个安装脚本（CN 的 install.sh 与 HK 的 install-hk.sh）；" >&2
+            echo "其余运维逻辑一律住在 Go 二进制里，否则判据与守卫会再次散落到多处而漂移" >&2
+            exit 1
+          fi
+          if grep -rn 'go build\|go install' install.sh install-hk.sh; then
+            echo "::error::安装脚本里出现了 go build/go install。生产机一律不编译——" >&2
+            echo "2026-09-07 的 OOM 事故正是从在生产机上跑没做过规模测试的代码开始的" >&2
+            exit 1
+          fi
+          echo "shell 预算检查通过：2 个安装脚本，且都不在本机编译"
+
+  scale-gate:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      GEOIP_BASE: https://github.com/${{ github.repository }}/releases/download/geoip-latest
+      MAX_RSS_KB: "524288"
+      MAX_SECONDS: "300"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: fetch real-scale inputs
+        id: inputs
+        run: |
+          set -Eeuo pipefail
+          mkdir -p state/geoip state/chnroute
+          have=0
+          for f in qqwry.ipdb dbip-city.mmdb GeoLite2-City.mmdb; do
+            if curl -fsSL --retry 2 --max-time 300 -o "state/geoip/$f" "$GEOIP_BASE/$f"; then
+              echo "  got $f ($(stat -c%s "state/geoip/$f") bytes)"
+              have=$((have + 1))
+            else
+              rm -f "state/geoip/$f"
+              echo "  missing $f" >&2
+            fi
+          done
+          curl -fsSL --retry 2 --max-time 300 \
+            https://ftp.apnic.net/stats/apnic/delegated-apnic-latest -o apnic.txt
+          awk -F'|' '$2=="CN" && $3=="ipv4" && ($7=="allocated" || $7=="assigned") {
+              n=$5; b=32; while (n > 1) { n /= 2; b-- } print $4"/"b
+          }' apnic.txt > state/chnroute/direct4.txt
+          lines=$(wc -l < state/chnroute/direct4.txt)
+          echo "  direct4: ${lines} prefixes"
+          if [ "$lines" -lt 1000 ]; then
+            echo "direct4 has only ${lines} prefixes, far below production scale; the gate would prove nothing" >&2
+            exit 1
+          fi
+          echo "sources=${have}" >> "$GITHUB_OUTPUT"
+
+      - name: scale gate
+        if: steps.inputs.outputs.sources != '0'
+        run: |
+          set -Eeuo pipefail
+          go build -trimpath -buildvcs=false -o ./dns-stack ./cmd/dns-stack
+
+          over() { awk -v v="$1" -v m="$2" 'BEGIN { exit !(v > m) }'; }
+
+          gate() {
+            local name="$1"; shift
+            if ! /usr/bin/time -f '%M %e' -o metrics.txt "$@" > out.txt 2> err.txt; then
+              echo "::error::${name} failed to run"; cat err.txt; return 1
+            fi
+            local rss sec
+            read -r rss sec < metrics.txt
+            echo "${name}: peak RSS ${rss} KB / elapsed ${sec}s (limits ${MAX_RSS_KB} KB / ${MAX_SECONDS}s)"
+            if over "$rss" "$MAX_RSS_KB"; then
+              echo "::error::${name} peak memory ${rss} KB exceeds the ${MAX_RSS_KB} KB limit"
+              echo "A regression of exactly this kind OOM-killed the production resolver on 2026-09-07; do not benchmark on the server"
+              return 1
+            fi
+            if over "$sec" "$MAX_SECONDS"; then
+              echo "::error::${name} took ${sec}s, over the ${MAX_SECONDS}s limit"
+              return 1
+            fi
+            return 0
+          }
+
+          over 100 10 || { echo "::error::self-test failed: 100 > 10 was not reported as over the limit"; exit 1; }
+          if over 10 100; then echo "::error::self-test failed: 10 > 100 was reported as over the limit"; exit 1; fi
+          if MAX_RSS_KB=1 gate self-test-must-fail true; then
+            echo "::error::self-test failed: the gate still passed with the limit set to 1 KB"; exit 1
+          fi
+          if ! gate self-test-must-pass true; then
+            echo "::error::self-test failed: a trivial command did not pass under generous limits"; exit 1
+          fi
+          echo "Gate self-test passed: it blocks when over the limit and lets through when under"
+
+          gate direct4-audit ./dns-stack direct4-audit --state ./state --dry-run --list 0
+          ./dns-stack direct4-audit --state ./state --list 0 > /dev/null
+          if [ -f state/geoip/qqwry.ipdb ]; then
+            MAX_RSS_KB=262144 gate chnroute ./dns-stack chnroute \
+              --apnic apnic.txt --cnip state/geoip/qqwry.ipdb \
+              --out chnroute-gate.txt --excluded-out chnroute-gate-excluded.txt
+            DNS_STACK_APNIC="$PWD/apnic.txt" DNS_STACK_QQWRY="$PWD/state/geoip/qqwry.ipdb" \
+              go test ./internal/chnroute -run TestPrefilteringForeignSpansByAPNICLosesNothingOnRealData -count=1 -v \
+              | tee chnroute-equiv.txt
+            if ! grep -q -- '--- PASS: TestPrefilteringForeignSpansByAPNICLosesNothingOnRealData' chnroute-equiv.txt; then
+              echo "::error::the real-data pre-filter equivalence test did not actually run and pass"; exit 1
+            fi
+            gate ecs-zone ./dns-stack ecs-zone \
+              --direct4 state/chnroute/direct4.txt \
+              --cnip state/geoip/qqwry.ipdb \
+              --disputed state/chnroute/geo-disputed.txt \
+              --dry-run
+          fi
+
+      - name: report skipped gate
+        if: steps.inputs.outputs.sources == '0'
+        run: |
+          echo "::warning::no geolocation database could be fetched, so the scale gate did not run"
+          echo "Run the geoip workflow first to publish the geoip-latest release, otherwise this gate is vacuous"
+
+  release:
+    needs: [verify, scale-gate]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -Eeuo pipefail
+          version="${GITHUB_REF_NAME}"
+          case "${GITHUB_REF}" in
+            refs/tags/*) : ;;
+            *) version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" ;;
+          esac
+          name="dns-stack-${GOOS}-${GOARCH}"
+          [ "${GOOS}" = windows ] && name="${name}.exe"
+          go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -X main.version=${version}" \
+            -o "dist/${name}" ./cmd/dns-stack
+          (cd dist && sha256sum "${name}" > "${name}.sha256")
+
+      - name: assert static linking
+        if: matrix.goos == 'linux'
+        run: |
+          set -Eeuo pipefail
+          binary="dist/dns-stack-${{ matrix.goos }}-${{ matrix.goarch }}"
+          info="$(file -b "$binary")"
+          echo "$info"
+          case "$info" in
+            *"statically linked"*) ;;
+            *)
+              echo "::error::$binary is not statically linked. The offshore node runs Alpine (musl), where a dynamically linked build will not start" >&2
+              exit 1 ;;
+          esac
+          if command -v readelf >/dev/null && readelf -l "$binary" 2>/dev/null | grep -q INTERP; then
+            echo "::error::$binary still carries a PT_INTERP segment, so it depends on a dynamic loader" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dns-stack-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 14
+
+      - name: attach to tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+
+      - name: publish rolling build
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: binaries-latest
+          name: dns-stack
+          prerelease: true
+          files: dist/*
+          fail_on_unmatched_files: true
+
+      - name: clear release body
+        if: |
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+          && matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/binaries-latest" --jq .id)"
+          printf '{"body":""}' | gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${id}" --input - >/dev/null
+          left="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${id}" --jq '.body | length')"
+          if [ "$left" != "0" ]; then
+            echo "::error::release body is still ${left} characters after the clear" >&2
+            exit 1
+          fi
+          echo "release body cleared"
