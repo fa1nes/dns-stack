@@ -1,0 +1,625 @@
+package panel
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"github.com/dns-stack/dns-stack/internal/metrics"
+)
+
+const queryCountCap = 10000
+
+func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
+	db, err := s.openDB()
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "数据库不可用", "items": []any{}, "total": 0})
+		return
+	}
+	defer db.Close()
+	q := r.URL.Query()
+	page, size := parseInt(q.Get("page"), 1), parseInt(q.Get("size"), 50)
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 500 {
+		size = 50
+	}
+	where, args := eventFilters(q)
+	if v := q.Get("since"); v != "" {
+		where = append(where, "ts >= ?")
+		args = append(args, parseInt(v, 0))
+	}
+	if v := q.Get("until"); v != "" {
+		where = append(where, "ts <= ?")
+		args = append(args, parseInt(v, 0))
+	}
+	clause := strings.Join(where, " AND ")
+
+	var total int
+	countArgs := append(append([]any{}, args...), queryCountCap+1)
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM (SELECT 1 FROM query_events WHERE "+clause+" LIMIT ?)", countArgs...).Scan(&total); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	capped := total > queryCountCap
+	if capped {
+		total = queryCountCap
+	}
+
+	offset := (page - 1) * size
+	if offset > queryCountCap {
+		offset = queryCountCap
+	}
+	dataArgs := append(append([]any{}, args...), size, offset)
+	rows, err := db.QueryContext(r.Context(), "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE "+clause+" ORDER BY id DESC LIMIT ? OFFSET ?", dataArgs...)
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, ts, qt, rc int64
+		var domain, resp, route, tag string
+		var prefetch int64
+		var elapsed sql.NullFloat64
+		var exit sql.NullString
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
+		}
+		items = append(items, enrichItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit))
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": items, "total": total, "total_capped": capped, "page": page, "size": size, "pages": (total + size - 1) / size})
+}
+
+func enrichItem(id, ts, qt, rc int64, domain, resp, route, tag string, prefetch int64, elapsed sql.NullFloat64, exit sql.NullString) map[string]any {
+	m := map[string]any{"id": id, "ts": ts, "domain": domain, "qtype": qt, "qtype_name": qtypeName(qt), "rcode": rc, "rcode_name": rcodeName(rc), "resp_by": resp, "route": route, "route_name": routeName(route), "server_tag": tag, "prefetch": prefetch, "cache_hit": resp == "cache", "elapsed_ms": nil, "exit_path": nil}
+	if elapsed.Valid {
+		m["elapsed_ms"] = elapsed.Float64
+	}
+	if exit.Valid {
+		m["exit_path"] = exit.String
+	}
+	return m
+}
+
+func queryItem(id, ts, qt, rc int64, domain, resp, route, tag string, prefetch int64, elapsed sql.NullFloat64, exit sql.NullString) map[string]any {
+	m := map[string]any{"id": id, "ts": ts, "domain": domain, "qtype": qt, "qtype_name": qtypeName(qt), "rcode": rc, "rcode_name": rcodeName(rc), "resp_by": resp, "route": route, "route_name": routeName(route), "server_tag": tag, "prefetch": prefetch != 0, "cache_hit": resp == "cache"}
+	if elapsed.Valid {
+		m["elapsed_ms"] = elapsed.Float64
+	}
+	if exit.Valid {
+		m["exit_path"] = exit.String
+	}
+	return m
+}
+
+func eventFilters(q url.Values) ([]string, []any) {
+	where := []string{"1=1"}
+	args := []any{}
+	if v := strings.TrimSpace(q.Get("domain")); v != "" {
+		where = append(where, "domain LIKE ?")
+		args = append(args, "%"+strings.ToLower(v)+"%")
+	}
+	if v := q.Get("route"); v != "" {
+		where = append(where, "route = ?")
+		args = append(args, v)
+	}
+	if v := q.Get("resp_by"); v != "" {
+		where = append(where, "resp_by = ?")
+		args = append(args, v)
+	}
+	if v := q.Get("qtype"); v != "" {
+		if n := parseType(v); n >= 0 {
+			where = append(where, "qtype = ?")
+			args = append(args, n)
+		}
+	}
+	if v := q.Get("rcode"); v != "" {
+		if n := parseRcode(v); n >= 0 {
+			where = append(where, "rcode = ?")
+			args = append(args, n)
+		}
+	}
+	return where, args
+}
+
+const (
+	streamBatchCap  = 200
+	streamTick      = time.Second
+	streamKeepalive = 15
+)
+
+func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
+	extendReadDeadline(w, 0)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	last := int64(parseInt(q.Get("after_id"), 0))
+	if resume := int64(parseInt(r.Header.Get("Last-Event-ID"), 0)); resume > 0 {
+		last = resume
+	}
+	where, args := eventFilters(q)
+	clause := strings.Join(where, " AND ")
+	db, err := s.openDB()
+	if err != nil {
+		_, _ = w.Write([]byte("data: {\"error\":\"数据库不可用\"}\n\n"))
+		fl.Flush()
+		return
+	}
+	defer db.Close()
+	ctx := r.Context()
+	newest := func() (int64, error) {
+		var id int64
+		err := db.QueryRowContext(ctx, "SELECT COALESCE(MAX(id),0) FROM query_events").Scan(&id)
+		return id, err
+	}
+	if head, err := newest(); err == nil && (last <= 0 || last > head) {
+		last = head
+	}
+	_, _ = w.Write([]byte(": connected\n\n"))
+	fl.Flush()
+	ticker := time.NewTicker(streamTick)
+	defer ticker.Stop()
+	idle := 0
+	for {
+		head, err := newest()
+		sent := false
+		if err == nil && head > last {
+			events, skipped, err := streamBatch(ctx, db, last, head, clause, args)
+			if err != nil {
+				return
+			}
+			last = head
+			if len(events) > 0 {
+				body := map[string]any{"events": events}
+				if skipped > 0 {
+					body["skipped"] = skipped
+				}
+				payload, _ := json.Marshal(body)
+				_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", head, payload)
+				fl.Flush()
+				sent = true
+			}
+		}
+		if idle++; sent {
+			idle = 0
+		} else if idle >= streamKeepalive {
+			_, _ = w.Write([]byte(": keepalive\n\n"))
+			fl.Flush()
+			idle = 0
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func streamBatch(ctx context.Context, db *sql.DB, after, upto int64, clause string, filterArgs []any) ([]map[string]any, int64, error) {
+	args := append([]any{after, upto}, filterArgs...)
+	rows, err := db.QueryContext(ctx, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE id > ? AND id <= ? AND "+clause+" ORDER BY id DESC LIMIT ?", append(args, streamBatchCap)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	events := []map[string]any{}
+	for rows.Next() {
+		var id, ts, qt, rc, pre int64
+		var domain, resp, route, tag string
+		var elapsed sql.NullFloat64
+		var exit sql.NullString
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &pre, &elapsed, &exit); err != nil {
+			return nil, 0, err
+		}
+		events = append(events, enrichItem(id, ts, qt, rc, domain, resp, route, tag, pre, elapsed, exit))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+	if len(events) < streamBatchCap {
+		return events, 0, nil
+	}
+	var matched int64
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM query_events WHERE id > ? AND id <= ? AND "+clause, args...).Scan(&matched); err != nil {
+		return nil, 0, err
+	}
+	return events, matched - int64(len(events)), nil
+}
+
+func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
+	db, err := s.openDB()
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "数据库不可用", "items": []any{}, "total": 0})
+		return
+	}
+	defer db.Close()
+	q := r.URL.Query()
+	page, size := parseInt(q.Get("page"), 1), parseInt(q.Get("size"), 50)
+	if size < 1 || size > 500 {
+		size = 50
+	}
+
+	if limit := parseInt(q.Get("limit"), 0); limit >= 1 && limit <= 500 {
+		size = limit
+	}
+	metric := q.Get("metric")
+	if metric == "" {
+		metric = "count"
+	}
+	if metric == "slow" {
+		s.domainsSlow(w, r, db, page, size)
+		return
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	if v := strings.TrimSpace(q.Get("search")); v != "" {
+		where = append(where, "domain LIKE ?")
+		args = append(args, "%"+strings.ToLower(v)+"%")
+	}
+	if v := q.Get("route"); v != "" {
+		where = append(where, "last_route = ?")
+		args = append(args, v)
+	}
+	if metric == "fail" {
+		where = append(where, "domain IN (SELECT domain FROM query_events WHERE rcode NOT IN (0,3) AND ts >= ?)")
+		args = append(args, s.statsWindowStart(s.now().Unix()))
+	}
+	order := map[string]string{"count": "occurrence_count DESC", "recent": "last_seen_at DESC", "new": "first_seen_at DESC", "fail": "fail_count DESC, occurrence_count DESC"}[metric]
+	if order == "" {
+		order = "occurrence_count DESC"
+	}
+	clause := strings.Join(where, " AND ")
+	var total int
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM domains WHERE "+clause, args...).Scan(&total); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	rows, err := db.QueryContext(r.Context(), "SELECT domain,first_seen_at,last_seen_at,occurrence_count,COALESCE(fail_count,0),last_rcode,last_route FROM domains WHERE "+clause+" ORDER BY "+order+" LIMIT ? OFFSET ?", append(args, size, (page-1)*size)...)
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var d, lr sql.NullString
+		var first, last, count, fail, rcode sql.NullInt64
+		if err := rows.Scan(&d, &first, &last, &count, &fail, &rcode, &lr); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
+		}
+		items = append(items, domainItem(d, first, last, count, fail, rcode, lr))
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	s.attachResolvedNode(r.Context(), items)
+	writeJSON(w, 200, map[string]any{"items": items, "metric": metric, "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
+}
+
+func (s *Server) domainsSlow(w http.ResponseWriter, r *http.Request, db *sql.DB, page, size int) {
+	q := r.URL.Query()
+	where := []string{"elapsed_ms IS NOT NULL", "ts >= ?"}
+	args := []any{s.now().Add(-24 * time.Hour).Unix()}
+	if v := strings.TrimSpace(q.Get("search")); v != "" {
+		where = append(where, "domain LIKE ?")
+		args = append(args, "%"+strings.ToLower(v)+"%")
+	}
+	if v := q.Get("route"); v != "" {
+		where = append(where, "route = ?")
+		args = append(args, v)
+	}
+	sub := "SELECT domain, elapsed_ms, ts FROM query_events WHERE " + strings.Join(where, " AND ") + " ORDER BY ts DESC LIMIT 100000"
+	var total int
+	if err := db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM (SELECT domain FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2)", args...).Scan(&total); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	dataArgs := append(append([]any{}, args...), size, (page-1)*size)
+	rows, err := db.QueryContext(r.Context(), "SELECT domain, COUNT(*) AS samples, ROUND(AVG(elapsed_ms),2) AS avg_ms, ROUND(MAX(elapsed_ms),2) AS max_ms, MAX(ts) AS last_seen_at FROM ("+sub+") GROUP BY domain HAVING COUNT(*) >= 2 ORDER BY avg_ms DESC LIMIT ? OFFSET ?", dataArgs...)
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var domain string
+		var samples, lastSeen int64
+		var avg, max sql.NullFloat64
+		if err := rows.Scan(&domain, &samples, &avg, &max, &lastSeen); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+			return
+		}
+		items = append(items, map[string]any{"domain": domain, "samples": samples, "avg_ms": nilFloat(avg), "max_ms": nilFloat(max), "last_seen_at": lastSeen})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
+		return
+	}
+	s.attachResolvedNode(r.Context(), items)
+	writeJSON(w, 200, map[string]any{"items": items, "metric": "slow", "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
+}
+
+func nilFloat(v sql.NullFloat64) any {
+	if v.Valid {
+		return v.Float64
+	}
+	return nil
+}
+
+func domainItem(d sql.NullString, first, last, count, fail, rcode sql.NullInt64, lr sql.NullString) map[string]any {
+	m := map[string]any{"domain": d.String, "first_seen_at": first.Int64, "last_seen_at": last.Int64, "occurrence_count": count.Int64, "fail_count": fail.Int64, "last_rcode": nilInt(rcode), "last_route": lr.String, "last_route_name": routeName(lr.String)}
+	if rcode.Valid {
+		m["last_rcode_name"] = rcodeName(rcode.Int64)
+	}
+	return m
+}
+
+func nilInt(v sql.NullInt64) any {
+	if v.Valid {
+		return v.Int64
+	}
+	return nil
+}
+
+func (s *Server) domainSummary(w http.ResponseWriter, r *http.Request) {
+	db, err := s.openDB()
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "数据库不可用"})
+		return
+	}
+	defer db.Close()
+
+	now := s.now().Unix()
+	since := s.statsWindowStart(now)
+	out := map[string]any{}
+	if err := domainSummaryExtras(r.Context(), db, out, now, since); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败"})
+		return
+	}
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
+	db, err := s.openDB()
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "数据库不可用", "series": []any{}})
+		return
+	}
+	defer db.Close()
+	span := parseInt(r.URL.Query().Get("span"), 3600)
+	buckets := parseInt(r.URL.Query().Get("buckets"), 60)
+	if span < 300 {
+		span = 300
+	}
+	if buckets < 10 {
+		buckets = 10
+	}
+	if buckets > 200 {
+		buckets = 200
+	}
+	step := span / buckets
+	if step < 1 {
+		step = 1
+	}
+	now := s.now().Unix()
+	since := now - now%int64(step) - int64(buckets)*int64(step)
+	rows, err := db.QueryContext(r.Context(), "SELECT ((ts-?)/?) AS b, route, COUNT(*) FROM query_events WHERE ts >= ? GROUP BY b,route ORDER BY b", since, step, since)
+	if err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+		return
+	}
+	vals := map[int64]map[string]int{}
+	defer rows.Close()
+	for rows.Next() {
+		var b int64
+		var route string
+		var c int
+		if err := rows.Scan(&b, &route, &c); err != nil {
+			writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+			return
+		}
+		if vals[b] == nil {
+			vals[b] = map[string]int{}
+		}
+		vals[b][route] = c
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
+		return
+	}
+	series := []map[string]any{}
+	for i := 0; i <= buckets; i++ {
+		b := int64(i)
+		x := vals[b]
+		series = append(series, map[string]any{"t": since + b*int64(step), "cn": x["cn"], "foreign": x["foreign"], "cache": x["cache"], "reject": x["reject"], "failed": x["failed"], "unknown": x["unknown"]})
+	}
+	writeJSON(w, 200, map[string]any{"series": series, "step": step, "start": since, "end": now})
+}
+
+const overviewShareTTL = 2 * time.Second
+
+func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
+	status, body := s.overviewShared.get(r.Context(), s.now(), overviewShareTTL, func() (int, []byte) {
+		status, payload := s.buildOverview(context.Background())
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return http.StatusInternalServerError, []byte("{\"error\":\"概览编码失败\"}\n")
+		}
+		return status, append(data, '\n')
+	})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+func (s *Server) buildOverview(ctx context.Context) (int, map[string]any) {
+	now := s.now().Unix()
+	out := map[string]any{"role": s.role(), "ts": now, "upstreams": []any{}, "system": map[string]any{}, "routing": map[string]any{}}
+	var mos, unbound map[string]any
+	var mosErr, unboundErr error
+	var fetched sync.WaitGroup
+	fetched.Add(2)
+	go func() { defer fetched.Done(); mos, mosErr = helperCall(ctx, "mosproxy_metrics", nil) }()
+	go func() { defer fetched.Done(); unbound, unboundErr = helperCall(ctx, "unbound_stats", nil) }()
+	fetched.Wait()
+	if mosErr == nil && helperOK(mos) {
+		parsed := metrics.Parse(helperStdout(mos))
+		out["upstreams"] = upstreamRows(parsed)
+		queries := parsed.ByLabel("upstream_query_total", "upstream")
+		errors := parsed.ByLabel("upstream_err_total", "upstream")
+		cache := metricScalar(parsed, "query_cache_hit_total")
+		total, failed := cache, 0.0
+		for _, value := range queries {
+			total += value
+		}
+		for _, value := range errors {
+			failed += value
+		}
+
+		latSum, latCount := 0.0, 0.0
+		for _, value := range parsed.ByLabel("upstream_response_latency_millisecond_sum", "upstream") {
+			latSum += value
+		}
+		for _, value := range parsed.ByLabel("upstream_response_latency_millisecond_count", "upstream") {
+			latCount += value
+		}
+		var avgLatency any
+		if latCount > 0 {
+			avgLatency = roundTo(latSum/latCount, 1)
+		}
+
+		counters := map[string]float64{"query_total": total, "cache_hit_total": cache}
+		for key, value := range queries {
+			counters["uq_"+key] = value
+		}
+		for key, value := range errors {
+			counters["ue_"+key] = value
+		}
+		rates := s.rates.update(counters)
+		out["mosproxy"] = map[string]any{"available": true, "avg_latency_ms": avgLatency, "latency_samples": int(latCount), "query_total": int(total), "query_total_synthetic": true, "cache_hit_total": int(cache), "cache_hit_ratio": percentage(cache, total), "qps": roundTo(rates["query_total"], 2), "upstream_query_total": int(total - cache), "upstream_err_total": int(failed), "error_ratio": percentage(failed, total-cache), "prefetch_total": int(metricScalar(parsed, "prefetch_total")), "cache_entries": int(metricScalar(parsed, "cache_memorysize")), "rejected_cc": int(metricScalar(parsed, "rejected_cc_total")), "rejected_qps": int(metricScalar(parsed, "rejected_qps_total"))}
+	} else {
+		out["mosproxy"] = map[string]any{"available": false, "message": helperError(mosErr, mos)}
+	}
+	if unboundErr == nil && helperOK(unbound) {
+		stats := parseUnboundStats(helperStdout(unbound))
+		total := stats["total.num.queries"]
+		hits := stats["total.num.cachehits"]
+		out["unbound"] = map[string]any{"available": true, "queries": int(total), "cache_hits": int(hits), "cache_miss": int(stats["total.num.cachemiss"]), "cache_hit_ratio": percentage(hits, total), "prefetch": int(stats["total.num.prefetch"]), "recursion_time_avg_ms": roundTo(stats["total.recursion.time.avg"]*1000, 1), "recursion_time_median_ms": roundTo(stats["total.recursion.time.median"]*1000, 1), "requestlist_current": int(stats["total.requestlist.current.all"]), "subnet_queries": optionalStat(stats, "num.query.subnet"), "subnet_cache_hits": optionalStat(stats, "num.query.subnet_cache")}
+	} else {
+		out["unbound"] = map[string]any{"available": false, "message": helperError(unboundErr, unbound)}
+	}
+	out["system"] = systemInfo()
+	db, err := s.openDB()
+	if err == nil {
+		defer db.Close()
+		events, err := overviewEvents(ctx, db, now, s.statsWindowStart(now))
+		if err != nil {
+			return http.StatusServiceUnavailable, map[string]any{"error": "数据库查询失败"}
+		}
+		out["events"] = events
+	} else {
+		out["events"] = map[string]any{"error": "数据库不可用"}
+	}
+	routing := out["routing"].(map[string]any)
+	routing["direct4_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "direct4.txt"))
+	routing["cn_authority_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "cn-authority.txt"))
+	routing["cn_zones_count"] = countLines(filepath.Join(s.cfg.StateDir, "chnroute", "cn-zones-matched.txt"))
+	routing["exits"] = s.exitAddresses(ctx)
+
+	if s.role() == "cn-resolver" {
+		for key, active := range s.routingServiceState(ctx) {
+			routing[key] = active
+		}
+	}
+	return http.StatusOK, out
+}
+
+func overviewEvents(ctx context.Context, db *sql.DB, now, windowStart int64) (map[string]any, error) {
+	var last5, last1, domains, total24, failed24 int
+	for _, q := range []struct {
+		dest  *int
+		query string
+		args  []any
+	}{
+		{&last5, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{now - 300}},
+		{&last1, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{now - 3600}},
+		{&domains, "SELECT COUNT(*) FROM domains", nil},
+		{&total24, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{windowStart}},
+		{&failed24, "SELECT COUNT(*) FROM query_events WHERE rcode = 2 AND ts >= ?", []any{windowStart}},
+	} {
+		if err := db.QueryRowContext(ctx, q.query, q.args...).Scan(q.dest); err != nil {
+			return nil, err
+		}
+	}
+	latency, err := latencyStats(ctx, db, now-3600)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{"last_5m": last5, "last_1h": last1, "domains": domains,
+		"latency": latency, "total_24h": total24, "failed_24h": failed24}
+	collector, err := collectorState(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	if collector != nil {
+		out["collector"] = collector
+	}
+	return out, nil
+}
+
+func collectorState(ctx context.Context, db *sql.DB) (map[string]any, error) {
+	rows, err := db.QueryContext(ctx, "SELECT key, value FROM collector_state")
+	if err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer rows.Close()
+	values := map[string]int64{}
+	for rows.Next() {
+		var key string
+		var value int64
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if values["dropped_lines"] == 0 {
+		return nil, nil
+	}
+	return map[string]any{"dropped": values["dropped_lines"], "dropped_at": values["dropped_at"],
+		"started_at": values["started_at"]}, nil
+}
