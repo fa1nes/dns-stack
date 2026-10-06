@@ -1,0 +1,404 @@
+package collect
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	_ "modernc.org/sqlite"
+)
+
+const (
+	SchemaVersion = 4
+
+	schemaFailCountExcludesNXDomain = 4
+
+	DefaultDBPath   = "/var/lib/dns-stack/collector.db"
+	DefaultStateDir = "/var/lib/dns-stack"
+
+	eventRetentionDays = 7
+	eventMaxRows       = 2_000_000
+	pruneBatch         = 5000
+
+	stateDroppedLines = "dropped_lines"
+	stateDroppedAt    = "dropped_at"
+	stateStartedAt    = "started_at"
+)
+
+var schemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS schema_meta (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS domains (
+		domain TEXT PRIMARY KEY,
+		first_seen_at INTEGER NOT NULL,
+		last_seen_at INTEGER NOT NULL,
+		occurrence_count INTEGER NOT NULL DEFAULT 1,
+		pulled_by_foreign INTEGER NOT NULL DEFAULT 0,
+		pulled_at INTEGER
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_domains_last_seen ON domains(last_seen_at)`,
+	`CREATE TABLE IF NOT EXISTS query_events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts INTEGER NOT NULL,
+		domain TEXT NOT NULL,
+		qtype INTEGER NOT NULL,
+		rcode INTEGER NOT NULL,
+		resp_by TEXT NOT NULL DEFAULT '',
+		route TEXT NOT NULL DEFAULT 'unknown',
+		server_tag TEXT NOT NULL DEFAULT '',
+		prefetch INTEGER NOT NULL DEFAULT 0
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_ts ON query_events(ts)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_domain ON query_events(domain)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_route ON query_events(route, ts)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_rcode ON query_events(rcode, ts)`,
+	`CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts INTEGER NOT NULL,
+		actor TEXT NOT NULL DEFAULT 'panel',
+		operation TEXT NOT NULL,
+		args TEXT NOT NULL DEFAULT '',
+		ok INTEGER NOT NULL DEFAULT 0,
+		message TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)`,
+	`CREATE TABLE IF NOT EXISTS collector_state (
+		key TEXT PRIMARY KEY,
+		value INTEGER NOT NULL
+	)`,
+}
+
+var domainExtraColumns = [][2]string{
+	{"last_rcode", "INTEGER"},
+	{"last_route", "TEXT"},
+	{"fail_count", "INTEGER NOT NULL DEFAULT 0"},
+}
+
+var eventExtraColumns = [][2]string{
+	{"elapsed_ms", "REAL"},
+	{"exit_path", "TEXT"},
+	{"client_subnet", "TEXT"},
+	{"ecs_zone", "TEXT"},
+	{"kind", "TEXT"},
+}
+
+var droppedIndexes = []string{
+	`DROP INDEX IF EXISTS idx_domains_pulled`,
+	`DROP INDEX IF EXISTS idx_events_kind`,
+	`DROP INDEX IF EXISTS idx_events_domain_elapsed`,
+}
+
+var eventExtraIndexes = []string{
+	`CREATE INDEX IF NOT EXISTS idx_events_exit ON query_events(exit_path, ts)`,
+	`CREATE INDEX IF NOT EXISTS idx_events_elapsed ON query_events(ts, elapsed_ms) WHERE elapsed_ms IS NOT NULL`,
+}
+
+type Event struct {
+	TS        int64
+	Domain    string
+	QType     int64
+	RCode     int64
+	RespBy    string
+	Route     string
+	ExitPath  string
+	ServerTag string
+	Prefetch  int64
+
+	ClientSubnet string
+	ECSZone      string
+	Kind         string
+
+	ElapsedMS *float64
+}
+
+func OpenDB(path string) (*sql.DB, error) {
+	if path == "" {
+		path = DefaultDBPath
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
+	if err != nil {
+		return nil, err
+	}
+
+	db.SetMaxOpenConns(1)
+	for _, statement := range schemaStatements {
+		if _, err := db.Exec(statement); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+	if err := migrate(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func EffectivePragmas(db *sql.DB) (journalMode string, busyTimeout int64) {
+	_ = db.QueryRow("PRAGMA journal_mode").Scan(&journalMode)
+	_ = db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout)
+	return journalMode, busyTimeout
+}
+
+func migrate(db *sql.DB) error {
+	if err := addMissingColumns(db, "domains", domainExtraColumns); err != nil {
+		return err
+	}
+	if err := addMissingColumns(db, "query_events", eventExtraColumns); err != nil {
+		return err
+	}
+
+	for _, ddl := range eventExtraIndexes {
+		if _, err := db.Exec(ddl); err != nil {
+			return err
+		}
+	}
+	for _, ddl := range droppedIndexes {
+		if _, err := db.Exec(ddl); err != nil {
+			return err
+		}
+	}
+	var stored int
+	err := db.QueryRow("SELECT value FROM schema_meta WHERE key = 'schema_version'").Scan(&stored)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("读不出 schema_version，拒绝在看不清版本时执行会清零 fail_count 的迁移: %w", err)
+	}
+	if stored < schemaFailCountExcludesNXDomain {
+		if _, err := db.Exec("UPDATE domains SET fail_count = 0"); err != nil {
+			return err
+		}
+	}
+	_, err = db.Exec(
+		"INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?) "+
+			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+		SchemaVersion)
+	return err
+}
+
+func addMissingColumns(db *sql.DB, table string, columns [][2]string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	for rows.Next() {
+		var index int
+		var name, kind string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&index, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, column := range columns {
+		if existing[column[0]] {
+			continue
+		}
+		if _, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column[0] + " " + column[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type domainAggregate struct {
+	domain  string
+	firstTS int64
+	lastTS  int64
+	count   int64
+	rcode   int64
+	route   string
+	fails   int64
+}
+
+func resolutionFailed(rcode int64) bool {
+	return rcode != 0 && rcode != rcodeNXDomain
+}
+
+func aggregateDomains(events []Event) []domainAggregate {
+	index := map[string]*domainAggregate{}
+	order := make([]string, 0, len(events))
+	for _, event := range events {
+		item := index[event.Domain]
+		if item == nil {
+			fails := int64(0)
+			if resolutionFailed(event.RCode) {
+				fails = 1
+			}
+			index[event.Domain] = &domainAggregate{
+				domain: event.Domain, firstTS: event.TS, lastTS: event.TS,
+				count: 1, rcode: event.RCode, route: event.Route, fails: fails,
+			}
+			order = append(order, event.Domain)
+			continue
+		}
+		item.count++
+		if resolutionFailed(event.RCode) {
+			item.fails++
+		}
+		if event.TS < item.firstTS {
+			item.firstTS = event.TS
+		}
+
+		if event.TS >= item.lastTS {
+			item.lastTS = event.TS
+			item.rcode = event.RCode
+			item.route = event.Route
+		}
+	}
+	out := make([]domainAggregate, 0, len(order))
+	for _, domain := range order {
+		out = append(out, *index[domain])
+	}
+	return out
+}
+
+func RecordEvents(db *sql.DB, events []Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	insertEvent, err := tx.Prepare(
+		"INSERT INTO query_events(ts, domain, qtype, rcode, resp_by, route, server_tag, prefetch, " +
+			"elapsed_ms, exit_path, client_subnet, ecs_zone, kind) " +
+			"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+	if err != nil {
+		return err
+	}
+	blank := func(value string) any {
+		if value == "" {
+			return nil
+		}
+		return value
+	}
+	for _, event := range events {
+		var elapsed any
+		if event.ElapsedMS != nil {
+			elapsed = *event.ElapsedMS
+		}
+		if _, err := insertEvent.Exec(event.TS, event.Domain, event.QType, event.RCode,
+			event.RespBy, event.Route, event.ServerTag, event.Prefetch, elapsed,
+			blank(event.ExitPath), blank(event.ClientSubnet), blank(event.ECSZone),
+			blank(event.Kind)); err != nil {
+			insertEvent.Close()
+			return err
+		}
+	}
+	insertEvent.Close()
+
+	upsertDomain, err := tx.Prepare(`
+		INSERT INTO domains(domain, first_seen_at, last_seen_at, occurrence_count,
+		                    last_rcode, last_route, fail_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(domain) DO UPDATE SET
+			last_seen_at = max(domains.last_seen_at, excluded.last_seen_at),
+			occurrence_count = occurrence_count + excluded.occurrence_count,
+			last_rcode = excluded.last_rcode,
+			last_route = excluded.last_route,
+			fail_count = fail_count + excluded.fail_count`)
+	if err != nil {
+		return err
+	}
+	defer upsertDomain.Close()
+	for _, item := range aggregateDomains(events) {
+		if _, err := upsertDomain.Exec(item.domain, item.firstTS, item.lastTS,
+			item.count, item.rcode, item.route, item.fails); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func PruneStep(db *sql.DB, now int64, limit int) (int64, bool, error) {
+	cutoff := now - eventRetentionDays*86400
+	deleted, err := rowsAffected(db.Exec(
+		"DELETE FROM query_events WHERE id IN (SELECT id FROM query_events WHERE ts < ? LIMIT ?)",
+		cutoff, limit))
+	if err != nil || deleted >= int64(limit) {
+		return deleted, false, err
+	}
+	var newest sql.NullInt64
+	if err := db.QueryRow("SELECT MAX(id) FROM query_events").Scan(&newest); err != nil {
+		return deleted, false, err
+	}
+	if newest.Int64 > eventMaxRows {
+		excess, err := rowsAffected(db.Exec(
+			"DELETE FROM query_events WHERE id IN (SELECT id FROM query_events WHERE id <= ? ORDER BY id LIMIT ?)",
+			newest.Int64-eventMaxRows, limit))
+		deleted += excess
+		if err != nil || excess >= int64(limit) {
+			return deleted, false, err
+		}
+	}
+	if _, err := db.Exec("DELETE FROM domains WHERE last_seen_at < ?", cutoff); err != nil {
+		return deleted, false, err
+	}
+	return deleted, true, nil
+}
+
+func rowsAffected(result sql.Result, err error) (int64, error) {
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func RecordCollectorState(db *sql.DB, values map[string]int64) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for key, value := range values {
+		if _, err := tx.Exec(
+			"INSERT INTO collector_state(key, value) VALUES (?, ?) "+
+				"ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func Checkpoint(db *sql.DB) error {
+	_, err := db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+	return err
+}
+
+func CheckpointTruncate(db *sql.DB) error {
+	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
+type Stats struct {
+	TotalDomains int64 `json:"total_domains"`
+	QueryEvents  int64 `json:"query_events"`
+}
+
+func ReadStats(db *sql.DB) (Stats, error) {
+	var out Stats
+	if err := db.QueryRow("SELECT COUNT(*) FROM domains").Scan(&out.TotalDomains); err != nil {
+		return out, err
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM query_events").Scan(&out.QueryEvents); err != nil {
+		return out, err
+	}
+	return out, nil
+}
