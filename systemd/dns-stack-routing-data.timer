@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 每 15 分钟推进一次分流数据流水线(各步骤按自己的周期决定是否执行)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

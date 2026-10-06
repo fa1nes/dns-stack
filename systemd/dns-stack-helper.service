@@ -1,0 +1,21 @@
+[Unit]
+Description=dns-stack 受限 root 管理助手
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/dns-stack/bin/dns-stack-go helper
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=dns-stack
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/dns-stack /var/log/dns-stack /var/backups/dns-stack /srv/dns-stack/export /run/dns-stack /etc/dns-stack /run/lock /etc/unbound/unbound.conf.d
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

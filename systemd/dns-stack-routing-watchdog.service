@@ -1,0 +1,12 @@
+[Unit]
+Description=dns-stack 递归出口分流存活看门狗
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dns-stack/bin/dns-stack-go routing-watchdog
+MemoryHigh=96M
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

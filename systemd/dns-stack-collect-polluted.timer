@@ -1,0 +1,11 @@
+[Unit]
+Description=dns-stack 定时采集污染 IP(每 6 小时)
+
+[Timer]
+OnActiveSec=10min
+OnUnitActiveSec=6h
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
