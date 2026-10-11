@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1791629321
+# generated-at: 1791716498
 # providers: 20
 # domains: 78
-# prefixes: 10000
+# prefixes: 10002
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -6708,8 +6708,9 @@ N	amazon	off	2605:9cc0:c0b::/48
 N	amazon	off	2605:9cc0:c0c::/48
 N	amazon	off	2605:9cc0:c12::/47
 N	amazon	off	2605:9cc0:c14::/48
-N	amazon	off	2605:9cc0:c17::/48
+N	amazon	off	2605:9cc0:c16::/47
 N	amazon	off	2605:9cc0:c1b::/48
+N	amazon	off	2605:9cc0:c1c::/48
 N	amazon	off	2605:9cc0:f03e::/48
 N	amazon	off	2605:a7c0:100::/45
 N	amazon	off	2605:a7c0:108::/46
@@ -10017,6 +10018,7 @@ N	tencent	off	43.164.112.0/20
 N	tencent	off	43.164.128.0/17
 N	tencent	off	43.165.0.0/16
 N	tencent	off	43.166.0.0/15
+N	tencent	off	43.171.128.0/23
 N	tencent	off	43.172.0.0/17
 N	tencent	off	43.172.128.0/18
 N	tencent	off	43.172.192.0/19
