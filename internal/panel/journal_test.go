@@ -33,6 +33,9 @@ func TestJournalEntriesFromProductionShapes(t *testing.T) {
 		journalLine(t, "dns-stack-panel", "dns-stack-go", `[错误] 读不到配置文件: /etc/dns-stack/config.env`, 1_500_000),
 		journalLine(t, "dns-stack-recursive-routing", "systemd", `Failed to start dns-stack-recursive-routing.service - dns-stack 递归出口按目标 IP 分流.`, 1_000_000),
 		journalLine(t, "mosproxy", "dns-stack-go", `{"level":"info","module":"upstream","upstream_tag":"local-unbound","time":1,"message":"health check ping succeed"}`, 6_000_000),
+		journalLine(t, "dns-stack-routing-watchdog", "systemd", `Starting dns-stack-routing-watchdog.service - dns-stack 递归出口分流存活看门狗...`, 7_000_000),
+		journalLine(t, "dns-stack-routing-watchdog", "systemd", `dns-stack-routing-watchdog.service: Deactivated successfully.`, 7_100_000),
+		journalLine(t, "dns-stack-panel", "systemd", `Started dns-stack-panel.service - dns-stack 中文管理面板.`, 7_200_000),
 		`{"MESSAGE":"cut`,
 	}, "\n")
 	got := parseJournal(stdout)
@@ -49,6 +52,9 @@ func TestJournalEntriesFromProductionShapes(t *testing.T) {
 		{"mosproxy", 2, false, "[upstream] upstream offline upstream_tag=local-unbound"},
 		{"mosproxy", 0, true, "[server_http] invalid path method=GET proto=HTTP/2.0 remote=178.62.x.x:50960 url=/favicon.ico server_tag=doh-in"},
 		{"mosproxy", 0, false, "[upstream] health check ping succeed upstream_tag=local-unbound"},
+		{"dns-stack-routing-watchdog", 0, true, "Starting dns-stack-routing-watchdog.service"},
+		{"dns-stack-routing-watchdog", 0, true, "dns-stack-routing-watchdog.service: Deactivated successfully."},
+		{"dns-stack-panel", 0, false, "Started dns-stack-panel.service"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("条数 %d，想要 %d: %+v", len(got), len(want), got)

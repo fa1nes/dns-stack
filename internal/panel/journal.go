@@ -22,6 +22,7 @@ type logEntry struct {
 var (
 	unboundPrefix = regexp.MustCompile(`^\[\d+\] unbound\[[\d:]+\] (\w+): `)
 	goLogPrefix   = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+	systemdChore  = regexp.MustCompile(`^(Starting |Finished )|: (Deactivated successfully\.|Consumed .+ CPU time)`)
 	levelPrefix   = regexp.MustCompile(`^(?i)(\[(错误|警告|信息)\]|(error|fatal|panic|warn|warning)\s*:)\s*`)
 )
 
@@ -84,6 +85,9 @@ func journalEntry(rec map[string]any) logEntry {
 		}
 	}
 	e.Level = max(e.Level, lvl)
+	if field("SYSLOG_IDENTIFIER") == "systemd" && e.Level == 0 && systemdChore.MatchString(raw) {
+		e.Noise = true
+	}
 	for _, needle := range scannerNoise {
 		if strings.Contains(raw, needle) {
 			e.Noise, e.Level = true, 0
