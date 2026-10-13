@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -181,5 +182,47 @@ func TestLatencySplitsCacheHitsFromRecursion(t *testing.T) {
 	}
 	if _, ok := byRoute["foreign"]; ok {
 		t.Error("没有香港样本却给了一组分位数")
+	}
+}
+
+func TestStatsAreSharedPerParameterAndDroppedAfterAnAction(t *testing.T) {
+	server := newExportServer(t)
+	server.clock = func() time.Time { return time.Unix(1_700_003_600, 0) }
+	firstBucket := func(path, route string) any {
+		t.Helper()
+		response := serve(server, localRequest(http.MethodGet, path))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
+		}
+		var body struct {
+			Step   int              `json:"step"`
+			Series []map[string]any `json:"series"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if route == "step" {
+			return float64(body.Step)
+		}
+		return body.Series[0][route]
+	}
+	if got := firstBucket("/api/timeseries?span=3600&buckets=60", "step"); got != float64(60) {
+		t.Fatalf("1 小时 60 桶的步长 = %v", got)
+	}
+	if got := firstBucket("/api/timeseries?span=7200&buckets=60", "step"); got != float64(120) {
+		t.Fatalf("不同参数拿到了别的参数的共享结果：步长 = %v，应为 120", got)
+	}
+	if got := firstBucket("/api/timeseries?span=3600&buckets=60", "cache"); got != float64(1) {
+		t.Fatalf("删除前第一个桶的缓存命中 = %v，应为 1", got)
+	}
+
+	request := localRequest(http.MethodPost, "/api/action/delete_query")
+	request.Body = io.NopCloser(strings.NewReader(`{"id":1}`))
+	request.Header.Set("Content-Type", "application/json")
+	if response := serve(server, request); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"ok":true`) {
+		t.Fatalf("删除记录失败：%d %s", response.Code, response.Body.String())
+	}
+	if got := firstBucket("/api/timeseries?span=3600&buckets=60", "cache"); got != float64(0) {
+		t.Fatalf("删掉记录后立即刷新，趋势图仍是共享的旧结果：缓存命中 = %v", got)
 	}
 }
