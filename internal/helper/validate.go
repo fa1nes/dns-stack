@@ -79,5 +79,6 @@ func SafeClientSubnet(raw string) (string, bool) {
 var (
 	retentionPattern = regexp.MustCompile(`^[0-9]{1,3}[dw]$`)
 	interfacePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,15}$`)
+	cursorPattern    = regexp.MustCompile(`^[0-9A-Za-z=;]{1,256}$`)
 	sincePattern     = regexp.MustCompile(`^[0-9]{1,4}\s?(s|sec|second|seconds|m|min|minute|minutes|h|hour|hours|d|day|days)\s?ago$`)
 )

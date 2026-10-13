@@ -423,6 +423,9 @@ func (h *Helper) opListBackups(map[string]any) result {
 }
 
 func (h *Helper) opLogs(args map[string]any) result {
+	if _, merged := args["units"]; merged {
+		return h.opJournal(args)
+	}
 	unit := stringArg(args, "unit")
 	if !allowedUnits[unit] {
 		return errorResult("不允许查看该服务日志: " + unit)
@@ -452,6 +455,82 @@ func (h *Helper) opLogs(args map[string]any) result {
 		command = append(command, "--since", since)
 	}
 	return h.run(command, 30*time.Second, true)
+}
+
+func (h *Helper) opJournal(args map[string]any) result {
+	list, _ := args["units"].([]any)
+	if len(list) == 0 {
+		return errorResult("没有要查看的服务")
+	}
+	command := []string{"journalctl", "--no-pager", "--output", "json",
+		"--output-fields", "MESSAGE,PRIORITY,UNIT,_SYSTEMD_UNIT,SYSLOG_IDENTIFIER"}
+	for _, raw := range list {
+		unit, _ := raw.(string)
+		if !allowedUnits[unit] {
+			return errorResult("不允许查看该服务日志: " + unit)
+		}
+		command = append(command, "-u", unit+".service")
+	}
+	lines := 200
+	if raw, ok := args["lines"].(float64); ok {
+		lines = int(raw)
+	}
+	lines = max(1, min(lines, 2000))
+	command = append(command, "-n", strconv.Itoa(lines))
+	if since := stringArg(args, "since"); since != "" {
+		if !sincePattern.MatchString(since) {
+			return errorResult("非法的时间范围")
+		}
+		command = append(command, "--since", since)
+	}
+	if cursor := stringArg(args, "after_cursor"); cursor != "" {
+		if !cursorPattern.MatchString(cursor) {
+			return errorResult("非法的日志游标")
+		}
+		command = append(command, "--after-cursor", cursor)
+	}
+	out := h.runKeep(command, 30*time.Second, false, journalKeepRunes)
+	if stdout, ok := out["stdout"].(string); ok {
+		out["stdout"] = h.sanitizeJournal(stdout)
+	}
+	if stderr, ok := out["stderr"].(string); ok {
+		out["stderr"] = Sanitize(stderr, h.configPath)
+	}
+	return out
+}
+
+func (h *Helper) sanitizeJournal(stdout string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(stdout, "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) != nil {
+			continue
+		}
+		entry["MESSAGE"] = Sanitize(journalText(entry["MESSAGE"]), h.configPath)
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		b.Write(encoded)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func journalText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []any:
+		raw := make([]byte, 0, len(v))
+		for _, n := range v {
+			if f, ok := n.(float64); ok {
+				raw = append(raw, byte(f))
+			}
+		}
+		return strings.ToValidUTF8(string(raw), "�")
+	}
+	return ""
 }
 
 func readYAMLInt(path, key string) any {

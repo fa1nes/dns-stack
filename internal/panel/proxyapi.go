@@ -211,65 +211,77 @@ func (s *Server) backupPolicy() map[string]any {
 	}
 }
 
-func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
-	unit := r.URL.Query().Get("unit")
-	if unit == "" {
-		unit = "mosproxy"
+func (s *Server) logUnits(r *http.Request) ([]any, bool) {
+	units := s.watchedUnits()
+	if unit := r.URL.Query().Get("unit"); unit != "" && unit != "all" {
+		if !s.watchedUnit(unit) {
+			return nil, false
+		}
+		units = []string{unit}
 	}
+	out := make([]any, 0, len(units))
+	for _, u := range units {
+		out = append(out, u)
+	}
+	return out, true
+}
 
-	if !s.watchedUnit(unit) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的服务: " + unit})
+func journalCall(r *http.Request, args map[string]any) ([]logEntry, string) {
+	resp, err := helperCall(r.Context(), "logs", args)
+	if err != nil {
+		return nil, err.Error()
+	}
+	data, _ := resp["data"].(map[string]any)
+	stdout, _ := data["stdout"].(string)
+	if ok, _ := resp["ok"].(bool); (!ok || numberValue(data["returncode"]) != 0) && stdout == "" {
+		message, _ := resp["message"].(string)
+		if stderr, _ := data["stderr"].(string); stderr != "" {
+			message = stderr
+		}
+		if message == "" {
+			message = "读取日志失败"
+		}
+		return nil, message
+	}
+	return parseJournal(stdout), ""
+}
+
+func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
+	units, ok := s.logUnits(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的服务: " + r.URL.Query().Get("unit")})
 		return
 	}
 	lines := parseInt(r.URL.Query().Get("lines"), 200)
 	if lines < 1 || lines > 2000 {
 		lines = 200
 	}
-	args := map[string]any{"unit": unit, "lines": lines}
-	if v := r.URL.Query().Get("priority"); v != "" {
-		args["priority"] = v
-	}
+	args := map[string]any{"units": units, "lines": lines}
 	if v := r.URL.Query().Get("since"); v != "" {
 		args["since"] = v
 	}
-	resp, err := helperCall(r.Context(), "logs", args)
-	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": err.Error(), "lines": []string{}})
+	entries, failure := journalCall(r, args)
+	if failure != "" {
+		writeJSON(w, 503, map[string]any{"error": failure, "entries": []logEntry{}})
 		return
 	}
-	if ok, _ := resp["ok"].(bool); !ok {
-		writeJSON(w, 503, map[string]any{"error": resp["message"], "lines": []string{}})
-		return
-	}
-	data, _ := resp["data"].(map[string]any)
-	stdout, _ := data["stdout"].(string)
-	if numberValue(data["returncode"]) != 0 && stdout == "" {
-		message := "读取日志失败"
-		if stderr, ok := data["stderr"].(string); ok && stderr != "" {
-			message = stderr
+	if needle := strings.ToLower(r.URL.Query().Get("search")); needle != "" {
+		kept := entries[:0]
+		for _, e := range entries {
+			if strings.Contains(strings.ToLower(e.Msg), needle) || strings.Contains(strings.ToLower(e.Raw), needle) {
+				kept = append(kept, e)
+			}
 		}
-		writeJSON(w, 503, map[string]any{"error": message, "lines": []string{}})
-		return
+		entries = kept
 	}
-	out := []string{}
-	needle := strings.ToLower(r.URL.Query().Get("search"))
-	for _, line := range strings.Split(stdout, "\n") {
-		if strings.TrimSpace(line) != "" && (needle == "" || strings.Contains(strings.ToLower(line), needle)) {
-			out = append(out, line)
-		}
-	}
-	writeJSON(w, 200, map[string]any{"unit": unit, "lines": out, "count": len(out)})
+	writeJSON(w, 200, map[string]any{"units": units, "entries": entries, "count": len(entries)})
 }
 
 func (s *Server) logsStream(w http.ResponseWriter, r *http.Request) {
 	extendReadDeadline(w, 0)
-	unit := r.URL.Query().Get("unit")
-	if unit == "" {
-		unit = "mosproxy"
-	}
-
-	if !s.watchedUnit(unit) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的服务: " + unit})
+	units, ok := s.logUnits(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "不支持的服务: " + r.URL.Query().Get("unit")})
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -279,63 +291,37 @@ func (s *Server) logsStream(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	priority := r.URL.Query().Get("priority")
+	send := func(payload map[string]any) {
+		b, _ := json.Marshal(payload)
+		_, _ = w.Write(append(append([]byte("data: "), b...), []byte("\n\n")...))
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	seen := map[string]bool{}
-	order := []string{}
-	first := true
+	cursor := ""
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			args := map[string]any{"unit": unit, "lines": 100}
-			if priority != "" {
-				args["priority"] = priority
+			args := map[string]any{"units": units, "lines": 100}
+			if cursor != "" {
+				args["lines"], args["after_cursor"] = 1000, cursor
 			}
-			resp, err := helperCall(r.Context(), "logs", args)
-			respOK := false
-			if err == nil {
-				respOK, _ = resp["ok"].(bool)
-			}
-			if err != nil || !respOK {
-				var message any
-				if err != nil {
-					message = err.Error()
-				} else {
-					message = resp["message"]
-				}
-				payload, _ := json.Marshal(map[string]any{"error": message})
-				_, _ = w.Write(append(append([]byte("data: "), payload...), []byte("\n\n")...))
+			entries, failure := journalCall(r, args)
+			if failure != "" {
+				cursor = ""
+				send(map[string]any{"error": failure})
 				fl.Flush()
 				continue
 			}
-			data, _ := resp["data"].(map[string]any)
-			stdout, _ := data["stdout"].(string)
-			lines := []string{}
-			for _, line := range strings.Split(stdout, "\n") {
-				if strings.TrimSpace(line) != "" && !seen[line] {
-					seen[line] = true
-					order = append(order, line)
-					lines = append(lines, line)
+			for i := len(entries) - 1; i >= 0; i-- {
+				if entries[i].cursor != "" {
+					cursor = entries[i].cursor
+					break
 				}
 			}
-
-			if len(order) > 3000 {
-				for _, old := range order[:len(order)-1500] {
-					delete(seen, old)
-				}
-				order = append([]string{}, order[len(order)-1500:]...)
-			}
-			if len(lines) > 0 {
-
-				if first && len(lines) > 100 {
-					lines = lines[len(lines)-100:]
-				}
-				first = false
-				payload, _ := json.Marshal(map[string]any{"lines": lines})
-				_, _ = w.Write(append(append([]byte("data: "), payload...), []byte("\n\n")...))
+			if len(entries) > 0 {
+				send(map[string]any{"entries": entries})
 			} else {
 				_, _ = w.Write([]byte(": keepalive\n\n"))
 			}

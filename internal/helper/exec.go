@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	stdoutKeepRunes = 20000
-	stderrKeepRunes = 8000
+	stdoutKeepRunes  = 20000
+	stderrKeepRunes  = 8000
+	journalKeepRunes = 4 << 20
 )
 
 type result map[string]any
@@ -26,6 +27,10 @@ func failure(message string) result {
 }
 
 func (h *Helper) run(args []string, timeout time.Duration, sanitize bool) result {
+	return h.runKeep(args, timeout, sanitize, stdoutKeepRunes)
+}
+
+func (h *Helper) runKeep(args []string, timeout time.Duration, sanitize bool, keep int) result {
 	if h.onRun != nil {
 		h.onRun(args)
 		return result{"ok": true, "returncode": 0, "stdout": "", "stderr": ""}
@@ -48,7 +53,7 @@ func (h *Helper) run(args []string, timeout time.Duration, sanitize bool) result
 		return failure("命令不存在: " + err.Error())
 	}
 	code := cmd.ProcessState.ExitCode()
-	out, errText := tailRunes(string(stdout), stdoutKeepRunes), tailRunes(string(stderr), stderrKeepRunes)
+	out, errText := tailRunes(string(stdout), keep), tailRunes(string(stderr), stderrKeepRunes)
 	if sanitize {
 		out, errText = Sanitize(out, h.configPath), Sanitize(errText, h.configPath)
 	}
