@@ -596,8 +596,55 @@ function renderOverviewStats(d) {
     setHtml(box, html`${STAT_KEYS.map((key) => html`<div class="card stat" data-stat="${key}">
       <div class="label">${stats[key].label}</div><div class="num"></div><div class="sub"></div>
     </div>`)}`);
+    drawSparks(state.tsData);
   }
   STAT_KEYS.forEach((key) => patchStat(box.querySelector('[data-stat="' + key + '"]'), stats[key]));
+}
+
+const SPARKS = {
+  events: { cls: 'spark-total', of: (p) => TS_SERIES.reduce((sum, s) => sum + s.of(p), 0) },
+  hit: { cls: 'spark-cache', of: (p) => {
+    const total = TS_SERIES.reduce((sum, s) => sum + s.of(p), 0);
+    return total ? (p.cache || 0) / total : null;
+  } },
+  failure: { cls: 'spark-fail', of: (p) => p.failed || 0 },
+};
+
+function sparkPath(values) {
+  const known = values.filter((v) => v !== null);
+  if (known.length < 2) return '';
+  const lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+  const span = hi - lo || 1;
+  const step = 100 / (values.length - 1);
+  let d = '', pen = 'M';
+  values.forEach((v, i) => {
+    if (v === null) { pen = 'M'; return; }
+    d += pen + (i * step).toFixed(2) + ' ' + (22 - 20 * (v - lo) / span).toFixed(2);
+    pen = 'L';
+  });
+  return d;
+}
+
+function drawSparks(d) {
+  const box = $('#ovStats');
+  if (!box || !d || !d.series || d.series.length < 3) return;
+  const points = d.series.slice(0, -1);
+  Object.keys(SPARKS).forEach((key) => {
+    const card = box.querySelector('[data-stat="' + key + '"]');
+    if (!card) return;
+    const line = sparkPath(points.map(SPARKS[key].of));
+    let holder = card.querySelector('.spark');
+    if (!line) { if (holder) holder.remove(); return; }
+    if (!holder) {
+      card.append(parseFragment(raw('<div class="spark ' + SPARKS[key].cls + '" aria-hidden="true">' +
+        '<svg viewBox="0 0 100 24" preserveAspectRatio="none"><path class="spark-area"/><path class="spark-line"/></svg></div>')));
+      holder = card.querySelector('.spark');
+    }
+    const svg = holder.firstChild;
+    svg.lastChild.setAttribute('d', line);
+    const solid = line.indexOf('M', 1) < 0 && line.startsWith('M0.00 ') && /L100\.00 [\d.]+$/.test(line);
+    svg.firstChild.setAttribute('d', solid ? 'M0 24L' + line.slice(1) + 'L100 24Z' : '');
+  });
 }
 
 function eventsStat(ev, m) {
@@ -848,6 +895,7 @@ function drawChart(d) {
     viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}">${grid}${ticks}${paths}</svg>`));
   if (ts.hover >= points.length) ts.hover = points.length - 1;
   if (ts.hover >= 0) showTsHover(ts.hover);
+  drawSparks(d);
 }
 
 function tsIndexAt(clientX) {
@@ -1406,7 +1454,7 @@ function bindMigrationImport() {
 
 const LIVE_ROWS = 100;
 const live = {
-  pending: [], raf: 0, unseen: 0, skipped: 0, floor: 0, lastId: 0,
+  pending: [], rows: [], raf: 0, unseen: 0, skipped: 0, floor: 0, lastId: 0,
   atTop: true, connecting: false, error: '', filterKey: '', arrivals: [], openedAt: 0, clock: 0,
 };
 
@@ -1449,6 +1497,7 @@ async function loadQueries(page) {
     if (!fresh()) return;
     state.queryPage = d.page;
     state.queryPages = d.pages || 1;
+    live.rows = d.page === 1 && !range ? d.items.slice() : [];
     setHtml(body, d.items.length
       ? html`${d.items.map((r) => queryRow(r))}`
       : rowSpan(7, EMPTY('没有符合条件的请求')));
@@ -1534,15 +1583,29 @@ function flushLive() {
     if (live.pending.length) {
       const body = $('#liveBody');
       const rows = live.pending.reverse();
+      const keep = liveWindow();
       live.pending = [];
+      live.rows = rows.concat(live.rows).slice(0, LIVE_ROWS);
       if (body.querySelector('td[colspan]')) body.replaceChildren();
       body.querySelectorAll('tr.new').forEach((tr) => tr.classList.remove('new'));
-      prependHtml(body, html`${rows.map((r) => queryRow(r, 'new'))}`);
-      trimChildren(body, LIVE_ROWS);
+      prependHtml(body, html`${rows.slice(0, keep).map((r) => queryRow(r, 'new'))}`);
+      trimChildren(body, keep);
     }
     live.unseen = 0;
   }
   renderLiveStatus();
+}
+
+function liveWindow() {
+  return Math.min(LIVE_ROWS, Math.ceil(window.innerHeight / 34) + 4);
+}
+
+function expandLive() {
+  const body = $('#liveBody');
+  if (!body || body.querySelector('td[colspan]')) return;
+  const shown = body.children.length;
+  if (shown >= live.rows.length) return;
+  body.append(parseFragment(html`${live.rows.slice(shown).map((r) => queryRow(r))}`));
 }
 
 function receiveLive(ev) {
@@ -3509,6 +3572,7 @@ function bindEvents() {
     const atTop = entry.isIntersecting || entry.boundingClientRect.top > 0;
     if (atTop === live.atTop) return;
     live.atTop = atTop;
+    if (!atTop) expandLive();
     scheduleLive();
   }).observe($('#liveToolbar'));
   const bindExport = (id, dataset, format) => {

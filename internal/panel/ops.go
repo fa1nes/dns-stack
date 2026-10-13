@@ -170,6 +170,7 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusPreconditionRequired, map[string]any{"ok": false, "need_confirm": true, "message": "「" + spec.Label + "」是危险操作，请确认后再执行"})
 		return
 	}
+	defer s.forgetShared()
 	if handler, local := localOps[op]; local {
 		done, message := handler(s, args)
 		s.writeAudit(op, args, done, message)

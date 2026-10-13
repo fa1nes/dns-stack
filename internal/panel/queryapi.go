@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -389,31 +390,32 @@ func nilInt(v sql.NullInt64) any {
 	return nil
 }
 
+const statsShareTTL = 5 * time.Second
+
 func (s *Server) domainSummary(w http.ResponseWriter, r *http.Request) {
+	status, body := s.statsShared.entry("summary").get(r.Context(), s.now(), statsShareTTL, func() (int, []byte) {
+		return encodeShared(s.buildDomainSummary(context.Background()))
+	})
+	writeShared(w, status, body)
+}
+
+func (s *Server) buildDomainSummary(ctx context.Context) (int, map[string]any) {
 	db, err := s.openDB()
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "数据库不可用"})
-		return
+		return 503, map[string]any{"error": "数据库不可用"}
 	}
 	defer db.Close()
 
 	now := s.now().Unix()
 	since := s.statsWindowStart(now)
 	out := map[string]any{}
-	if err := domainSummaryExtras(r.Context(), db, out, now, since); err != nil {
-		writeJSON(w, 503, map[string]any{"error": "查询失败"})
-		return
+	if err := domainSummaryExtras(ctx, db, out, now, since); err != nil {
+		return 503, map[string]any{"error": "查询失败"}
 	}
-	writeJSON(w, 200, out)
+	return 200, out
 }
 
 func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
-	db, err := s.openDB()
-	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "数据库不可用", "series": []any{}})
-		return
-	}
-	defer db.Close()
 	span := parseInt(r.URL.Query().Get("span"), 3600)
 	buckets := parseInt(r.URL.Query().Get("buckets"), 60)
 	if span < 300 {
@@ -425,16 +427,31 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 	if buckets > 200 {
 		buckets = 200
 	}
+	key := "ts:" + strconv.Itoa(span) + ":" + strconv.Itoa(buckets)
+	status, body := s.statsShared.entry(key).get(r.Context(), s.now(), statsShareTTL, func() (int, []byte) {
+		return encodeShared(s.buildTimeseries(context.Background(), span, buckets))
+	})
+	writeShared(w, status, body)
+}
+
+func (s *Server) buildTimeseries(ctx context.Context, span, buckets int) (int, map[string]any) {
+	fail := func(message string) (int, map[string]any) {
+		return 503, map[string]any{"error": message, "series": []any{}}
+	}
+	db, err := s.openDB()
+	if err != nil {
+		return fail("数据库不可用")
+	}
+	defer db.Close()
 	step := span / buckets
 	if step < 1 {
 		step = 1
 	}
 	now := s.now().Unix()
 	since := now - now%int64(step) - int64(buckets)*int64(step)
-	rows, err := db.QueryContext(r.Context(), "SELECT ((ts-?)/?) AS b, route, COUNT(*) FROM query_events WHERE ts >= ? GROUP BY b,route ORDER BY b", since, step, since)
+	rows, err := db.QueryContext(ctx, "SELECT ((ts-?)/?) AS b, route, COUNT(*) FROM query_events WHERE ts >= ? GROUP BY b,route ORDER BY b", since, step, since)
 	if err != nil {
-		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
-		return
+		return fail("查询失败")
 	}
 	vals := map[int64]map[string]int{}
 	defer rows.Close()
@@ -443,8 +460,7 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 		var route string
 		var c int
 		if err := rows.Scan(&b, &route, &c); err != nil {
-			writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
-			return
+			return fail("查询失败")
 		}
 		if vals[b] == nil {
 			vals[b] = map[string]int{}
@@ -452,8 +468,7 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 		vals[b][route] = c
 	}
 	if err := rows.Err(); err != nil {
-		writeJSON(w, 503, map[string]any{"error": "查询失败", "series": []any{}})
-		return
+		return fail("查询失败")
 	}
 	series := []map[string]any{}
 	for i := 0; i <= buckets; i++ {
@@ -461,7 +476,7 @@ func (s *Server) timeseries(w http.ResponseWriter, r *http.Request) {
 		x := vals[b]
 		series = append(series, map[string]any{"t": since + b*int64(step), "cn": x["cn"], "foreign": x["foreign"], "cache": x["cache"], "reject": x["reject"], "failed": x["failed"], "unknown": x["unknown"]})
 	}
-	writeJSON(w, 200, map[string]any{"series": series, "step": step, "start": since, "end": now})
+	return 200, map[string]any{"series": series, "step": step, "start": since, "end": now}
 }
 
 const overviewShareTTL = 2 * time.Second

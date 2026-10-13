@@ -284,6 +284,13 @@ body.sb-fold .fold-btn { color: var(--accent); }
   color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .stat .label { font-size: var(--fs-sm); color: var(--text-muted); }
+.stat .spark { margin-top: auto; padding-top: 6px; }
+.stat .spark svg { display: block; width: 100%; height: 22px; overflow: visible; }
+.spark-line { fill: none; stroke: var(--spark); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-area { fill: color-mix(in srgb, var(--spark) 14%, transparent); stroke: none; }
+.spark-total { --spark: var(--accent); }
+.spark-cache { --spark: var(--s-cache); }
+.spark-fail { --spark: var(--s-fail); }
 .stat .sub {
   font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.55; overflow-wrap: anywhere;
 }

@@ -49,6 +49,7 @@ type Server struct {
 
 	rates          rateTracker
 	overviewShared sharedResult
+	statsShared    sharedResults
 
 	exits    exitCache
 	svcMu    sync.Mutex
