@@ -590,8 +590,13 @@ pre.block {
   color: var(--text); cursor: pointer;
 }
 .lv-row:hover { background: var(--bg-hover); color: var(--text); }
-.lv-row.lvl-2 { color: var(--err); }
-.lv-row.lvl-1 { color: var(--warn); }
+.lv-row > span { display: inline-block; vertical-align: top; }
+.lv-t { width: 9ch; color: var(--text-muted); }
+.lv-u { width: 9ch; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.lv-l { width: 5ch; }
+.lv-row.lvl-2 .lv-l { color: var(--err); }
+.lv-row.lvl-1 .lv-l { color: var(--warn); }
+.lv-row.noise .lv-m { color: var(--text-muted); }
 .lv-row.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .lv-row mark { background: color-mix(in srgb, var(--warn) 40%, transparent); color: inherit; border-radius: 2px; }
 .level-chip { gap: 6px; }

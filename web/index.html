@@ -314,11 +314,6 @@ try {
 
         <div class="tab-panel" id="ttab-logs">
           <div class="filters">
-            <select id="logUnit" title="服务" autocomplete="off"></select>
-            <select id="logPriority" title="级别" autocomplete="off">
-              <option value="">全部级别</option><option value="err">错误</option>
-              <option value="warning">警告及以上</option><option value="info">信息及以上</option>
-            </select>
             <select id="logLines" title="行数" autocomplete="off"><option value="200">200 行</option><option value="500">500 行</option>
               <option value="1000">1000 行</option><option value="2000">2000 行</option></select>
             <input type="search" id="logSearch" class="grow" placeholder="过滤" autocomplete="off"
@@ -333,9 +328,10 @@ try {
               <div class="row" id="logLevels">
                 <button class="sm level-chip err" data-level="2" aria-pressed="false" title="只看错误">错误 <b>0</b></button>
                 <button class="sm level-chip warn" data-level="1" aria-pressed="false" title="只看警告和错误">警告 <b>0</b></button>
+                <button class="sm level-chip" id="logNoise" aria-pressed="false" title="扫描器打到 DoH / 面板端口留下的握手失败、路径不对，默认收起" hidden>扫描 <b>0</b></button>
               </div>
             </div>
-            <div class="log-view" id="logView" tabindex="0" aria-label="日志"><div class="state">选好服务后点刷新</div></div>
+            <div class="log-view" id="logView" tabindex="0" aria-label="日志"><div class="state">点刷新加载各服务的日志</div></div>
             <button class="log-pill" id="logPill" hidden></button>
             <div class="log-detail" id="logDetail" hidden>
               <pre class="mono" id="logDetailText"></pre>

@@ -2206,15 +2206,11 @@ async function runDnsTest() {
 const LOG_KEEP = 10000;
 const LOG_TRIM = 8000;
 const LOG_OVERSCAN = 10;
+const LOG_PREFIX = 24;
 const logv = {
-  items: [], view: [], counts: [0, 0, 0], level: 0, search: '', widest: 0,
+  items: [], view: [], counts: [0, 0, 0], noise: 0, showNoise: false, level: 0, search: '', widest: 0,
   rowH: 0, raf: 0, flushRaf: 0, pending: [], unseen: 0, selected: null, painted: '', pool: [],
 };
-
-function logLevel(line) {
-  if (/\b(error|err|fatal|failed|failure|panic)\b/i.test(line)) return 2;
-  return /\b(warn|warning)\b/i.test(line) ? 1 : 0;
-}
 
 function logWidth(text) {
   let w = 0;
@@ -2222,11 +2218,25 @@ function logWidth(text) {
   return w;
 }
 
-const logMatches = (item) => item.lvl >= logv.level &&
+const logMatches = (item) => item.lvl >= logv.level && (logv.showNoise || !item.noise) &&
   (!logv.search || item.lower.indexOf(logv.search) >= 0);
 
-function logItem(text) {
-  return { text: text, lower: text.toLowerCase(), lvl: logLevel(text), width: logWidth(text) };
+const logUnitName = (unit) => (unit || '').replace(/^dns-stack-/, '').split('-').pop();
+const LOG_LEVEL_WORD = ['', '警告', '错误'];
+
+function logItem(e) {
+  const msg = e.msg || e.raw || '';
+  const unit = logUnitName(e.unit);
+  return {
+    t: e.t || 0, unit: unit, unitFull: e.unit || '', lvl: e.lvl || 0, noise: !!e.noise,
+    msg: msg, raw: e.raw || msg, text: msg,
+    lower: (unit + ' ' + msg).toLowerCase(), width: LOG_PREFIX + logWidth(msg),
+  };
+}
+
+function logCount(item, delta) {
+  if (item.noise) logv.noise += delta;
+  else logv.counts[item.lvl] += delta;
 }
 
 function logShell() {
@@ -2245,6 +2255,17 @@ function logShell() {
     probe.remove();
   }
   return view;
+}
+
+function logRow() {
+  const row = document.createElement('div');
+  row.className = 'lv-row';
+  ['lv-t', 'lv-u', 'lv-l', 'lv-m'].forEach((cls) => {
+    const span = document.createElement('span');
+    span.className = cls;
+    row.appendChild(span);
+  });
+  return row;
 }
 
 function logHighlight(text) {
@@ -2272,6 +2293,10 @@ function renderLogSummary() {
     btn.querySelector('b').textContent = fmtNum(level === 2 ? logv.counts[2] : logv.counts[1] + logv.counts[2]);
     btn.setAttribute('aria-pressed', logv.level === level ? 'true' : 'false');
   });
+  const noiseBtn = $('#logNoise');
+  noiseBtn.querySelector('b').textContent = fmtNum(logv.noise);
+  noiseBtn.hidden = !logv.noise;
+  noiseBtn.setAttribute('aria-pressed', logv.showNoise ? 'true' : 'false');
   const pill = $('#logPill');
   pill.hidden = !logv.unseen;
   if (logv.unseen) pill.textContent = '↓ ' + fmtNum(logv.unseen) + ' 行新日志';
@@ -2286,12 +2311,11 @@ function paintLogs(force) {
   const n = logv.view.length;
   const first = Math.max(0, Math.floor(view.scrollTop / logv.rowH) - LOG_OVERSCAN);
   const last = Math.min(n, Math.ceil((view.scrollTop + view.clientHeight) / logv.rowH) + LOG_OVERSCAN);
-  const key = first + ':' + last + ':' + n + ':' + logv.search + ':' + (logv.selected ? logv.selected.text : '');
+  const key = first + ':' + last + ':' + n + ':' + logv.search + ':' + (logv.selected ? logv.selected.raw : '');
   if (!force && key === logv.painted) return;
   logv.painted = key;
   while (logv.pool.length < last - first) {
-    const row = document.createElement('div');
-    row.className = 'lv-row';
+    const row = logRow();
     rows.appendChild(row);
     logv.pool.push(row);
   }
@@ -2300,9 +2324,13 @@ function paintLogs(force) {
     row.hidden = !item;
     if (!item) return;
     row.dataset.i = String(first + k);
-    row.className = 'lv-row lvl-' + item.lvl + (item === logv.selected ? ' sel' : '');
-    if (logv.search) setHtml(row, logHighlight(item.text));
-    else if (row.textContent !== item.text) row.textContent = item.text;
+    row.className = 'lv-row lvl-' + item.lvl + (item.noise ? ' noise' : '') + (item === logv.selected ? ' sel' : '');
+    const [t, u, l, m] = row.children;
+    t.textContent = item.t ? fmtClock(item.t / 1000) : '';
+    u.textContent = item.unit;
+    l.textContent = LOG_LEVEL_WORD[item.lvl];
+    if (logv.search) setHtml(m, logHighlight(item.msg));
+    else if (m.textContent !== item.msg) m.textContent = item.msg;
   });
   rows.style.transform = 'translateY(' + first * logv.rowH + 'px)';
 }
@@ -2341,10 +2369,11 @@ function renderLogs() {
   layoutLogs(wasEmpty || logAtBottom(view));
 }
 
-function setLogLines(lines) {
-  logv.items = lines.map(logItem);
+function setLogEntries(entries) {
+  logv.items = entries.map(logItem);
   logv.counts = [0, 0, 0];
-  logv.items.forEach((item) => { logv.counts[item.lvl] += 1; });
+  logv.noise = 0;
+  logv.items.forEach((item) => logCount(item, 1));
   logv.selected = null;
   $('#logDetail').hidden = true;
   renderLogs();
@@ -2355,10 +2384,10 @@ function flushLogs() {
   const added = logv.pending;
   logv.pending = [];
   if (!added.length) return;
-  added.forEach((item) => { logv.counts[item.lvl] += 1; });
+  added.forEach((item) => logCount(item, 1));
   logv.items = logv.items.concat(added);
   if (logv.items.length > LOG_KEEP) {
-    logv.items.slice(0, logv.items.length - LOG_TRIM).forEach((item) => { logv.counts[item.lvl] -= 1; });
+    logv.items.slice(0, logv.items.length - LOG_TRIM).forEach((item) => logCount(item, -1));
     logv.items = logv.items.slice(-LOG_TRIM);
     renderLogs();
     return;
@@ -2380,7 +2409,7 @@ function selectLogRow(row) {
   const box = $('#logDetail');
   if (logv.selected === item) { closeLogDetail(); return; }
   logv.selected = item;
-  $('#logDetailText').textContent = item.text;
+  $('#logDetailText').textContent = (item.t ? fmtTime(item.t / 1000) + '  ' : '') + item.unitFull + '\n' + item.raw;
   box.hidden = false;
   paintLogs(true);
 }
@@ -2421,6 +2450,10 @@ function bindLogViewer() {
     logv.level = logv.level === level ? 0 : level;
     renderLogs();
   });
+  $('#logNoise').addEventListener('click', () => {
+    logv.showNoise = !logv.showNoise;
+    renderLogs();
+  });
   $('#logDetailClose').addEventListener('click', closeLogDetail);
   $('#logDetailCopy').addEventListener('click', () => copyFrom($('#logDetailText'), '日志'));
 }
@@ -2429,17 +2462,12 @@ async function loadLogs() {
   const view = $('#logView');
   setHtml(view, LOADING);
   logv.pool = [];
-  const params = new URLSearchParams({
-    unit: $('#logUnit').value,
-    lines: $('#logLines').value,
-  });
-  const p = $('#logPriority').value;
-  if (p) params.set('priority', p);
+  const params = new URLSearchParams({ lines: $('#logLines').value });
   const fresh = latestOnly('logs');
   try {
     const d = await api('/api/logs?' + params.toString());
     if (!fresh()) return;
-    setLogLines(d.lines || []);
+    setLogEntries(d.entries || []);
   } catch (e) {
     if (!fresh()) return;
     setHtml(view, stateHtml('日志加载失败：' + e.message, 'error'));
@@ -2454,18 +2482,14 @@ function startLogFollow() {
   $('#btnLogFollow').classList.add('active');
   renderLogSummary();
 
-  const params = new URLSearchParams({ unit: $('#logUnit').value });
-  const p = $('#logPriority').value;
-  if (p) params.set('priority', p);
-
-  const es = new EventSource(apiUrl('/api/logs/stream?' + params.toString()), { withCredentials: true });
+  const es = new EventSource(apiUrl('/api/logs/stream'), { withCredentials: true });
   state.logES = es;
   es.onmessage = (ev) => {
     let d;
     try { d = JSON.parse(ev.data); } catch (e) { return; }
     if (d.error) { toast('日志流错误', d.error, 'err'); return; }
-    if (!d.lines || !d.lines.length) return;
-    logv.pending = logv.pending.concat(d.lines.map(logItem));
+    if (!d.entries || !d.entries.length) return;
+    logv.pending = logv.pending.concat(d.entries.map(logItem));
     if (!logv.flushRaf) logv.flushRaf = requestAnimationFrame(flushLogs);
   };
   es.onerror = () => {
@@ -3607,17 +3631,9 @@ function bindEvents() {
   $('#btnLogFollow').addEventListener('click', () => {
     state.logFollow ? stopLogFollow() : startLogFollow();
   });
-  $('#btnLogClear').addEventListener('click', () => setLogLines([]));
+  $('#btnLogClear').addEventListener('click', () => setLogEntries([]));
   $('#logSearch').addEventListener('input', debounce(renderLogs, 120));
-  $('#logUnit').addEventListener('change', () => {
-    try { localStorage.setItem('dns-stack-log-unit', $('#logUnit').value); } catch (e) {  }
-    if (state.logFollow) { stopLogFollow(); startLogFollow(); }
-    loadLogs();
-  });
-  $('#logPriority').addEventListener('change', () => {
-    if (state.logFollow) { stopLogFollow(); startLogFollow(); }
-    loadLogs();
-  });
+  $('#logLines').addEventListener('change', loadLogs);
 
   window.addEventListener('hashchange', () => {
     const target = location.hash.replace(/^#/, '');
@@ -3653,7 +3669,7 @@ function bindEvents() {
 function resetFilterControls() {
   ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#domSearch', '#domRoute', '#logSearch']
     .forEach((s) => { const el = $(s); if (el) el.value = ''; });
-  const defaults = { '#fSince': '0', '#domLimit': '50', '#logLines': '200', '#logPriority': '', '#tsSpan': '3600' };
+  const defaults = { '#fSince': '0', '#domLimit': '50', '#logLines': '200', '#tsSpan': '3600' };
   Object.keys(defaults).forEach((s) => { const el = $(s); if (el) el.value = defaults[s]; });
 }
 
@@ -3671,14 +3687,6 @@ async function loadBootstrap() {
 
   if (d.auth_enabled) {
     document.querySelectorAll('.auth-only').forEach((el) => { el.hidden = false; });
-  }
-
-  const sel = $('#logUnit');
-  if (sel && d.log_units && d.log_units.length) {
-    setHtml(sel, html`${d.log_units.map((u) => html`<option value="${u}">${u}</option>`)}`);
-    let saved = null;
-    try { saved = localStorage.getItem('dns-stack-log-unit'); } catch (e) {  }
-    if (saved && d.log_units.indexOf(saved) >= 0) sel.value = saved;
   }
 }
 
