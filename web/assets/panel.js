@@ -807,6 +807,7 @@ function drawChart(d) {
   if (!wrap || !d || !d.series || d.series.length < 2) return;
   const w = wrap.clientWidth, h = wrap.clientHeight;
   if (!w || !h) return;
+  ts.drawnWidth = w;
   const points = d.series.slice(0, -1);
   ts.points = points;
   ts.step = d.step;
@@ -1826,27 +1827,51 @@ async function loadDomains(page) {
       return;
     }
 
+    const pending = new Set(d.nodes_pending || []);
     setHtml(body, html`${d.items.map((x) => {
-      const n = x.node || {};
-      const g = n.geo || {};
-      const label = g.label;
-      const why = geoWhy(g);
       return html`<tr class="clickable" data-domain="${x.domain}">
       <td class="mono wrap">${x.domain}</td>
-      <td class="node-cell" title="${why}">${n.ip
-        ? html`<span class="node-geo">${label || '位置未知'}</span><span class="node-ip mono">${n.ip}</span>`
-        : raw('<span class="node-geo dim">—</span>')}</td>
+      ${nodeCell(x.node, pending.has(x.domain))}
       <td class="numc">${fmtNum(x.occurrence_count)}</td>
       <td class="numc" style="color:${x.fail_count > 0 ? 'var(--err)' : 'var(--text-dim)'}">${fmtNum(x.fail_count)}</td>
       <td class="mono">${dash(x.last_rcode_name)}</td>
       <td class="mono dim">${fmtTime(x.last_seen_at)}</td>
     </tr>`;
     })}`);
+    if (pending.size) fillDomainNodes(Array.from(pending), fresh);
   } catch (e) {
     if (!fresh()) return;
     setHtml(body, rowSpan(6, errState(e)));
     $('#domCount').textContent = '—';
   }
+}
+
+function nodeCell(n, waiting) {
+  const g = (n && n.geo) || {};
+  if (n && n.ip) {
+    return html`<td class="node-cell" title="${geoWhy(g)}"><span class="node-geo">${g.label || '位置未知'}</span><span class="node-ip mono">${n.ip}</span></td>`;
+  }
+  return html`<td class="node-cell"${waiting ? raw(' aria-busy="true"') : ''}><span class="node-geo dim">${waiting ? '…' : '—'}</span></td>`;
+}
+
+async function fillDomainNodes(names, fresh) {
+  let d;
+  try {
+    d = await api('/api/domains/nodes?names=' + encodeURIComponent(names.join(',')));
+  } catch (e) {
+    d = { nodes: {} };
+  }
+  if (!fresh()) return;
+  const nodes = d.nodes || {};
+  $$('#domBody tr[data-domain]').forEach((row) => {
+    const name = row.dataset.domain;
+    if (!names.includes(name)) return;
+    const cell = row.querySelector('.node-cell');
+    if (!cell) return;
+    const tmp = document.createElement('tbody');
+    setHtml(tmp, html`<tr>${nodeCell(nodes[name], false)}</tr>`);
+    cell.replaceWith(tmp.firstElementChild.firstElementChild);
+  });
 }
 
 function renderDomainHead(metric) {
@@ -3654,14 +3679,13 @@ function bindEvents() {
     state.logResume = false;
   });
 
-  let _resizeRaf = 0, _chartWidth = 0;
+  let _resizeRaf = 0;
   new ResizeObserver(() => {
     const w = $('#tsChart').clientWidth;
-    if (!w || w === _chartWidth || _resizeRaf) return;
+    if (!w || w === ts.drawnWidth || _resizeRaf) return;
     _resizeRaf = requestAnimationFrame(() => {
       _resizeRaf = 0;
-      _chartWidth = $('#tsChart').clientWidth;
-      if (state.tsData) drawChart(state.tsData);
+      if (state.tsData && $('#tsChart').clientWidth !== ts.drawnWidth) drawChart(state.tsData);
     });
   }).observe($('#tsChart'));
 }
