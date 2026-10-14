@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1791893468
+# generated-at: 1791971062
 # providers: 20
 # domains: 78
-# prefixes: 9997
+# prefixes: 10002
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -780,7 +780,7 @@ N	alibaba	off	43.122.0.0/16
 N	alibaba	off	43.123.0.0/17
 N	alibaba	off	43.123.128.0/18
 N	alibaba	off	43.124.0.0/16
-N	alibaba	off	43.125.8.0/21
+N	alibaba	off	43.125.0.0/20
 N	alibaba	off	43.125.24.0/21
 N	alibaba	off	43.125.32.0/20
 N	alibaba	off	43.125.48.0/21
@@ -1201,7 +1201,7 @@ N	alibaba	off	240b:4004::/31
 N	alibaba	off	240b:4006::/48
 N	alibaba	off	240b:4006:1000::/43
 N	alibaba	off	240b:4006:1020::/44
-N	alibaba	off	240b:4006:1104::/46
+N	alibaba	off	240b:4006:1100::/45
 N	alibaba	off	240b:4006:110c::/46
 N	alibaba	off	240b:4006:1110::/45
 N	alibaba	off	240b:4006:1118::/46
@@ -2829,8 +2829,7 @@ N	amazon	off	89.222.43.0/24
 N	amazon	off	89.251.12.0/24
 N	amazon	off	89.254.8.0/21
 N	amazon	off	89.254.32.0/19
-N	amazon	off	91.102.184.0/23
-N	amazon	off	91.102.186.0/24
+N	amazon	off	91.102.184.0/22
 N	amazon	off	91.107.72.0/21
 N	amazon	off	91.107.88.0/21
 N	amazon	off	91.124.34.0/24
@@ -6446,6 +6445,7 @@ N	amazon	off	2601:9200:ef::/48
 N	amazon	off	2601:9200:f0::/46
 N	amazon	off	2601:9200:f4::/47
 N	amazon	off	2601:9200:f6::/48
+N	amazon	off	2601:9200:f8::/47
 N	amazon	off	2601:9200:110::/44
 N	amazon	off	2601:9200:120::/45
 N	amazon	off	2601:9200:128::/46
@@ -6549,6 +6549,7 @@ N	amazon	off	2602:f805:261::/48
 N	amazon	off	2602:f805:7b2::/48
 N	amazon	off	2602:f805:959::/48
 N	amazon	off	2602:f805:cd9::/48
+N	amazon	off	2602:f848::/40
 N	amazon	off	2602:f8b4:2::/48
 N	amazon	off	2602:f8d4:6::/47
 N	amazon	off	2602:f8d4:8::/47
@@ -7581,6 +7582,7 @@ N	cloudflare	off	62.146.255.0/24
 N	cloudflare	off	64.8.255.0/24
 N	cloudflare	off	64.40.138.0/24
 N	cloudflare	off	64.40.140.0/24
+N	cloudflare	off	64.205.115.0/24
 N	cloudflare	off	65.110.63.0/24
 N	cloudflare	off	66.71.220.0/24
 N	cloudflare	off	66.80.5.0/24
@@ -7634,7 +7636,6 @@ N	cloudflare	off	87.85.131.0/24
 N	cloudflare	off	87.85.174.0/24
 N	cloudflare	off	87.232.75.0/24
 N	cloudflare	off	87.232.80.0/24
-N	cloudflare	off	87.232.113.0/24
 N	cloudflare	off	88.216.69.0/24
 N	cloudflare	off	89.32.173.0/24
 N	cloudflare	off	89.46.251.0/24
@@ -7666,6 +7667,7 @@ N	cloudflare	off	103.49.212.0/24
 N	cloudflare	off	103.50.96.0/23
 N	cloudflare	off	103.51.12.0/23
 N	cloudflare	off	103.54.128.0/23
+N	cloudflare	off	103.77.7.0/24
 N	cloudflare	off	103.81.228.0/24
 N	cloudflare	off	103.98.194.0/24
 N	cloudflare	off	103.130.111.0/24
@@ -8214,6 +8216,7 @@ N	huawei	cn	2407:c080:8000::/36
 N	huawei	cn	2409:2000::/31
 N	huawei	cn	2409:2002::/32
 N	huawei	cn	2409:2003::/47
+N	huawei	cn	2409:2003:10::/44
 N	huawei	cn	2409:27fc::/48
 N	huawei	cn	2409:27fe::/33
 N	huawei	off	1.178.32.0/19
@@ -9564,6 +9567,7 @@ N	microsoft	off	195.88.21.0/24
 N	microsoft	off	195.104.228.0/22
 N	microsoft	off	195.105.26.0/24
 N	microsoft	off	195.114.140.0/24
+N	microsoft	off	195.137.221.0/24
 N	microsoft	off	195.191.211.0/24
 N	microsoft	off	195.222.105.0/24
 N	microsoft	off	198.8.73.0/24
@@ -9721,6 +9725,7 @@ N	microsoft	off	212.1.218.0/23
 N	microsoft	off	212.1.222.0/23
 N	microsoft	off	212.42.130.0/24
 N	microsoft	off	212.46.57.0/24
+N	microsoft	off	212.80.193.0/24
 N	microsoft	off	212.103.45.0/24
 N	microsoft	off	212.207.0.0/16
 N	microsoft	off	213.54.0.0/16
