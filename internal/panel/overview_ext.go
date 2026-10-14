@@ -291,17 +291,7 @@ func domainSummaryExtras(ctx context.Context, db *sql.DB, out map[string]any, no
 }
 
 func (s *Server) attachResolvedNode(ctx context.Context, items []map[string]any) {
-	targets := make([]string, 0, resolveCap)
-	for _, item := range items {
-		name, _ := item["domain"].(string)
-		if name == "" {
-			continue
-		}
-		targets = append(targets, name)
-		if len(targets) >= resolveCap {
-			break
-		}
-	}
+	targets := s.attachCachedNodes(items)
 	if len(targets) == 0 {
 		return
 	}
@@ -322,7 +312,12 @@ func (s *Server) attachResolvedNode(ctx context.Context, items []map[string]any)
 			}
 			defer func() { <-sem }()
 			reply := dnsProbe(ctx, name, "A", "local-unbound", "")
+			if _, failed := reply["error"]; failed && ctx.Err() != nil {
+				return
+			}
 			records, _ := reply["records"].([]map[string]any)
+			var node map[string]any
+			defer func() { s.nodes.put(name, node, s.now()) }()
 			for _, record := range records {
 				if record["type"] != "A" {
 					continue
@@ -331,8 +326,9 @@ func (s *Server) attachResolvedNode(ctx context.Context, items []map[string]any)
 				if ip == "" {
 					continue
 				}
+				node = map[string]any{"ip": ip, "geo": s.geoLookup(ip)}
 				mu.Lock()
-				found[name] = map[string]any{"ip": ip, "geo": s.geoLookup(ip)}
+				found[name] = node
 				mu.Unlock()
 				return
 			}

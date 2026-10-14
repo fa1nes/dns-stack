@@ -588,27 +588,36 @@ func (h *Helper) cacheHitRate() map[string]any {
 
 func (h *Helper) opCacheInfo(map[string]any) result {
 	settings := map[string]any{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for _, option := range []string{
 		unbound.ServeExpiredTTL, "serve-expired-client-timeout", "cache-max-ttl", unbound.CacheMinTTL,
 	} {
-		r := h.unboundControl(10*time.Second, "get_option", option)
-		if code, _ := r["returncode"].(int); code != 0 {
-			continue
-		}
-		text := strings.TrimSpace(r["stdout"].(string))
-		if number, err := strconv.Atoi(text); err == nil {
-			settings[option] = number
-		} else {
-			settings[option] = text
-		}
+		wg.Go(func() {
+			r := h.unboundControl(10*time.Second, "get_option", option)
+			if code, _ := r["returncode"].(int); code != 0 {
+				return
+			}
+			text := strings.TrimSpace(r["stdout"].(string))
+			var value any = text
+			if number, err := strconv.Atoi(text); err == nil {
+				value = number
+			}
+			mu.Lock()
+			settings[option] = value
+			mu.Unlock()
+		})
 	}
+	var hit map[string]any
+	wg.Go(func() { hit = h.cacheHitRate() })
+	wg.Wait()
 	info := map[string]any{
 		"mosproxy": map[string]any{
 			"optimistic_ttl": readYAMLInt(h.mosproxyConf, "optimistic_ttl"),
 			"maximum_ttl":    readYAMLInt(h.mosproxyConf, "maximum_ttl"),
 		},
 		"unbound": settings,
-		"hit":     h.cacheHitRate(),
+		"hit":     hit,
 	}
 	encoded, _ := json.Marshal(info)
 	return result{"ok": true, "returncode": 0, "stdout": string(encoded), "stderr": ""}

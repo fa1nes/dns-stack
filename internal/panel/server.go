@@ -52,6 +52,7 @@ type Server struct {
 	statsShared    sharedResults
 
 	exits    exitCache
+	nodes    nodeCache
 	svcMu    sync.Mutex
 	svcCache map[string]svcCacheEntry
 	http     *http.Server
@@ -109,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/queries/stream", s.queryStream)
 	mux.HandleFunc("/api/domains", s.domains)
 	mux.HandleFunc("/api/domains/summary", s.domainSummary)
+	mux.HandleFunc("/api/domains/nodes", s.domainNodes)
 	mux.HandleFunc("/api/export", s.exportData)
 	mux.HandleFunc("/api/migration-export", s.migrationExport)
 	mux.HandleFunc("/api/migration-import", s.migrationImport)

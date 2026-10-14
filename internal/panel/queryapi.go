@@ -320,8 +320,8 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
 	}
-	s.attachResolvedNode(r.Context(), items)
-	writeJSON(w, 200, map[string]any{"items": items, "metric": metric, "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
+	pending := s.attachCachedNodes(items)
+	writeJSON(w, 200, map[string]any{"items": items, "metric": metric, "total": total, "page": page, "size": size, "pages": (total + size - 1) / size, "nodes_pending": pending})
 }
 
 func (s *Server) domainsSlow(w http.ResponseWriter, r *http.Request, db *sql.DB, page, size int) {
@@ -364,7 +364,6 @@ func (s *Server) domainsSlow(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
 	}
-	s.attachResolvedNode(r.Context(), items)
 	writeJSON(w, 200, map[string]any{"items": items, "metric": "slow", "total": total, "page": page, "size": size, "pages": (total + size - 1) / size})
 }
 
