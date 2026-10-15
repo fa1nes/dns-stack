@@ -23,7 +23,7 @@ var (
 	unboundPrefix = regexp.MustCompile(`^\[\d+\] unbound\[[\d:]+\] (\w+): `)
 	goLogPrefix   = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
 	systemdChore  = regexp.MustCompile(`^(Starting |Finished )|: (Deactivated successfully\.|Consumed .+ CPU time)`)
-	levelPrefix   = regexp.MustCompile(`^(?i)(\[(错误|警告|信息)\]|(error|fatal|panic|warn|warning)\s*:)\s*`)
+	levelPrefix   = regexp.MustCompile(`^(?i)(\[(错误|失败|警告|信息)]|(error|fatal|panic|warn|warning)\s*:)\s*`)
 )
 
 var scannerNoise = []string{
@@ -99,7 +99,7 @@ func journalEntry(rec map[string]any) logEntry {
 
 func wordLevel(word string) int {
 	switch strings.ToLower(word) {
-	case "error", "err", "fatal", "panic", "crit", "错误":
+	case "error", "err", "fatal", "panic", "crit", "错误", "失败":
 		return 2
 	case "warn", "warning", "警告":
 		return 1

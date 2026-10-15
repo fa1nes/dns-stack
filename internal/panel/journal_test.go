@@ -36,6 +36,7 @@ func TestJournalEntriesFromProductionShapes(t *testing.T) {
 		journalLine(t, "dns-stack-routing-watchdog", "systemd", `Starting dns-stack-routing-watchdog.service - dns-stack 递归出口分流存活看门狗...`, 7_000_000),
 		journalLine(t, "dns-stack-routing-watchdog", "systemd", `dns-stack-routing-watchdog.service: Deactivated successfully.`, 7_100_000),
 		journalLine(t, "dns-stack-panel", "systemd", `Started dns-stack-panel.service - dns-stack 中文管理面板.`, 7_200_000),
+		journalLine(t, "dns-stack-routing-data", "dns-stack-go", `[失败] 国内权威与 ECS 白名单：权威探测全部超时`, 7_300_000),
 		`{"MESSAGE":"cut`,
 	}, "\n")
 	got := parseJournal(stdout)
@@ -55,6 +56,7 @@ func TestJournalEntriesFromProductionShapes(t *testing.T) {
 		{"dns-stack-routing-watchdog", 0, true, "Starting dns-stack-routing-watchdog.service"},
 		{"dns-stack-routing-watchdog", 0, true, "dns-stack-routing-watchdog.service: Deactivated successfully."},
 		{"dns-stack-panel", 0, false, "Started dns-stack-panel.service"},
+		{"dns-stack-routing-data", 2, false, "国内权威与 ECS 白名单：权威探测全部超时"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("条数 %d，想要 %d: %+v", len(got), len(want), got)

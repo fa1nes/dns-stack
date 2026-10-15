@@ -21,6 +21,7 @@ func cmdRoutingData(args []string) error {
 	dryRun := fs.Bool("dry-run", false, "只打印会执行哪些步骤，不真正执行")
 	preview := fs.Bool("preview", false, "照常计算但不落盘：不改 nft、不改 ECS 配置、不 reload unbound")
 	asJSON := fs.Bool("json", false, "输出 JSON 报告")
+	quiet := fs.Bool("quiet", false, "定时器用：跳过的步骤不打印，结果与上次相同的步骤只记进汇总")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -65,6 +66,7 @@ func cmdRoutingData(args []string) error {
 		Only:     selected,
 		Force:    *force,
 		DryRun:   *dryRun,
+		Quiet:    *quiet && !*dryRun,
 		Out:      out,
 	}, rt, steps)
 
@@ -74,7 +76,11 @@ func cmdRoutingData(args []string) error {
 		}
 		return runErr
 	}
-	fmt.Printf("[汇总] 执行 %d / 跳过 %d / 失败 %d / 阻断 %d\n",
-		report.Ran, report.Skipped, report.Failed, report.Blocked)
+	same := ""
+	if labels := report.SameSteps(); len(labels) > 0 {
+		same = "；与上次相同：" + strings.Join(labels, "、")
+	}
+	fmt.Printf("[汇总] 执行 %d / 跳过 %d / 失败 %d / 阻断 %d%s\n",
+		report.Ran, report.Skipped, report.Failed, report.Blocked, same)
 	return runErr
 }
