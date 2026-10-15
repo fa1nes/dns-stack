@@ -326,6 +326,54 @@ func authorityPath(rule string, authorities []map[string]any) string {
 	return "mixed"
 }
 
+const (
+	zoneNSCap      = 16
+	zoneNSParallel = 8
+)
+
+type zoneNS struct {
+	ns  string
+	ips []string
+}
+
+func zoneAuthorityIPs(ctx context.Context, zone string) []zoneNS {
+	if zone == "" {
+		return nil
+	}
+	records, _ := dnsProbe(ctx, zone, "NS", "local-unbound", "")["records"].([]map[string]any)
+	out := []zoneNS{}
+	seen := map[string]bool{}
+	for _, record := range records {
+		owner, _ := record["name"].(string)
+		if record["type"] != "NS" || domain.Normalize(owner) != zone {
+			continue
+		}
+		value, _ := record["value"].(string)
+		ns := domain.Normalize(value)
+		if !validDNSName(ns) || seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		out = append(out, zoneNS{ns: ns})
+		if len(out) >= zoneNSCap {
+			break
+		}
+	}
+	sem := make(chan struct{}, zoneNSParallel)
+	var wg sync.WaitGroup
+	for i := range out {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			out[i].ips = parsedGlobalIPs(dnsProbe(ctx, out[i].ns, "A", "local-unbound", ""))
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
 func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive bool) (map[string]any, map[string]any) {
 	direct := loadedPrefixes(s.statePath("chnroute/direct4.txt"))
 	authority := loadedPrefixes(s.statePath("chnroute/cn-authority.txt"))
@@ -346,30 +394,29 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 		}
 	}
 	routing["zone"] = zone
+
+	var live map[string]any
+	liveDone := make(chan struct{})
+	if wantLive {
+		go func() {
+			defer close(liveDone)
+			live = liveResolve(ctx, name, subnet)
+		}()
+	} else {
+		close(liveDone)
+	}
+
 	authorities := []map[string]any{}
-	if zone != "" {
-		nsReply := dnsProbe(ctx, zone, "NS", "local-unbound", "")
-		records, _ := nsReply["records"].([]map[string]any)
-		for _, record := range records {
-			owner, _ := record["name"].(string)
-			if record["type"] != "NS" || domain.Normalize(owner) != zone {
-				continue
+	for _, found := range zoneAuthorityIPs(ctx, zone) {
+		for _, ip := range found.ips {
+			exit := "tunnel"
+			if prefixContains(direct, ip) || prefixContains(authority, ip) {
+				exit = "direct"
 			}
-			value, _ := record["value"].(string)
-			ns := domain.Normalize(value)
-			if !validDNSName(ns) {
-				continue
-			}
-			for _, ip := range parsedGlobalIPs(dnsProbe(ctx, ns, "A", "local-unbound", "")) {
-				exit := "tunnel"
-				if prefixContains(direct, ip) || prefixContains(authority, ip) {
-					exit = "direct"
-				}
-				authorities = append(authorities, map[string]any{"ns": ns, "ip": ip, "geo": s.geoLookup(ip), "exit": exit})
-			}
-			if len(authorities) >= 12 {
-				break
-			}
+			authorities = append(authorities, map[string]any{"ns": found.ns, "ip": ip, "geo": s.geoLookup(ip), "exit": exit})
+		}
+		if len(authorities) >= 12 {
+			break
 		}
 	}
 	routing["authorities"] = authorities
@@ -377,9 +424,8 @@ func (s *Server) routingInfo(ctx context.Context, name, subnet string, wantLive 
 	routing["exits"] = s.exitAddresses(ctx)
 	routing["geoip_status"] = s.geoipStatus()
 
-	var live map[string]any
+	<-liveDone
 	if wantLive {
-		live = liveResolve(ctx, name, subnet)
 		local := live["local-unbound"].(map[string]any)
 		finalIPs := []string{}
 		for _, qtype := range []string{"A", "AAAA"} {
