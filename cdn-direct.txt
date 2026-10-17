@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1792142275
+# generated-at: 1792226908
 # providers: 20
 # domains: 78
-# prefixes: 10016
+# prefixes: 10020
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -953,7 +953,6 @@ N	alibaba	off	156.227.20.0/24
 N	alibaba	off	156.236.17.0/24
 N	alibaba	off	156.245.1.0/24
 N	alibaba	off	161.117.0.0/16
-N	alibaba	off	162.128.248.0/24
 N	alibaba	off	163.5.166.0/24
 N	alibaba	off	163.181.0.0/23
 N	alibaba	off	163.181.15.0/24
@@ -1384,6 +1383,8 @@ N	amazon	off	15.252.0.0/14
 N	amazon	off	16.3.0.0/16
 N	amazon	off	16.4.0.0/16
 N	amazon	off	16.5.115.0/24
+N	amazon	off	16.5.209.0/24
+N	amazon	off	16.5.210.0/24
 N	amazon	off	16.5.254.0/24
 N	amazon	off	16.6.0.0/16
 N	amazon	off	16.11.0.0/16
@@ -2108,6 +2109,7 @@ N	amazon	off	64.37.64.0/18
 N	amazon	off	64.39.232.0/24
 N	amazon	off	64.39.235.0/24
 N	amazon	off	64.40.129.0/24
+N	amazon	off	64.40.131.0/24
 N	amazon	off	64.40.132.0/23
 N	amazon	off	64.40.136.0/23
 N	amazon	off	64.40.139.0/24
@@ -2713,6 +2715,7 @@ N	amazon	off	79.75.0.0/16
 N	amazon	off	79.125.0.0/17
 N	amazon	off	79.143.156.0/24
 N	amazon	off	79.182.9.0/24
+N	amazon	off	79.182.45.0/24
 N	amazon	off	79.182.112.0/24
 N	amazon	off	80.126.0.0/15
 N	amazon	off	80.203.128.0/17
@@ -3164,7 +3167,6 @@ N	amazon	off	108.186.34.0/24
 N	amazon	off	108.186.50.0/24
 N	amazon	off	108.186.73.0/24
 N	amazon	off	108.186.169.0/24
-N	amazon	off	108.186.187.0/24
 N	amazon	off	108.186.232.0/24
 N	amazon	off	108.186.249.0/24
 N	amazon	off	109.66.18.0/24
@@ -3527,7 +3529,7 @@ N	amazon	off	136.245.126.0/24
 N	amazon	off	136.246.0.0/16
 N	amazon	off	137.16.0.0/16
 N	amazon	off	137.19.0.0/16
-N	amazon	off	137.31.96.0/23
+N	amazon	off	137.31.97.0/24
 N	amazon	off	137.31.98.0/24
 N	amazon	off	137.31.159.0/24
 N	amazon	off	137.31.165.0/24
@@ -4004,6 +4006,7 @@ N	amazon	off	155.226.80.0/24
 N	amazon	off	155.226.128.0/19
 N	amazon	off	155.226.160.0/22
 N	amazon	off	155.226.164.0/23
+N	amazon	off	155.226.166.0/24
 N	amazon	off	155.226.168.0/21
 N	amazon	off	155.226.176.0/20
 N	amazon	off	155.226.208.0/20
@@ -4259,6 +4262,7 @@ N	amazon	off	162.220.32.0/22
 N	amazon	off	162.221.160.0/21
 N	amazon	off	162.221.182.0/23
 N	amazon	off	162.222.148.0/22
+N	amazon	off	162.223.124.0/24
 N	amazon	off	162.245.54.0/23
 N	amazon	off	162.246.176.0/24
 N	amazon	off	162.247.66.0/23
@@ -4312,8 +4316,7 @@ N	amazon	off	164.55.255.0/24
 N	amazon	off	164.57.160.0/22
 N	amazon	off	164.57.164.0/23
 N	amazon	off	164.57.176.0/22
-N	amazon	off	164.57.224.0/24
-N	amazon	off	164.57.240.0/20
+N	amazon	off	164.57.224.0/19
 N	amazon	off	164.93.0.0/17
 N	amazon	off	164.145.0.0/16
 N	amazon	off	164.152.64.0/24
@@ -4957,7 +4960,6 @@ N	amazon	off	192.71.84.0/24
 N	amazon	off	192.80.240.0/22
 N	amazon	off	192.80.244.0/23
 N	amazon	off	192.81.98.0/23
-N	amazon	off	192.82.192.0/24
 N	amazon	off	192.82.209.0/24
 N	amazon	off	192.84.23.0/24
 N	amazon	off	192.84.38.0/24
@@ -5719,7 +5721,6 @@ N	amazon	off	207.171.160.0/19
 N	amazon	off	207.174.61.0/24
 N	amazon	off	207.176.254.0/24
 N	amazon	off	207.180.22.0/24
-N	amazon	off	207.180.25.0/24
 N	amazon	off	207.180.27.0/24
 N	amazon	off	207.186.198.0/23
 N	amazon	off	207.186.206.0/24
@@ -5873,7 +5874,7 @@ N	amazon	off	209.92.136.0/24
 N	amazon	off	209.92.138.0/23
 N	amazon	off	209.92.140.0/22
 N	amazon	off	209.92.232.0/21
-N	amazon	off	209.99.167.0/24
+N	amazon	off	209.102.227.0/24
 N	amazon	off	209.107.194.0/24
 N	amazon	off	209.107.197.0/24
 N	amazon	off	209.107.198.0/23
@@ -6923,6 +6924,7 @@ N	amazon	off	2607:6bc0:301::/48
 N	amazon	off	2607:6bc0:302::/47
 N	amazon	off	2607:6bc0:342::/47
 N	amazon	off	2607:6bc0:382::/48
+N	amazon	off	2607:6bc0:385::/48
 N	amazon	off	2607:6d40:2000::/35
 N	amazon	off	2607:6d40:4000::/34
 N	amazon	off	2607:8d40:f40::/48
@@ -7546,7 +7548,6 @@ N	cloudflare	off	23.227.38.0/23
 N	cloudflare	off	23.227.42.0/23
 N	cloudflare	off	23.227.48.0/23
 N	cloudflare	off	23.227.60.0/24
-N	cloudflare	off	31.56.192.0/24
 N	cloudflare	off	31.185.108.0/24
 N	cloudflare	off	37.72.109.0/24
 N	cloudflare	off	37.153.170.0/23
@@ -7968,6 +7969,7 @@ N	cloudflare	off	216.132.75.0/24
 N	cloudflare	off	216.163.179.0/24
 N	cloudflare	off	216.183.79.0/24
 N	cloudflare	off	216.224.121.0/24
+N	cloudflare	off	216.231.146.0/24
 N	cloudflare	off	217.8.196.0/24
 N	cloudflare	off	217.25.13.0/24
 N	cloudflare	off	217.180.16.0/23
@@ -9109,6 +9111,7 @@ N	microsoft	off	85.210.0.0/15
 N	microsoft	off	85.212.0.0/16
 N	microsoft	off	86.91.0.0/16
 N	microsoft	off	89.28.187.0/24
+N	microsoft	off	91.102.187.0/24
 N	microsoft	off	91.203.230.0/24
 N	microsoft	off	91.216.184.0/24
 N	microsoft	off	91.234.239.0/24
@@ -9705,6 +9708,7 @@ N	microsoft	off	207.103.0.0/16
 N	microsoft	off	207.174.51.0/24
 N	microsoft	off	207.180.10.0/24
 N	microsoft	off	207.186.207.0/24
+N	microsoft	off	207.188.16.0/24
 N	microsoft	off	207.210.187.0/24
 N	microsoft	off	207.241.195.0/24
 N	microsoft	off	208.56.2.0/24
