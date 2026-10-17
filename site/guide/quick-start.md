@@ -72,3 +72,17 @@ sudo dns-stack cdn-hit                # CDN 是否真的给了大陆节点
 ```
 
 然后按 [客户端接入](/guide/clients) 配好设备。
+
+## 升级
+
+代码合进 `main`、CI 的 `build`（含 scale-gate）全绿后，`binaries-latest` 就是新版本。国内节点上：
+
+```bash
+sudo dns-stack upgrade --check   # 只下载并报出新版本号，不替换
+sudo dns-stack upgrade           # 替换并重启面板与管理助手
+sudo dns-stack preflight
+```
+
+`upgrade` 先取 `.sha256`，二进制下载后校验和对不上就不替换（取不到校验和也不替换）；下载 GitHub 时先走隧道、失败再直连。替换前把当前二进制备份到 `/var/backups/dns-stack/dns-stack-go.pre-<时间>`，原子替换后重启 `--restart` 指定的服务（默认 `dns-stack-helper,dns-stack-panel`），3 秒后任何一个没在运行就自动换回旧二进制再重启一次。
+
+查询采集器跑在 `mosproxy.service` 里，默认不重启它——重启会让解析中断几秒。需要采集器立刻用上新代码时写 `--restart dns-stack-helper,dns-stack-panel,mosproxy`。改动涉及 `systemd/` 单元、Unbound / mosproxy 模板时，重新运行 `install.sh`，不要只用 `upgrade`。香港节点不用它：香港的改动写进 `install-hk.sh`，在香港整体运行一遍。

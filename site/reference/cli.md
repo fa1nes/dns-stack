@@ -19,6 +19,7 @@
 | `doh-path` | 打印 DoH 接入地址；`--rotate` 随机换一个私密路径，`--set <路径>` 换成指定路径 |
 | `routing-status` | 查看递归出口分流现状 |
 | `routing-refresh` | 立即重建全部分流数据 |
+| `upgrade` | 从 `binaries-latest` 换上最新二进制，见 [升级](/guide/quick-start#升级) |
 
 ## 递归管理
 
