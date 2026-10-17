@@ -65,6 +65,8 @@ func main() {
 		err = cmdCollect(args)
 	case "routing-data":
 		err = cmdRoutingData(args)
+	case "upgrade":
+		err = cmdUpgrade(args)
 	case "maintenance":
 		err = cmdMaintenance(args)
 	case "routing-watchdog":
@@ -160,6 +162,7 @@ func usage() {
 
 子命令:
   status          一屏看完本机全部模块：分组、状态、上次/下次运行（--json 输出机器可读）
+  upgrade         从 CI 的 binaries-latest 换上最新二进制：校验 sha256、备份、原子替换、重启面板与助手，起不来自动换回（--check 只看）
   domain-check    对每行域名输出形态判据结果
   ipset-check     加载 CIDR 集合并对每行 IP 输出是否命中
   geoip-check     查询 IP 归属并输出 JSON 或标签
