@@ -200,7 +200,11 @@ func Run(ctx context.Context, opt Options, rt *Runtime, steps []Step) (Report, e
 			result.Same = err == nil && readDigest(digestPath) == digest
 			if !result.Same {
 				fmt.Fprintf(opt.Out, "[执行] %s\n", step.Label)
-				_, _ = opt.Out.Write(captured.Bytes())
+				if err != nil {
+					_, _ = opt.Out.Write(captured.Bytes())
+				} else {
+					_, _ = opt.Out.Write(withoutDetail(captured.Bytes()))
+				}
 			}
 			if err != nil {
 				_ = os.Remove(digestPath)
@@ -245,6 +249,16 @@ func outputDigest(out []byte) string {
 	})
 	sum := sha256.Sum256(normalized)
 	return hex.EncodeToString(sum[:])
+}
+
+func withoutDetail(out []byte) []byte {
+	var kept bytes.Buffer
+	for _, line := range bytes.SplitAfter(out, []byte("\n")) {
+		if !bytes.HasPrefix(line, []byte("[信息]")) {
+			kept.Write(line)
+		}
+	}
+	return kept.Bytes()
 }
 
 func readDigest(path string) string {

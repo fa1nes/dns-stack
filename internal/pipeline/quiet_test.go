@@ -23,7 +23,7 @@ func TestQuietRunPrintsOnlyWhatChanged(t *testing.T) {
 	steps := []Step{
 		{Name: "daily", Label: "每日步骤", Every: 24 * time.Hour, Run: func(context.Context, *Runtime) error { return nil }},
 		{Name: "authority", Label: "国内权威", Run: func(ctx context.Context, rt *Runtime) error {
-			fmt.Fprintf(rt.Out, "[信息] ECS 白名单 %d 条（耗时 %.3fs）\n", count, float64(count)/1000)
+			fmt.Fprintf(rt.Out, "  ECS 白名单已更新：%d 条（耗时 %.3fs）\n", count, float64(count)/1000)
 			fmt.Fprintf(rt.Out, "[信息]   地址：%s\n", addr)
 			if fail {
 				return errors.New("权威探测全部超时")
@@ -41,8 +41,8 @@ func TestQuietRunPrintsOnlyWhatChanged(t *testing.T) {
 	}
 
 	first := run()
-	if !strings.Contains(first, "ECS 白名单 6800 条") || strings.Contains(first, "[跳过]") {
-		t.Fatalf("首轮应打印完整细节，且跳过的步骤不出声:\n%s", first)
+	if !strings.Contains(first, "ECS 白名单已更新：6800 条") || strings.Contains(first, "地址") || strings.Contains(first, "[跳过]") {
+		t.Fatalf("应只打印动作行（[信息] 细节进文件），且跳过的步骤不出声:\n%s", first)
 	}
 
 	count = 6801
@@ -51,8 +51,8 @@ func TestQuietRunPrintsOnlyWhatChanged(t *testing.T) {
 	}
 
 	addr = "52.46.187.197"
-	if third := run(); !strings.Contains(third, "52.46.187.197") || !strings.Contains(third, "[成功] 国内权威") {
-		t.Fatalf("地址变了要打印完整细节:\n%s", third)
+	if third := run(); !strings.Contains(third, "已更新：6801") || !strings.Contains(third, "[成功] 国内权威") {
+		t.Fatalf("地址变了，本轮要出现在日志里:\n%s", third)
 	}
 
 	fail = true
@@ -61,12 +61,12 @@ func TestQuietRunPrintsOnlyWhatChanged(t *testing.T) {
 	}
 
 	fail = false
-	if fifth := run(); !strings.Contains(fifth, "地址") {
+	if fifth := run(); !strings.Contains(fifth, "[成功] 国内权威") {
 		t.Fatalf("失败那轮不能刷新摘要，恢复后的第一轮仍要打印:\n%s", fifth)
 	}
 	run()
 	saved, err := os.ReadFile(filepath.Join(opt.StateDir, ".stamps", "authority.log"))
-	if err != nil || !strings.Contains(string(saved), "ECS 白名单") {
+	if err != nil || !strings.Contains(string(saved), "地址：52.46.187.197") {
 		t.Fatalf("被省略的那轮完整输出应留在 .stamps/authority.log: %v %q", err, saved)
 	}
 }
