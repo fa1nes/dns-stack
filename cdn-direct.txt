@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1792226908
+# generated-at: 1792314307
 # providers: 20
 # domains: 78
-# prefixes: 10020
+# prefixes: 10022
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -2859,7 +2859,6 @@ N	amazon	off	91.213.115.0/24
 N	amazon	off	91.213.126.0/24
 N	amazon	off	91.213.146.0/24
 N	amazon	off	91.216.158.0/24
-N	amazon	off	91.217.171.0/24
 N	amazon	off	91.218.37.0/24
 N	amazon	off	91.223.161.0/24
 N	amazon	off	91.223.211.0/24
@@ -6719,9 +6718,10 @@ N	amazon	off	2605:9cc0:c07::/48
 N	amazon	off	2605:9cc0:c08::/48
 N	amazon	off	2605:9cc0:c0b::/48
 N	amazon	off	2605:9cc0:c0c::/48
-N	amazon	off	2605:9cc0:c12::/47
+N	amazon	off	2605:9cc0:c13::/48
 N	amazon	off	2605:9cc0:c14::/48
 N	amazon	off	2605:9cc0:c16::/47
+N	amazon	off	2605:9cc0:c19::/48
 N	amazon	off	2605:9cc0:c1b::/48
 N	amazon	off	2605:9cc0:c1c::/48
 N	amazon	off	2605:9cc0:f03e::/48
@@ -7798,6 +7798,7 @@ N	cloudflare	off	161.248.134.0/23
 N	cloudflare	off	162.44.104.0/22
 N	cloudflare	off	162.141.1.0/24
 N	cloudflare	off	162.158.0.0/15
+N	cloudflare	off	162.251.23.0/24
 N	cloudflare	off	162.251.82.0/24
 N	cloudflare	off	162.251.205.0/24
 N	cloudflare	off	163.245.49.0/24
@@ -8107,7 +8108,8 @@ N	fastly	off	2a00:8c40:f040::/43
 N	fastly	off	2a00:8c40:f060::/44
 N	fastly	off	2a00:8c40:f080::/41
 N	fastly	off	2a00:8c40:f100::/40
-N	fastly	off	2a00:8c40:f200::/42
+N	fastly	off	2a00:8c40:f200::/43
+N	fastly	off	2a00:8c40:f230::/44
 N	fastly	off	2a00:8c40:f240::/43
 N	fastly	off	2a00:8c40:f270::/44
 N	fastly	off	2a04:4e40::/32
@@ -9728,6 +9730,7 @@ N	microsoft	off	208.88.70.0/24
 N	microsoft	off	208.90.118.0/24
 N	microsoft	off	208.90.236.0/23
 N	microsoft	off	208.91.245.0/24
+N	microsoft	off	208.94.211.0/24
 N	microsoft	off	208.103.174.0/24
 N	microsoft	off	208.122.60.0/23
 N	microsoft	off	208.122.62.0/24
@@ -9844,7 +9847,6 @@ N	microsoft	off	2a05:f500:2::/48
 N	microsoft	off	2a07:3502:1191::/48
 N	microsoft	off	2a07:54c4:1756::/48
 N	microsoft	off	2a0a:d685:1d0::/48
-N	microsoft	off	2a0a:d685:1fc::/48
 N	microsoft	off	2a0b:9e80:2000::/48
 N	microsoft	off	2a0c:4144:200::/48
 N	microsoft	off	2a0c:61c7:ace::/48
@@ -10035,7 +10037,7 @@ N	tencent	off	43.164.112.0/20
 N	tencent	off	43.164.128.0/17
 N	tencent	off	43.165.0.0/16
 N	tencent	off	43.166.0.0/15
-N	tencent	off	43.171.128.0/23
+N	tencent	off	43.171.128.0/18
 N	tencent	off	43.172.0.0/17
 N	tencent	off	43.172.128.0/18
 N	tencent	off	43.172.192.0/19
