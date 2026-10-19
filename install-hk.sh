@@ -16,10 +16,62 @@ log_err()  { echo "[错误] $*" >&2; }
 
 [ "$(id -u)" -eq 0 ] || { log_err "需要 root 运行"; exit 1; }
 
+DEFAULT_REPO="__DNS_STACK_REPO__"
+
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 2 --max-time 300 -o "$2" "$1"
+    else
+        wget -q -T 300 -O "$2" "$1"
+    fi
+}
+
+update_binary() {
+    repo="${DNS_STACK_BINARY_REPO:-$DEFAULT_REPO}"
+    case "$repo" in
+        */*) ;;
+        *) return 1 ;;
+    esac
+    case "$(uname -m)" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) log_err "不支持的架构 $(uname -m)"; return 1 ;;
+    esac
+    base="${DNS_STACK_BINARY_BASE:-https://github.com/$repo/releases/download/binaries-latest}"
+    dl="$(mktemp -d "$OPT_DIR/bin/.dl.XXXXXX")"
+    if ! fetch "$base/dns-stack-linux-$arch.sha256" "$dl/sum" || ! fetch "$base/dns-stack-linux-$arch" "$dl/bin"; then
+        rm -rf "$dl"
+        log_err "下载 $base/dns-stack-linux-$arch 失败"
+        return 1
+    fi
+    want="$(awk 'NR == 1 {print tolower($1)}' "$dl/sum")"
+    got="$(sha256sum "$dl/bin" | awk '{print $1}')"
+    if [ "${#want}" -ne 64 ] || [ "$want" != "$got" ]; then
+        rm -rf "$dl"
+        log_err "下载的二进制 sha256 与 CI 记录不符，未替换"
+        return 1
+    fi
+    if [ -x "$GO_BIN" ] && [ "$(sha256sum "$GO_BIN" | awk '{print $1}')" = "$got" ]; then
+        rm -rf "$dl"
+        log_info "二进制已是最新"
+        return 0
+    fi
+    chmod 0755 "$dl/bin"
+    [ -x "$GO_BIN" ] && cp -p "$GO_BIN" "$GO_BIN.prev"
+    mv -f "$dl/bin" "$GO_BIN"
+    rm -rf "$dl"
+    log_ok "二进制已更新并核对 sha256（旧版留在 $GO_BIN.prev）"
+}
+
 log_info "[1/5] 创建目录..."
 mkdir -p "$OPT_DIR/bin" "$STATE_DIR" "$LOG_DIR"
 
-log_info "[2/5] 校验二进制..."
+log_info "[2/5] 获取并校验二进制..."
+if update_binary; then
+    :
+elif [ -x "$GO_BIN" ]; then
+    log_warn "没能取到最新二进制，继续使用现有的 $GO_BIN"
+fi
 if [ ! -x "$GO_BIN" ]; then
     log_err "缺少 $GO_BIN"
     log_err "  从 GitHub Releases 下载对应架构的 dns-stack-linux-<arch> 放到该路径并 chmod +x"

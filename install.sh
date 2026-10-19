@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"
+DEFAULT_REPO="__DNS_STACK_REPO__"
 
 C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_CYAN=$'\033[36m'; C_RESET=$'\033[0m'
 log_info() { echo "${C_CYAN}[信息]${C_RESET} $*"; }
@@ -11,6 +12,69 @@ log_err()  { echo "${C_RED}[错误]${C_RESET} $*" >&2; }
 die()      { log_err "$1"; exit 1; }
 
 [[ "${EUID}" -ne 0 ]] && die "请使用 root 权限运行: sudo ./install.sh"
+
+bundle_fetch() {
+    local url="$1" out="$2" via
+    for via in direct tunnel ghfast.top gh-proxy.com; do
+        case "$via" in
+            direct) curl -fsSL --retry 2 --max-time 300 --speed-limit 2048 --speed-time 45 -o "$out" "$url" 2>/dev/null && return 0 ;;
+            tunnel)
+                ip -4 addr show 2>/dev/null | grep -q ' 10\.100\.0\.2/' || continue
+                curl -fsSL --retry 2 --max-time 300 --speed-limit 2048 --speed-time 45 \
+                    --interface 10.100.0.2 -o "$out" "$url" 2>/dev/null && return 0 ;;
+            *)
+                [[ "$url" == https://github.com/* ]] || continue
+                curl -fsSL --max-time 300 --speed-limit 2048 --speed-time 45 -o "$out" "https://${via}/${url}" 2>/dev/null && return 0 ;;
+        esac
+        log_warn "  ${url##*/} 经 ${via} 下载失败，换下一条路"
+    done
+    return 1
+}
+
+bundle_verify() {
+    local file="$1" sums="$2" want got
+    want="$(awk 'NR == 1 {print tolower($1)}' "$sums")"
+    got="$(sha256sum "$file" | awk '{print $1}')"
+    [[ "$want" =~ ^[0-9a-f]{64}$ && "$want" == "$got" ]] || die "${file##*/} 的 sha256 与 CI 记录不符（期望 ${want:-无}，实际 ${got}），已中止"
+}
+
+bootstrap_bundle() {
+    local repo base arch tmp
+    repo="${DNS_STACK_BINARY_REPO:-$DEFAULT_REPO}"
+    [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+        || die "这份 install.sh 旁边没有安装包内容，也不知道该从哪个仓库下载。用 sudo DNS_STACK_BINARY_REPO=<owner>/<repo> bash 运行，或 git clone 仓库后在仓库里执行 ./install.sh"
+    base="${DNS_STACK_BINARY_BASE:-https://github.com/${repo}/releases/download/binaries-latest}"
+    case "$(uname -m)" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) die "不支持的架构 $(uname -m)" ;;
+    esac
+    command -v curl >/dev/null 2>&1 || die "需要 curl"
+    tmp="$(mktemp -d /tmp/dns-stack-bundle.XXXXXX)"
+    log_info "从 ${base} 获取安装包与 ${arch} 二进制..."
+    bundle_fetch "$base/dns-stack-bundle.tar.gz" "$tmp/bundle.tar.gz" || die "下载安装包失败"
+    bundle_fetch "$base/dns-stack-bundle.tar.gz.sha256" "$tmp/bundle.sha256" || die "下载安装包校验和失败"
+    bundle_verify "$tmp/bundle.tar.gz" "$tmp/bundle.sha256"
+    mkdir -p "$tmp/src"
+    tar -xzf "$tmp/bundle.tar.gz" -C "$tmp/src"
+    [[ -f "$tmp/src/install.sh" && -d "$tmp/src/systemd" && -f "$tmp/src/versions.lock" ]] || die "安装包内容不完整"
+    mkdir -p "$tmp/src/bin"
+    bundle_fetch "$base/dns-stack-linux-${arch}" "$tmp/src/bin/dns-stack-linux-${arch}" || die "下载二进制失败"
+    bundle_fetch "$base/dns-stack-linux-${arch}.sha256" "$tmp/bin.sha256" || die "下载二进制校验和失败"
+    bundle_verify "$tmp/src/bin/dns-stack-linux-${arch}" "$tmp/bin.sha256"
+    chmod 0755 "$tmp/src/bin/dns-stack-linux-${arch}"
+    log_ok "安装包与二进制都已核对 sha256: $("$tmp/src/bin/dns-stack-linux-${arch}" version)"
+    if [[ -n "${DNS_STACK_FETCH_ONLY:-}" ]]; then
+        log_ok "DNS_STACK_FETCH_ONLY 已设置：只下载与校验，内容在 ${tmp}/src，没有安装"
+        exit 0
+    fi
+    export DNS_STACK_BINARY_REPO="$repo"
+    exec bash "$tmp/src/install.sh" "$@"
+}
+
+if [[ ! -d "$SCRIPT_DIR/systemd" || ! -f "$SCRIPT_DIR/versions.lock" ]]; then
+    bootstrap_bundle "$@"
+fi
 
 CONFIG_FILE="/etc/dns-stack/config.env"
 SECRETS_DIR="/etc/dns-stack/secrets"
@@ -142,6 +206,36 @@ cfg_or_default() {
     echo "$def"
 }
 
+set_config_kv() {
+    local key="$1" value="$2" tmp
+    if grep -qE "^${key}=" "$CONFIG_FILE"; then
+        tmp="$(mktemp "${CONFIG_FILE}.XXXXXX")"
+        K="$key" V="$value" awk 'index($0, ENVIRON["K"] "=") == 1 {print ENVIRON["K"] "=" ENVIRON["V"]; next} {print}' \
+            "$CONFIG_FILE" > "$tmp"
+        cat "$tmp" > "$CONFIG_FILE"
+        rm -f "$tmp"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$CONFIG_FILE"
+    fi
+}
+
+apply_config_overrides() {
+    local key value
+    for key in PUBLIC_IPV4 DNS_STACK_BINARY_REPO DOH_PATH PANEL_LISTEN ALERT_WEBHOOK; do
+        [[ -n "${!key+x}" ]] || continue
+        value="${!key}"
+        if [[ "$key" == PUBLIC_IPV4 && -n "$value" && ! "$value" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            die "PUBLIC_IPV4=${value} 不是 IPv4 地址"
+        fi
+        set_config_kv "$key" "$value"
+        log_info "  按环境变量写入 ${key}"
+    done
+    if [[ -z "$(cfg_or_default PUBLIC_IPV4 "")" && "${PUB_V4:-}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        set_config_kv PUBLIC_IPV4 "$PUB_V4"
+        log_warn "  PUBLIC_IPV4 为空，已按出口探测填入 ${PUB_V4}；本机有多个公网地址时，改成客户端实际连接的那个"
+    fi
+}
+
 keep_tuned_values() {
     local file="$1" key value
     while read -r key value; do
@@ -171,6 +265,7 @@ ensure_config_env() {
             log_info "  ${CONFIG_FILE} 配置项完整"
         fi
     fi
+    apply_config_overrides
     if grep -qE '^ROLE=' "$CONFIG_FILE"; then
         sed -i "s|^ROLE=.*|ROLE=${ROLE}|" "$CONFIG_FILE"
     else
