@@ -211,6 +211,20 @@ jobs:
             exit 1
           fi
 
+      - name: install bundle
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          set -Eeuo pipefail
+          stage="$(mktemp -d)"
+          cp -a install.sh install-hk.sh config.example.env versions.lock systemd unbound mosproxy docs "$stage/"
+          sed -i "s#__DNS_STACK_REPO__#${GITHUB_REPOSITORY}#" "$stage/install.sh" "$stage/install-hk.sh"
+          grep -q "DEFAULT_REPO=\"${GITHUB_REPOSITORY}\"" "$stage/install.sh"
+          grep -q "DEFAULT_REPO=\"${GITHUB_REPOSITORY}\"" "$stage/install-hk.sh"
+          tar -czf dist/dns-stack-bundle.tar.gz -C "$stage" .
+          cp "$stage/install.sh" "$stage/install-hk.sh" dist/
+          (cd dist && sha256sum dns-stack-bundle.tar.gz > dns-stack-bundle.tar.gz.sha256)
+          tar -tzf dist/dns-stack-bundle.tar.gz | grep -qx './systemd/mosproxy.service'
+
       - uses: actions/upload-artifact@v4
         with:
           name: dns-stack-${{ matrix.goos }}-${{ matrix.goarch }}
