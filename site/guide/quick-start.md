@@ -22,7 +22,7 @@ curl -fsSL https://github.com/fa1nes/dns-stack/releases/download/binaries-latest
 
 `PUBLIC_IPV4` 是客户端连接的公网地址；不写时安装脚本按出口探测填入并提示核对。其余配置项（`DOH_PATH`、`PANEL_LISTEN`、`ALERT_WEBHOOK`、`DNS_STACK_BINARY_REPO`）也可以这样在 `sudo` 后面给出，没给的保留 `/etc/dns-stack/config.env` 里已有的值，各项含义见 [配置项](/reference/config)。
 
-这份 `install.sh` 发现身边没有安装包内容时，会从同一个 `binaries-latest` 下载 `dns-stack-bundle.tar.gz`（安装脚本、systemd 单元、Unbound 与 mosproxy 模板）和本机架构的二进制，**两者的 sha256 都对上才继续**，然后用解开的那份安装包执行安装。下载 GitHub 依次尝试直连、隧道（`10.100.0.2` 已在时）和两个国内镜像。只想先看能不能下载下来：在 `sudo` 后面加 `DNS_STACK_FETCH_ONLY=1`，它校验完就停，不改动这台机器。
+这份 `install.sh` 发现身边没有安装包内容时，会从同一个 `binaries-latest` 下载 `dns-stack-bundle.tar.gz`（安装脚本、systemd 单元、Unbound 与 mosproxy 模板）和本机架构的二进制，**两者的 sha256 都对上才继续**，然后用解开的那份安装包执行安装。隧道（`10.100.0.2`）已在时先走隧道，再试直连和两个国内镜像；任何一条路连续 20 秒低于 100KB/s 就换下一条——国内直连 GitHub 常见的情形是能连上、但大文件只有几 KB/s。只想先看能不能下载下来：在 `sudo` 后面加 `DNS_STACK_FETCH_ONLY=1`，它校验完就停，不改动这台机器。
 
 也可以照旧从仓库安装，适合要改模板或离线的场合：
 
