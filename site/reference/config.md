@@ -12,7 +12,7 @@
 |---|---|
 | `ROLE` | 节点角色，由安装脚本强制写入 |
 | `PUBLIC_IPV4` | 公网 IPv4。证书主体、DoH 接入地址、分流集合的大陆样本校验都用它。**必填** |
-| `DNS_STACK_BINARY_REPO` | 代码仓库（`owner/name`）。二进制从它的 `binaries-latest` 下载，归属库镜像和 CDN 规则集的来源也从它推出来。**必填** |
+| `DNS_STACK_BINARY_REPO` | 代码仓库（`owner/name`）。二进制从它的 `binaries-latest` 下载，归属库镜像和 CDN 规则集的来源也从它推出来。用一条命令安装时自动填入；从仓库安装时**必填** |
 | `DOH_PATH` | DoH 私密路径。留空时安装脚本生成随机路径并写回；之后用 `dns-stack doh-path --rotate` 轮换 |
 | `PANEL_LISTEN` | 面板监听地址，默认 `127.0.0.1:8080`。非回环地址要求已设密码且证书可读，否则拒绝启动；安装脚本也据此决定用 http 还是 https 探活 |
 | `ALERT_WEBHOOK` | 告警推送地址，见 [健康检查与告警](/ops/health#告警推送) |

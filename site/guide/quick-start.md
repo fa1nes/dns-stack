@@ -13,12 +13,22 @@
 
 ## 一、部署国内节点
 
+一条命令：
+
+```bash
+curl -fsSL https://github.com/fa1nes/dns-stack/releases/download/binaries-latest/install.sh \
+  | sudo PUBLIC_IPV4=203.0.113.10 bash
+```
+
+`PUBLIC_IPV4` 是客户端连接的公网地址；不写时安装脚本按出口探测填入并提示核对。其余配置项（`DOH_PATH`、`PANEL_LISTEN`、`ALERT_WEBHOOK`、`DNS_STACK_BINARY_REPO`）也可以这样在 `sudo` 后面给出，没给的保留 `/etc/dns-stack/config.env` 里已有的值，各项含义见 [配置项](/reference/config)。
+
+这份 `install.sh` 发现身边没有安装包内容时，会从同一个 `binaries-latest` 下载 `dns-stack-bundle.tar.gz`（安装脚本、systemd 单元、Unbound 与 mosproxy 模板）和本机架构的二进制，**两者的 sha256 都对上才继续**，然后用解开的那份安装包执行安装。下载 GitHub 依次尝试直连、隧道（`10.100.0.2` 已在时）和两个国内镜像。只想先看能不能下载下来：在 `sudo` 后面加 `DNS_STACK_FETCH_ONLY=1`，它校验完就停，不改动这台机器。
+
+也可以照旧从仓库安装，适合要改模板或离线的场合：
+
 ```bash
 git clone https://github.com/fa1nes/dns-stack.git && cd dns-stack
-sudo mkdir -p /etc/dns-stack
-sudo cp config.example.env /etc/dns-stack/config.env
-sudo vi /etc/dns-stack/config.env     # 至少填 PUBLIC_IPV4 和 DNS_STACK_BINARY_REPO，各项含义见「配置项」
-sudo ./install.sh
+sudo PUBLIC_IPV4=203.0.113.10 ./install.sh
 ```
 
 `install.sh` 按 `ROLE=cn-resolver` 部署全部模块，并把面板、采集器、助手都指向同一个 Go 二进制：
@@ -46,13 +56,11 @@ sudo dns-stack cert-check
 
 ## 二、部署香港节点
 
-从 `binaries-latest` 下载同一个二进制（静态链接，Alpine 上可以直接运行），放到 `/opt/dns-stack/bin/dns-stack-go`，然后：
-
 ```bash
-sudo sh install-hk.sh
+curl -fsSL https://github.com/fa1nes/dns-stack/releases/download/binaries-latest/install-hk.sh | sh
 ```
 
-它只做三件事：写 `ROLE=offshore`、加一条每日日志瘦身的 cron、让 Unbound 不依赖开机顺序并由 supervise-daemon 守护。香港 Unbound 需要监听 `10.100.0.3:5335` 并放行 `10.100.0.2`。见 [两台节点](/ops/nodes)。
+（Alpine 没装 curl 时用 `wget -qO- <同一地址> | sh`。）它先从 `binaries-latest` 取本机架构的二进制（静态链接，Alpine 上直接运行），sha256 对上才放到 `/opt/dns-stack/bin/dns-stack-go`，旧版留作 `dns-stack-go.prev`；下载失败而本机已有二进制时继续用旧的。然后只做三件事：写 `ROLE=offshore`、加一条每日日志瘦身的 cron、让 Unbound 不依赖开机顺序并由 supervise-daemon 守护。重复运行就是升级。香港 Unbound 需要监听 `10.100.0.3:5335` 并放行 `10.100.0.2`。见 [两台节点](/ops/nodes)。
 
 ## 三、设置面板用户名和密码
 
@@ -85,4 +93,4 @@ sudo dns-stack preflight
 
 `upgrade` 先取 `.sha256`，二进制下载后校验和对不上就不替换（取不到校验和也不替换）；下载 GitHub 时先走隧道、失败再直连。替换前把当前二进制备份到 `/var/backups/dns-stack/dns-stack-go.pre-<时间>`，原子替换后重启 `--restart` 指定的服务（默认 `dns-stack-helper,dns-stack-panel`），3 秒后任何一个没在运行就自动换回旧二进制再重启一次。
 
-查询采集器跑在 `mosproxy.service` 里，默认不重启它——重启会让解析中断几秒。需要采集器立刻用上新代码时写 `--restart dns-stack-helper,dns-stack-panel,mosproxy`。改动涉及 `systemd/` 单元、Unbound / mosproxy 模板时，重新运行 `install.sh`，不要只用 `upgrade`。香港节点不用它：香港的改动写进 `install-hk.sh`，在香港整体运行一遍。
+查询采集器跑在 `mosproxy.service` 里，默认不重启它——重启会让解析中断几秒。需要采集器立刻用上新代码时写 `--restart dns-stack-helper,dns-stack-panel,mosproxy`。改动涉及 `systemd/` 单元、Unbound / mosproxy 模板时，`upgrade` 不够，重新跑一遍上面那条安装命令（已有配置与面板调过的值都会保留）。香港节点不用 `upgrade`：重新跑一遍香港那条安装命令就是升级。
