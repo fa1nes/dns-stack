@@ -223,7 +223,7 @@ jobs:
           tar -czf dist/dns-stack-bundle.tar.gz -C "$stage" .
           cp "$stage/install.sh" "$stage/install-hk.sh" dist/
           (cd dist && sha256sum dns-stack-bundle.tar.gz > dns-stack-bundle.tar.gz.sha256)
-          tar -tzf dist/dns-stack-bundle.tar.gz | grep -qx './systemd/mosproxy.service'
+          tar -tzf dist/dns-stack-bundle.tar.gz | grep -x './systemd/mosproxy.service' >/dev/null
 
       - uses: actions/upload-artifact@v4
         with:
