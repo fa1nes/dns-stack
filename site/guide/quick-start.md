@@ -102,4 +102,4 @@ sudo dns-stack upgrade --mosproxy
 
 它取 `versions.lock` 里那个 mosproxy fork 的最新 Release，sha256、`.build-id` 与二进制自报的版本三者对上才替换，旧版带着元数据备份成 `mosproxy-pre-<新版本>-<时间>`；重启后用 DoH 自检，不通就换回旧版。重启期间解析中断约 0.1 秒（2026-10-19 升级 v0.2.3 实测），内存缓存随之清空。
 
-查询采集器跑在 `mosproxy.service` 里，默认不重启它——重启会让解析中断几秒。需要采集器立刻用上新代码时写 `--restart dns-stack-helper,dns-stack-panel,mosproxy`。改动涉及 `systemd/` 单元、Unbound / mosproxy 模板时，`upgrade` 不够，重新跑一遍上面那条安装命令（已有配置与面板调过的值都会保留）。香港节点不用 `upgrade`：重新跑一遍香港那条安装命令就是升级。
+查询采集器跑在 `mosproxy.service` 里，默认不重启它——重启时解析中断约 0.1 秒，但内存缓存会清空，之后一段时间的查询都要重新递归。需要采集器立刻用上新代码时写 `--restart dns-stack-helper,dns-stack-panel,mosproxy`。改动涉及 `systemd/` 单元、Unbound / mosproxy 模板时，`upgrade` 不够，重新跑一遍上面那条安装命令（已有配置与面板调过的值都会保留）。香港节点不用 `upgrade`：重新跑一遍香港那条安装命令就是升级。

@@ -23,7 +23,7 @@ func cmdUpgrade(args []string) error {
 	state := fs.String("state", envOr("STATE_DIR", pipeline.DefaultStateDir), "状态目录")
 	conf := fs.String("config", envOr("CONFIG_FILE", pipeline.DefaultConfigFile), "配置文件")
 	base := fs.String("base", "", "Release 下载地址（默认按 config.env 的 DNS_STACK_BINARY_BASE 或 DNS_STACK_BINARY_REPO 拼出 binaries-latest）")
-	restart := fs.String("restart", "dns-stack-helper,dns-stack-panel", "换好后重启哪些服务，逗号分隔；mosproxy 会中断解析几秒，要用时显式写上")
+	restart := fs.String("restart", "dns-stack-helper,dns-stack-panel", "换好后重启哪些服务，逗号分隔；mosproxy 重启时解析中断约 0.1 秒、内存缓存清空，要用时显式写上")
 	check := fs.Bool("check", false, "只下载并核对新版本号，不替换")
 	force := fs.Bool("force", false, "版本相同也重新安装")
 	mosproxy := fs.Bool("mosproxy", false, "升级 mosproxy（取 versions.lock 里那个 fork 的最新 Release），换好后重启它并用 DoH 自检；解析会中断约 0.1 秒")
@@ -98,7 +98,7 @@ func cmdUpgrade(args []string) error {
 			fmt.Printf("[信息] 已重启并确认在运行：%s\n", strings.Join(units, "、"))
 		}
 		if !*mosproxy && !strings.Contains(*restart, "mosproxy") {
-			fmt.Println("[信息] 查询采集器跑在 mosproxy.service 里，仍是旧代码；下次重启 mosproxy 时生效（需要立刻生效就 --restart 加上 mosproxy，会中断解析几秒）")
+			fmt.Println("[信息] 查询采集器跑在 mosproxy.service 里，仍是旧代码；下次重启 mosproxy 时生效（需要立刻生效就 --restart 加上 mosproxy：解析中断约 0.1 秒，内存缓存清空）")
 		}
 	}
 	return nil
