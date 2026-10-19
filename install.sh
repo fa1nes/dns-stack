@@ -14,19 +14,20 @@ die()      { log_err "$1"; exit 1; }
 [[ "${EUID}" -ne 0 ]] && die "请使用 root 权限运行: sudo ./install.sh"
 
 bundle_fetch() {
-    local url="$1" out="$2" via
-    for via in direct tunnel ghfast.top gh-proxy.com; do
+    local url="$1" out="$2" via routes=(direct ghfast.top gh-proxy.com)
+    local opts=(-fsSL --connect-timeout 15 --max-time 300 --speed-limit 102400 --speed-time 20)
+    if ip -4 addr show 2>/dev/null | grep -q ' 10\.100\.0\.2/'; then
+        routes=(tunnel direct ghfast.top gh-proxy.com)
+    fi
+    for via in "${routes[@]}"; do
         case "$via" in
-            direct) curl -fsSL --retry 2 --max-time 300 --speed-limit 2048 --speed-time 45 -o "$out" "$url" 2>/dev/null && return 0 ;;
-            tunnel)
-                ip -4 addr show 2>/dev/null | grep -q ' 10\.100\.0\.2/' || continue
-                curl -fsSL --retry 2 --max-time 300 --speed-limit 2048 --speed-time 45 \
-                    --interface 10.100.0.2 -o "$out" "$url" 2>/dev/null && return 0 ;;
+            direct) curl "${opts[@]}" -o "$out" "$url" 2>/dev/null && return 0 ;;
+            tunnel) curl "${opts[@]}" --interface 10.100.0.2 -o "$out" "$url" 2>/dev/null && return 0 ;;
             *)
                 [[ "$url" == https://github.com/* ]] || continue
-                curl -fsSL --max-time 300 --speed-limit 2048 --speed-time 45 -o "$out" "https://${via}/${url}" 2>/dev/null && return 0 ;;
+                curl "${opts[@]}" -o "$out" "https://${via}/${url}" 2>/dev/null && return 0 ;;
         esac
-        log_warn "  ${url##*/} 经 ${via} 下载失败，换下一条路"
+        log_warn "  ${url##*/} 经 ${via} 下载失败或低于 100KB/s，换下一条路"
     done
     return 1
 }
