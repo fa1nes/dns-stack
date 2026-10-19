@@ -54,6 +54,19 @@ func checkFailedUnits(ctx context.Context, report *Report) {
 		strings.Join(failed, " "))
 }
 
+func checkClockSync(ctx context.Context, report *Report) {
+	c := &checker{report: report, group: "模块健康"}
+	out, err := shellOut(ctx, "timedatectl", "show", "-p", "NTPSynchronized", "--value")
+	switch {
+	case err != nil:
+		c.skip("系统时钟已同步", "本机没有 timedatectl")
+	case strings.TrimSpace(out) == "yes":
+		c.ok("系统时钟已同步", "NTP 校准中")
+	default:
+		c.warn("系统时钟已同步", "没有在做 NTP 校准，时钟会一直漂——DNSSEC 签名有效期、TLS 证书与日志时间都依赖它；重跑 install.sh 会装好 systemd-timesyncd，或 timedatectl timesync-status 排查")
+	}
+}
+
 func checkResolverPair(ctx context.Context, opt Options, report *Report) {
 	if opt.Role != stack.RoleCNResolver {
 		return

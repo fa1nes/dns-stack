@@ -187,6 +187,7 @@ func Run(ctx context.Context, opt Options) (Report, error) {
 
 	checkModules(ctx, opt, &report)
 	checkFailedUnits(ctx, &report)
+	checkClockSync(ctx, &report)
 	checkBinaryProvenance(opt, &report)
 	checkRoutingData(opt, &report, now)
 	checkECSWhitelist(opt, &report, now)
