@@ -347,8 +347,30 @@ step6_install_deps() {
         log_info "  依赖已全部安装，跳过"
     fi
 
+    ensure_time_sync
     record_installed_versions
     log_ok "依赖就绪"
+}
+
+ensure_time_sync() {
+    local unit
+    for unit in chrony chronyd ntp ntpsec openntpd; do
+        if systemctl is-active --quiet "${unit}.service" 2>/dev/null; then
+            log_info "  时间同步由 ${unit} 负责，不另装"
+            return 0
+        fi
+    done
+    if ! systemctl list-unit-files systemd-timesyncd.service --no-legend 2>/dev/null | grep -q timesyncd; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y systemd-timesyncd \
+            || { log_warn "  装不上 systemd-timesyncd，时钟不会自动校准（DNSSEC 与证书校验都依赖它）"; return 0; }
+    fi
+    mkdir -p /etc/systemd/timesyncd.conf.d
+    printf '[Time]\nNTP=ntp.aliyun.com ntp.tencent.com cn.pool.ntp.org\nFallbackNTP=time.cloudflare.com pool.ntp.org\n' \
+        > /etc/systemd/timesyncd.conf.d/dns-stack.conf
+    timedatectl set-ntp true 2>/dev/null || true
+    systemctl enable --now systemd-timesyncd.service >/dev/null 2>&1 || true
+    systemctl restart systemd-timesyncd.service 2>/dev/null || true
+    log_ok "  时间同步: systemd-timesyncd（阿里云 / 腾讯 NTP）"
 }
 
 record_installed_versions() {
