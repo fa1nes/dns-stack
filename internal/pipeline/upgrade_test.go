@@ -178,3 +178,81 @@ func TestParseRestartOrdersAndRejects(t *testing.T) {
 		t.Fatal("unbound 不该由 upgrade 重启")
 	}
 }
+
+func (r *fakeRelease) serveAsset(t *testing.T, asset, buildID string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/" + asset:
+			_, _ = w.Write(r.binary)
+		case "/" + asset + ".sha256":
+			_, _ = w.Write([]byte(r.sum + "  " + asset + "\n"))
+		case "/" + asset + ".build-id":
+			_, _ = w.Write([]byte(buildID + "\n"))
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func mosproxyOptions(f *upgradeFixture, base string) UpgradeOptions {
+	opt := f.options(base, "v0.2.2", "mosproxy")
+	opt.Asset, opt.BuildID, opt.Backup = "mosproxy-linux-amd64", true, MosproxyBackupName
+	return opt
+}
+
+func TestMosproxyUpgradeChecksBuildIDAndKeepsMetadata(t *testing.T) {
+	rel := newRelease(t, "v0.2.3")
+	f := newUpgradeFixture(t, "v0.2.2")
+	if err := os.WriteFile(f.binary+".build-id", []byte("v0.2.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Upgrade(context.Background(), testRuntime(), mosproxyOptions(f, rel.serveAsset(t, "mosproxy-linux-amd64", "v0.2.3")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := os.ReadFile(f.binary + ".build-id"); strings.TrimSpace(string(id)) != "v0.2.3" {
+		t.Fatalf("新的 build-id 应写成 v0.2.3: %q", id)
+	}
+	if !strings.HasSuffix(res.Backup, "mosproxy-pre-v0.2.3-20261017220000") {
+		t.Fatalf("备份名不对: %s", res.Backup)
+	}
+	if id, _ := os.ReadFile(res.Backup + ".build-id"); strings.TrimSpace(string(id)) != "v0.2.2" {
+		t.Fatalf("旧 build-id 应随备份保留: %q", id)
+	}
+
+	g := newUpgradeFixture(t, "v0.2.2")
+	if _, err := Upgrade(context.Background(), testRuntime(), mosproxyOptions(g, rel.serveAsset(t, "mosproxy-linux-amd64", "v0.2.4"))); err == nil {
+		t.Fatal("build-id 与二进制自报版本不一致时必须拒绝")
+	}
+	if v, _ := readVersion(g.binary); v != "v0.2.2" || len(g.calls) != 0 {
+		t.Fatalf("拒绝时不能动二进制和服务: %s %v", v, g.calls)
+	}
+}
+
+func TestMosproxyUpgradeRollsBackWhenProbeFails(t *testing.T) {
+	rel := newRelease(t, "v0.2.3")
+	f := newUpgradeFixture(t, "v0.2.2")
+	if err := os.WriteFile(f.binary+".build-id", []byte("v0.2.2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opt := mosproxyOptions(f, rel.serveAsset(t, "mosproxy-linux-amd64", "v0.2.3"))
+	opt.Probe = func(context.Context) error {
+		if v, _ := readVersion(f.binary); v == "v0.2.3" {
+			return errors.New("doh-probe bad")
+		}
+		return nil
+	}
+	res, err := Upgrade(context.Background(), testRuntime(), opt)
+	if err == nil || !res.Rollback {
+		t.Fatalf("DoH 自检不过应回滚: %+v %v", res, err)
+	}
+	if v, _ := readVersion(f.binary); v != "v0.2.2" {
+		t.Fatalf("回滚后应是 v0.2.2，现在 %s", v)
+	}
+	if id, _ := os.ReadFile(f.binary + ".build-id"); strings.TrimSpace(string(id)) != "v0.2.2" {
+		t.Fatalf("回滚后 build-id 也要换回: %q", id)
+	}
+}
