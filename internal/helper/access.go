@@ -151,3 +151,44 @@ func (h *Helper) opPruneBackups(map[string]any) result {
 func (h *Helper) opDropStaleLogs(map[string]any) result {
 	return h.run([]string{h.cli, "trim-logs", "--drop-stale"}, 60*time.Second, true)
 }
+
+func localRecordArgs(args map[string]any, needValue bool) ([]string, string) {
+	name, err := SafeDomain(stringArg(args, "name"))
+	if err != nil {
+		return nil, err.Error()
+	}
+	kind := strings.ToUpper(strings.TrimSpace(stringArg(args, "type")))
+	value := strings.TrimSpace(stringArg(args, "value"))
+	out := []string{name}
+	if kind == "" && !needValue {
+		return out, ""
+	}
+	if kind != "A" && kind != "AAAA" {
+		return nil, "类型只能是 A 或 AAAA"
+	}
+	out = append(out, kind)
+	if value == "" && !needValue {
+		return out, ""
+	}
+	addr, err := netip.ParseAddr(value)
+	if err != nil {
+		return nil, "不是合法的 IP 地址: " + value
+	}
+	return append(out, addr.String()), ""
+}
+
+func (h *Helper) opLocalRecordAdd(args map[string]any) result {
+	fields, message := localRecordArgs(args, true)
+	if message != "" {
+		return failure(message)
+	}
+	return h.run(append([]string{h.goBin, "local-record", "add"}, fields...), 60*time.Second, true)
+}
+
+func (h *Helper) opLocalRecordRemove(args map[string]any) result {
+	fields, message := localRecordArgs(args, false)
+	if message != "" {
+		return failure(message)
+	}
+	return h.run(append([]string{h.goBin, "local-record", "remove"}, fields...), 60*time.Second, true)
+}

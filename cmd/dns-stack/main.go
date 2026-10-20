@@ -91,6 +91,8 @@ func main() {
 		err = cmdCDNHit(args)
 	case "blocklist":
 		err = cmdBlocklist(args)
+	case "local-record":
+		err = cmdLocalRecord(args)
 	case "route":
 		err = cmdRoute(args)
 	case "acl":
@@ -180,6 +182,7 @@ func usage() {
                   重点报出「该 CDN 在大陆有节点、答案却落在境外」——那是 ECS 没送达权威
   blocklist       域名黑名单：命中的查询由 mosproxy 直接回 NXDOMAIN，不出本机
   route           分流名单：cn 让域名的权威从国内直连查询，hk 让整条解析交给香港；改完立即生效
+  local-record    本地记录：给域名写死 A/AAAA，由本机 Unbound 直接回答（不重载，缓存保留）
   acl             访问控制：只放行授权网段访问 DoH/DoT 入口(nftables 实现，回环与隧道始终放行)
   query-log       递归日志：按时间/递归类型/域名/来源子网筛选，可 --csv 导出、--breakdown 看构成
   trim-logs       原地截断过大的运行日志，只保留每份日志末尾内容

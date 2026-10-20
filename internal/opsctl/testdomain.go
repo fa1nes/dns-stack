@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/access"
 	"github.com/dns-stack/dns-stack/internal/cdnrules"
 	"github.com/dns-stack/dns-stack/internal/dnswire"
 	"github.com/dns-stack/dns-stack/internal/resolve"
@@ -66,6 +67,13 @@ func (c *Ctl) TestDomain(ctx context.Context, domain, subnet string) error {
 		fmt.Fprintln(c.Out, "  规则判定: 不在任何名单 -> 本机递归，每台权威按所在位置选直连或隧道")
 	}
 	if rule.file == "" || rule.local {
+		if records, err := (access.Store{StateDir: c.StateDir}).LocalRecords(); err == nil {
+			if own := access.RecordsFor(records, domain); len(own) > 0 {
+				for _, record := range own {
+					fmt.Fprintf(c.Out, "  本地记录: %s %s（本机 Unbound 直接回答，名字下没写的类型回无记录）\n", record.Type, record.Value)
+				}
+			}
+		}
 		c.explainRouting(ctx, domain, ecs)
 	}
 

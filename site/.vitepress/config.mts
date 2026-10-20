@@ -50,6 +50,7 @@ export default defineConfig({
           { text: 'ECS 就近调度', link: '/guide/ecs' },
           { text: '缓存', link: '/guide/cache' },
           { text: '域名黑名单', link: '/guide/blocklist' },
+          { text: '本地记录', link: '/guide/local-records' },
           { text: '访问控制', link: '/guide/acl' },
           { text: '查询日志与统计', link: '/guide/query-log' }
         ]

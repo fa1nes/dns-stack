@@ -836,6 +836,13 @@ button.primary:disabled, button.danger:disabled {
 .chip button:hover:not(:disabled) { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
 .add-form { max-width: 560px; margin-top: 10px; flex-wrap: nowrap; }
 .add-form > input { flex: 1 1 auto; min-width: 0; }
+.local-form { max-width: 640px; }
+.local-form > #localValue { flex-basis: 12em; }
+.chip > .chip-k { margin: 0 6px; color: var(--text-dim); font-size: var(--fs-xs); letter-spacing: .02em; }
+@media (max-width: 560px) {
+  .local-form { flex-wrap: wrap; }
+  .local-form > input { flex-basis: 100%; }
+}
 
 #page-settings, #page-account { max-width: 1080px; }
 #page-account .callout { margin: 0 0 18px; }

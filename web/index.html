@@ -711,6 +711,18 @@ try {
               </div>
             </div>
           </div>
+          <div class="card">
+            <h3>本地记录 <span class="count" id="localCount"></span></h3>
+            <p class="card-note">给内网设备或测试环境写死地址，本机直接回答。只管这个名字本身，子域照常解析；名字下没写的类型回「无记录」。改动不重载 Unbound，缓存保留。</p>
+            <form class="row add-form local-form" id="localForm">
+              <input type="text" id="localName" class="grow-1" placeholder="域名，如 nas.home.arpa" autocomplete="off" enterkeyhint="next"
+                     inputmode="url" autocapitalize="none" spellcheck="false" aria-label="本地记录的域名">
+              <input type="text" id="localValue" class="grow-1 mono" placeholder="IPv4 或 IPv6 地址" autocomplete="off" enterkeyhint="done"
+                     autocapitalize="none" spellcheck="false" aria-label="本地记录的地址">
+              <button type="submit" class="primary sm">添加</button>
+            </form>
+            <div class="chips" id="localList"></div>
+          </div>
         </div>
 
         <div class="tab-panel" id="stab-data">

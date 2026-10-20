@@ -67,19 +67,21 @@ var DangerousOps = map[string]bool{
 }
 
 var RoleOps = map[string]string{
-	"refresh_routing":  stack.RoleCNResolver,
-	"set_min_ttl":      stack.RoleCNResolver,
-	"blocklist_add":    stack.RoleCNResolver,
-	"blocklist_remove": stack.RoleCNResolver,
-	"acl_add":          stack.RoleCNResolver,
-	"acl_remove":       stack.RoleCNResolver,
-	"acl_apply":        stack.RoleCNResolver,
-	"acl_disable":      stack.RoleCNResolver,
-	"acl_status":       stack.RoleCNResolver,
-	"route_add":        stack.RoleCNResolver,
-	"route_remove":     stack.RoleCNResolver,
-	"upgrade_check":    stack.RoleCNResolver,
-	"upgrade_apply":    stack.RoleCNResolver,
+	"refresh_routing":     stack.RoleCNResolver,
+	"set_min_ttl":         stack.RoleCNResolver,
+	"blocklist_add":       stack.RoleCNResolver,
+	"blocklist_remove":    stack.RoleCNResolver,
+	"acl_add":             stack.RoleCNResolver,
+	"acl_remove":          stack.RoleCNResolver,
+	"acl_apply":           stack.RoleCNResolver,
+	"acl_disable":         stack.RoleCNResolver,
+	"acl_status":          stack.RoleCNResolver,
+	"route_add":           stack.RoleCNResolver,
+	"route_remove":        stack.RoleCNResolver,
+	"local_record_add":    stack.RoleCNResolver,
+	"local_record_remove": stack.RoleCNResolver,
+	"upgrade_check":       stack.RoleCNResolver,
+	"upgrade_apply":       stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
@@ -999,6 +1001,8 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"set_backup_policy":   h.opSetBackupPolicy,
 		"route_add":           h.opRouteAdd,
 		"route_remove":        h.opRouteRemove,
+		"local_record_add":    h.opLocalRecordAdd,
+		"local_record_remove": h.opLocalRecordRemove,
 		"drop_stale_logs":     h.opDropStaleLogs,
 		"upgrade_check":       h.opUpgradeCheck,
 		"upgrade_apply":       h.opUpgradeApply,

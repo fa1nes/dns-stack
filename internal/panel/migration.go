@@ -79,6 +79,8 @@ func migrationEntries(cfg Config) []migrationEntry {
 			note: "香港解析名单，无法重新生成"},
 		{archive: "manual/manual-exclude.txt", source: joinState(cfg, "manual-exclude.txt"),
 			note: "从香港名单摘出的域名，无法重新生成"},
+		{archive: "manual/local-records.txt", source: joinState(cfg, "local-records.txt"),
+			note: "本地记录，恢复后执行 dns-stack local-record sync 推给 Unbound"},
 		{archive: "state/polluted-ip-cidr.txt", source: joinState(cfg, "polluted-ip-cidr.txt"),
 			note: "污染 IP 汇总网段，重新采集需要时间"},
 		{archive: "state/architecture-epoch", source: joinState(cfg, "architecture-epoch")},

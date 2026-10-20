@@ -2114,6 +2114,7 @@ function chipList(items, kind, empty) {
 }
 
 function renderAccess(d) {
+  renderLocalRecords(d);
   const lists = [
     ['route_cn', '#routeCnList', '#routeCnCount', '还没有'],
     ['route_hk', '#routeHkList', '#routeHkCount', '还没有'],
@@ -2141,12 +2142,43 @@ function renderAccess(d) {
       : raw('')}`);
 }
 
+function renderLocalRecords(d) {
+  const items = d.local || [];
+  setHtml($('#localCount'), items.length ? html`<span class="badge unknown sm">${items.length}</span>` : raw(''));
+  if (d.note) { setHtml($('#localList'), stateHtml(d.note)); return; }
+  if (d.local_error) { setHtml($('#localList'), stateHtml(d.local_error, 'error')); return; }
+  if (!items.length) { setHtml($('#localList'), html`<span class="note-xs">还没有</span>`); return; }
+  setHtml($('#localList'), html`${items.map((r) => html`<span class="chip">
+      <span class="mono">${r.name}</span><span class="chip-k">${r.type}</span><span class="mono">${r.value}</span>
+      <button type="button" data-local-remove="${r.name}" data-type="${r.type}" data-value="${r.value}"
+              aria-label="删除 ${r.name} ${r.type} ${r.value}" title="删除">${ICON_X}</button>
+    </span>`)}`);
+}
+
+async function localAdd() {
+  const name = hostOf($('#localName').value.trim());
+  const value = $('#localValue').value.trim();
+  if (!name) { $('#localName').focus(); return; }
+  if (!value) { $('#localValue').focus(); return; }
+  const type = value.includes(':') ? 'AAAA' : 'A';
+  const ok = await withBusy($('#localForm button[type="submit"]'),
+    () => accessAction('local_record_add', '添加本地记录', { name: name, type: type, value: value }));
+  if (ok) { $('#localName').value = ''; $('#localValue').value = ''; }
+}
+
+async function localRemove(btn) {
+  const d = btn.dataset;
+  if (!confirm('删除本地记录 ' + d.localRemove + ' ' + d.type + ' ' + d.value + '？\n\n删除后这个名字恢复正常递归解析。')) return;
+  await withBusy(btn, () => accessAction('local_record_remove', '删除本地记录',
+    { name: d.localRemove, type: d.type, value: d.value }));
+}
+
 async function loadAccess() {
-  ['#routeCnList', '#routeHkList', '#blList', '#aclList'].forEach((id) => setHtml($(id), LOADING));
+  ['#routeCnList', '#routeHkList', '#blList', '#aclList', '#localList'].forEach((id) => setHtml($(id), LOADING));
   try {
     renderAccess(await api('/api/access'));
   } catch (e) {
-    ['#routeCnList', '#routeHkList', '#blList', '#aclList'].forEach((id) => setHtml($(id), errState(e)));
+    ['#routeCnList', '#routeHkList', '#blList', '#aclList', '#localList'].forEach((id) => setHtml($(id), errState(e)));
   }
 }
 
@@ -3779,6 +3811,8 @@ function bindEvents() {
   document.addEventListener('click', (e) => {
     const rm = e.target.closest('button[data-list-remove]');
     if (rm) { listRemove(rm); return; }
+    const local = e.target.closest('button[data-local-remove]');
+    if (local) { localRemove(local); return; }
     const route = e.target.closest('button[data-route-add], button[data-route-remove]');
     if (route) { routeChange(route); return; }
     const flush = e.target.closest('button[data-flush]');
@@ -3792,6 +3826,7 @@ function bindEvents() {
     e.preventDefault();
     listAdd(form);
   });
+  $('#localForm').addEventListener('submit', (e) => { e.preventDefault(); localAdd(); });
   $('#testForm').addEventListener('submit', (e) => { e.preventDefault(); runDnsTest(); });
   $('#flushForm').addEventListener('submit', async (e) => {
     e.preventDefault();

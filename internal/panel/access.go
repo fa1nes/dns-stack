@@ -13,28 +13,32 @@ import (
 )
 
 var accessActions = map[string]string{
-	"blocklist_add":    "加入拦截名单",
-	"blocklist_remove": "移出拦截名单",
-	"route_add":        "加入分流名单",
-	"route_remove":     "移出分流名单",
-	"acl_add":          "放行网段",
-	"acl_remove":       "收回网段",
-	"acl_apply":        "下发访问控制",
-	"acl_disable":      "关闭访问控制",
+	"blocklist_add":       "加入拦截名单",
+	"blocklist_remove":    "移出拦截名单",
+	"route_add":           "加入分流名单",
+	"route_remove":        "移出分流名单",
+	"local_record_add":    "添加本地记录",
+	"local_record_remove": "删除本地记录",
+	"acl_add":             "放行网段",
+	"acl_remove":          "收回网段",
+	"acl_apply":           "下发访问控制",
+	"acl_disable":         "关闭访问控制",
 }
 
 var dedicatedOpRoles = map[string]string{
-	"blocklist_add":    stack.RoleCNResolver,
-	"blocklist_remove": stack.RoleCNResolver,
-	"acl_add":          stack.RoleCNResolver,
-	"acl_remove":       stack.RoleCNResolver,
-	"acl_apply":        stack.RoleCNResolver,
-	"acl_disable":      stack.RoleCNResolver,
-	"acl_status":       stack.RoleCNResolver,
-	"route_add":        stack.RoleCNResolver,
-	"route_remove":     stack.RoleCNResolver,
-	"upgrade_check":    stack.RoleCNResolver,
-	"upgrade_apply":    stack.RoleCNResolver,
+	"blocklist_add":       stack.RoleCNResolver,
+	"blocklist_remove":    stack.RoleCNResolver,
+	"acl_add":             stack.RoleCNResolver,
+	"acl_remove":          stack.RoleCNResolver,
+	"acl_apply":           stack.RoleCNResolver,
+	"acl_disable":         stack.RoleCNResolver,
+	"acl_status":          stack.RoleCNResolver,
+	"route_add":           stack.RoleCNResolver,
+	"route_remove":        stack.RoleCNResolver,
+	"local_record_add":    stack.RoleCNResolver,
+	"local_record_remove": stack.RoleCNResolver,
+	"upgrade_check":       stack.RoleCNResolver,
+	"upgrade_apply":       stack.RoleCNResolver,
 }
 
 func (s *Server) accessStore() access.Store {
@@ -83,6 +87,7 @@ func (s *Server) accessList(w http.ResponseWriter, r *http.Request) {
 		"blocklist": []string{},
 		"route_cn":  []string{},
 		"route_hk":  []string{},
+		"local":     []access.LocalRecord{},
 		"acl":       []string{},
 		"client_ip": remoteIP(r),
 	}
@@ -102,6 +107,11 @@ func (s *Server) accessList(w http.ResponseWriter, r *http.Request) {
 		} else if entries != nil {
 			out[key] = entries
 		}
+	}
+	if records, err := store.LocalRecords(); err != nil {
+		out["local_error"] = err.Error()
+	} else if len(records) > 0 {
+		out["local"] = records
 	}
 	prefixes, err := store.ACL()
 	if err != nil {
@@ -135,6 +145,9 @@ func (s *Server) accessMutate(w http.ResponseWriter, r *http.Request) {
 		List     string   `json:"list"`
 		Domains  []string `json:"domains"`
 		Prefixes []string `json:"prefixes"`
+		Name     string   `json:"name"`
+		Type     string   `json:"type"`
+		Value    string   `json:"value"`
 		Confirm  bool     `json:"confirm"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 128*1024)).Decode(&body) != nil {
@@ -168,6 +181,18 @@ func (s *Server) accessMutate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		args["domains"] = body.Domains
+	} else if strings.HasPrefix(body.Action, "local_record_") {
+		if strings.TrimSpace(body.Name) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "没有给出域名"})
+			return
+		}
+		if body.Action == "local_record_add" {
+			if _, err := access.ParseLocalRecord(body.Name, body.Type, body.Value); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": err.Error()})
+				return
+			}
+		}
+		args["name"], args["type"], args["value"] = body.Name, body.Type, body.Value
 	} else if body.Action == "acl_add" || body.Action == "acl_remove" {
 		if len(body.Prefixes) == 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "没有给出任何网段"})

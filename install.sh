@@ -1141,6 +1141,7 @@ do_uninstall() {
     run systemctl stop unbound.service 2>/dev/null || true
     run rm -f /etc/unbound/unbound.conf.d/dns-stack.conf
     run rm -f /etc/unbound/unbound.conf.d/dns-stack-ecs.conf
+    run rm -f /etc/unbound/unbound.conf.d/dns-stack-local.conf
     run rm -f /etc/apparmor.d/local/usr.sbin.unbound
     run rm -f /etc/unbound/dns-stack_*.key /etc/unbound/dns-stack_*.pem
     run rm -rf "${CONFIG_FILE%/*}" "$STATE_DIR" "$BACKUP_DIR" "$EXPORT_DIR" "$LOG_DIR"
