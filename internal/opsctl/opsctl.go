@@ -130,6 +130,9 @@ func (c *Ctl) Reload(ctx context.Context) error {
 }
 
 func (c *Ctl) Restart(ctx context.Context) error {
+	if out, err := exec.CommandContext(ctx, "unbound-checkconf").CombinedOutput(); err != nil {
+		return fmt.Errorf("Unbound 配置没通过 unbound-checkconf，没有重启任何服务: %s", strings.TrimSpace(string(out)))
+	}
 	for _, unit := range []string{"mosproxy.service", "unbound.service"} {
 		if err := c.systemctl(ctx, "restart", unit); err != nil {
 			return fmt.Errorf("重启 %s 失败: %w", unit, err)

@@ -121,6 +121,12 @@ func (h *Helper) opRestartMosproxy(map[string]any) result {
 }
 
 func (h *Helper) opRestartUnbound(map[string]any) result {
+	if check := h.run([]string{"unbound-checkconf"}, 30*time.Second, true); check["ok"] != true {
+		stderr, _ := check["stderr"].(string)
+		stdout, _ := check["stdout"].(string)
+		return failure("Unbound 配置没通过 unbound-checkconf，未重启，现在的 Unbound 继续运行：" +
+			strings.TrimSpace(stderr+"\n"+stdout))
+	}
 	return h.run([]string{"systemctl", "restart", "unbound.service"}, 60*time.Second, true)
 }
 
