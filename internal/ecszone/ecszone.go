@@ -39,27 +39,41 @@ var provinces = []string{
 var regionTrim = strings.NewReplacer("市", "", "省", "")
 
 func ZoneOf(record map[string]string) string {
+	province, carrier := ProvinceOf(record), CarrierOf(record)
+	if province == "" || carrier == "" {
+		return ""
+	}
+	return province + carrier
+}
+
+func ProvinceOf(record map[string]string) string {
 	region := regionTrim.Replace(record["region_name"])
-	if region == "" {
-		return ""
-	}
-	province := ""
 	for _, name := range provinces {
-		if strings.HasPrefix(region, name) {
-			province = name
-			break
-		}
-	}
-	if province == "" {
-		return ""
-	}
-	text := record["isp_domain"] + "|" + record["owner_domain"]
-	for _, carrier := range carrierNames {
-		if strings.Contains(text, carrier.keyword) {
-			return province + carrier.name
+		if region != "" && strings.HasPrefix(region, name) {
+			return name
 		}
 	}
 	return ""
+}
+
+func CarrierOf(record map[string]string) string {
+	text := record["isp_domain"] + "|" + record["owner_domain"]
+	for _, carrier := range carrierNames {
+		if strings.Contains(text, carrier.keyword) {
+			return carrier.name
+		}
+	}
+	return ""
+}
+
+// SplitZone undoes ZoneOf: "广东电信" -> ("广东", "电信").
+func SplitZone(zone string) (province, carrier string) {
+	for _, name := range provinces {
+		if rest, ok := strings.CutPrefix(zone, name); ok {
+			return name, rest
+		}
+	}
+	return "", zone
 }
 
 type Row struct {

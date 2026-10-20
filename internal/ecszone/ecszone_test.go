@@ -175,3 +175,15 @@ func TestCountDataLinesIgnoresHeader(t *testing.T) {
 		t.Errorf("文件不存在应当返回 0，得到 %d", got)
 	}
 }
+
+func TestSplitZoneInvertsZoneOf(t *testing.T) {
+	record := map[string]string{"region_name": "广东省", "isp_domain": "电信"}
+	zone := ZoneOf(record)
+	province, carrier := SplitZone(zone)
+	if zone != "广东电信" || province != "广东" || carrier != "电信" {
+		t.Fatalf("ZoneOf/SplitZone = %q -> %q %q", zone, province, carrier)
+	}
+	if p, c := SplitZone("内蒙古移动"); p != "内蒙古" || c != "移动" {
+		t.Fatalf("SplitZone(内蒙古移动) = %q %q", p, c)
+	}
+}

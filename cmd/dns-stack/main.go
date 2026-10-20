@@ -121,6 +121,8 @@ func main() {
 		err = cmdECSOrphans(args)
 	case "ecs-audit":
 		err = cmdECSAudit(args)
+	case "ecs-precision":
+		err = cmdECSPrecision(args)
 	case "ecs-forward":
 		err = cmdECSForward(args)
 	case "doh-probe":
@@ -191,6 +193,7 @@ func usage() {
   direct4-audit   多个归属库交叉验证 direct4，产出争议(不发 ECS)与晋级(可作大陆证据)清单
   ecs-orphans     审计 ECS 白名单孤儿：区分 TTL 内累积保留与真孤儿，按境外归属计数并卡阈值
   ecs-audit       审计国内域名的权威是否都在 ECS 白名单里（漏发会让 CDN 按解析器位置调度）
+  ecs-precision   按客户端分片重放热门域名，量 CDN 答案落在同运营商/同省的比例
   ecs-forward     直查 mosproxy DoT，验证客户端子网是否真的转发给上游（分片表内外对照）
   doh-probe       向本机 DoH 入口发一个真实查询，输出 ok/bad
   helper-probe    经 helper socket 取日志，数出其中未脱敏的全局 IPv4 个数（-1 表示查不了）
