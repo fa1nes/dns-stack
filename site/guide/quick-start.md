@@ -62,13 +62,15 @@ curl -fsSL https://github.com/fa1nes/dns-stack/releases/download/binaries-latest
 
 （Alpine 没装 curl 时用 `wget -qO- <同一地址> | sh`。）它先从 `binaries-latest` 取本机架构的二进制（静态链接，Alpine 上直接运行），sha256 对上才放到 `/opt/dns-stack/bin/dns-stack-go`，旧版留作 `dns-stack-go.prev`；下载失败而本机已有二进制时继续用旧的。然后只做三件事：写 `ROLE=offshore`、加一条每日日志瘦身的 cron、让 Unbound 不依赖开机顺序并由 supervise-daemon 守护。重复运行就是升级。香港 Unbound 需要监听 `10.100.0.3:5335` 并放行 `10.100.0.2`。见 [两台节点](/ops/nodes)。
 
-## 三、设置面板用户名和密码
+## 三、登录管理面板
+
+面板监听公网地址（`PANEL_LISTEN` 不是 `127.0.0.1`）且还没有设过密码时，`install.sh` 会生成一个随机的初始账号 `admin` 和 20 位密码，在安装结束时连同面板地址打印一次（只显示这一次）。登录后在「账号」页改掉，或者在服务器上：
 
 ```bash
 sudo dns-stack panel-password
 ```
 
-面板默认只监听 `127.0.0.1:8080`，见 [管理面板](/guide/panel)。
+面板默认只监听 `127.0.0.1:8080`，这时不生成密码，经 SSH 隧道访问即可，见 [管理面板](/guide/panel)。
 
 ## 四、验收
 
@@ -83,7 +85,7 @@ sudo dns-stack cdn-hit                # CDN 是否真的给了大陆节点
 
 ## 升级
 
-代码合进 `main`、CI 的 `build`（含 scale-gate）全绿后，`binaries-latest` 就是新版本。国内节点上：
+代码合进 `main`、CI 的 `build`（含 scale-gate）全绿后，`binaries-latest` 就是新版本。最省事的是在面板「系统」页点「检查更新」→「升级」，流程和下面的命令完全一样。也可以在国内节点上：
 
 ```bash
 sudo dns-stack upgrade --check   # 只下载并报出新版本号，不替换

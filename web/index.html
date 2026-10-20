@@ -51,7 +51,9 @@ try {
     <nav class="nav" id="nav">
       <button data-page="overview" class="active" title="概览"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="lbl">概览</span></button>
       <button data-page="queries" title="查询"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><span class="lbl">查询</span></button>
+      <button data-page="stats" title="统计"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="5.5" y="11" width="3" height="6" rx=".8"/><rect x="10.5" y="6" width="3" height="11" rx=".8"/><rect x="15.5" y="13" width="3" height="4" rx=".8"/></svg></span><span class="lbl">统计</span></button>
       <button data-page="tools" title="工具"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="3" x2="15" y2="3"/><path d="M10 3v5.2l-5.5 9.9A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.9L14 8.2V3"/><line x1="7.2" y1="14.5" x2="16.8" y2="14.5"/></svg></span><span class="lbl">工具</span></button>
+      <button data-page="system" title="系统"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.8"/><rect x="3" y="13" width="18" height="7" rx="1.8"/><line x1="7" y1="7.5" x2="7.01" y2="7.5"/><line x1="7" y1="16.5" x2="7.01" y2="16.5"/><line x1="11" y1="7.5" x2="17" y2="7.5"/><line x1="11" y1="16.5" x2="17" y2="16.5"/></svg></span><span class="lbl">系统</span></button>
       <button data-page="settings" title="设置"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="lbl">设置</span></button>
       <button data-page="account" title="账号"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="lbl">账号</span></button>
     </nav>
@@ -250,6 +252,41 @@ try {
               <button class="sm" id="btnDomNext">下一页</button>
             </div>
           </div></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-stats">
+        <div class="stats-head">
+          <span class="tabs inline" id="statsSpan">
+            <button data-span="24h" class="active">24 小时</button>
+            <button data-span="7d">7 天</button>
+          </span>
+          <span class="fs-12 dim" id="statsRange"></span>
+          <button class="sm" id="btnStatsReload">刷新</button>
+        </div>
+        <div class="grid c4" id="statsTotals"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+        <div class="card">
+          <h3>查询量</h3>
+          <div class="bars-chart" id="statsSeries"></div>
+          <div class="legend">
+            <span><i class="s-cache"></i>缓存</span>
+            <span><i class="s-cn"></i>递归</span>
+            <span><i class="s-fail"></i>失败</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3>延迟分布 <span class="hint m0" id="statsLatencyNote"></span></h3>
+          <div id="statsLatency"></div>
+        </div>
+        <div class="grid c3">
+          <div class="card"><h3>记录类型</h3><div id="statsQtype"></div></div>
+          <div class="card"><h3>返回结果</h3><div id="statsRcode"></div></div>
+          <div class="card"><h3>出口</h3><div id="statsExit"></div></div>
+        </div>
+        <div class="grid c3">
+          <div class="card flush"><h3 class="pad">请求最多</h3><div id="statsTopDomains"></div></div>
+          <div class="card flush"><h3 class="pad">SERVFAIL 最多</h3><div id="statsTopFailing"></div></div>
+          <div class="card flush"><h3 class="pad">客户端网段</h3><div id="statsTopClients"></div></div>
         </div>
       </section>
 
@@ -537,6 +574,65 @@ try {
         </div>
       </section>
 
+      <section class="page" id="page-system">
+        <h3 class="set-head">版本与升级 <span class="hint m0" id="upgradeHint"></span></h3>
+        <div class="card set-list" id="upgradeBox">
+          <div class="set-row">
+            <div class="set-main"><div class="set-k">dns-stack</div><div class="set-v" id="verStack">—</div></div>
+            <span class="row">
+              <button class="sm" id="btnCheckStack" data-upgrade-check="dns-stack">检查更新</button>
+              <button class="danger sm" id="btnApplyStack" data-upgrade-apply="dns-stack" hidden>升级</button>
+            </span>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-k">mosproxy</div><div class="set-v" id="verMosproxy">—</div></div>
+            <span class="row">
+              <button class="sm" id="btnCheckMosproxy" data-upgrade-check="mosproxy">检查更新</button>
+              <button class="danger sm" id="btnApplyMosproxy" data-upgrade-apply="mosproxy" hidden>升级</button>
+            </span>
+          </div>
+          <div class="set-edit" id="upgradeLast"></div>
+        </div>
+        <p class="set-foot">升级前先下载并核对 CI 记录的 sha256，换好后重启并自检，自检不过自动换回旧版本。</p>
+
+        <h3 class="set-head">健康检查</h3>
+        <div class="card set-list">
+          <div class="set-row">
+            <div class="set-main"><div class="set-k">逐项检查</div><div class="set-v" id="checkSummary">还没检查过</div></div>
+            <button class="primary sm" id="btnSelfcheck">立即检查</button>
+          </div>
+          <div class="set-edit" id="checkResults" hidden></div>
+        </div>
+
+        <h3 class="set-head">服务</h3>
+        <div class="card set-list">
+          <div class="set-row">
+            <div class="set-main"><div class="set-k">mosproxy</div><div class="set-v">DoH / DoT / DoQ 入口，重启时会断几秒</div></div>
+            <span class="row">
+              <button class="sm" data-op="reload_mosproxy">重载名单</button>
+              <button class="danger sm" data-op="restart_mosproxy">重启</button>
+            </span>
+          </div>
+          <div class="set-row">
+            <div class="set-main"><div class="set-k">Unbound</div><div class="set-v">递归解析器，重启会清空缓存</div></div>
+            <button class="danger sm" data-op="restart_unbound">重启</button>
+          </div>
+          <div class="set-row" id="opsRoleExtra" hidden>
+            <div class="set-main"><div class="set-k">分流数据</div><div class="set-v">重建大陆网段、国内权威与 ECS 白名单，不动防火墙</div></div>
+            <span class="row">
+              <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
+              <button class="sm" data-op="refresh_routing">重建</button>
+            </span>
+          </div>
+        </div>
+
+        <h3 class="set-head">模块 <span class="hint m0" id="moduleImpl"></span>
+          <button class="sm" id="btnReloadModules">刷新</button></h3>
+        <div class="card">
+          <div id="moduleGroups"><div class="state"><span class="spinner"></span> 加载中…</div></div>
+        </div>
+      </section>
+
       <section class="page" id="page-settings">
         <div class="tabs main-tabs" id="settingTabs">
           <button data-stab="entry" class="active">接入</button>
@@ -691,29 +787,23 @@ try {
         </div>
 
         <div class="tab-panel" id="stab-ops">
-          <h3 class="set-head">服务</h3>
+          <h3 class="set-head">告警推送</h3>
           <div class="card set-list">
             <div class="set-row">
-              <div class="set-main"><div class="set-k">mosproxy</div><div class="set-v">DoH / DoT / DoQ 入口，重启时会断几秒</div></div>
+              <div class="set-main"><div class="set-k">推送地址</div><div class="set-v" id="alertInfo">—</div></div>
               <span class="row">
-                <button class="sm" data-op="reload_mosproxy">重载名单</button>
-                <button class="danger sm" data-op="restart_mosproxy">重启</button>
+                <button class="sm" id="btnAlertEdit">修改</button>
+                <button class="sm" data-op="alert_test" id="btnAlertTest">发测试消息</button>
               </span>
             </div>
-            <div class="set-row">
-              <div class="set-main"><div class="set-k">Unbound</div><div class="set-v">递归解析器，重启会清空缓存</div></div>
-              <button class="danger sm" data-op="restart_unbound">重启</button>
-            </div>
-            <div class="set-row" id="opsRoleExtra" hidden>
-              <div class="set-main"><div class="set-k">分流数据</div><div class="set-v">重建大陆网段、国内权威与 ECS 白名单，不动防火墙</div></div>
-              <span class="row">
-                <button class="sm" data-op="collect_polluted_ip">采集污染 IP</button>
-                <button class="sm" data-op="refresh_routing">重建</button>
-              </span>
-            </div>
-            <div class="set-row">
-              <div class="set-main"><div class="set-k">健康检查</div><div class="set-v">逐项检查各服务与分流状态</div></div>
-              <button class="sm" data-op="healthcheck">检查</button>
+            <div class="set-edit" id="alertEdit" hidden>
+              <form class="row add-form" id="alertForm">
+                <input type="text" id="alertWebhook" class="grow-1 mono" placeholder="https://…（会收到 JSON：title、body）" autocomplete="off"
+                       enterkeyhint="done" inputmode="url" autocapitalize="none" spellcheck="false" aria-label="告警推送地址">
+                <button type="submit" class="primary sm">保存</button>
+                <button type="button" class="sm" id="btnAlertClear">关闭推送</button>
+              </form>
+              <p class="hint">异常出现、变化、恢复时各推一条，同一个问题不会反复推。地址里的密钥不会显示在面板和审计里。</p>
             </div>
           </div>
 
@@ -800,11 +890,6 @@ try {
             </div>
           </div>
 
-          <h3 class="set-head">模块 <span class="hint m0" id="moduleImpl"></span>
-            <button class="sm" id="btnReloadModules">刷新</button></h3>
-          <div class="card">
-            <div id="moduleGroups"><div class="state"><span class="spinner"></span> 加载中…</div></div>
-          </div>
         </div>
 
         <div class="tab-panel" id="stab-audit">

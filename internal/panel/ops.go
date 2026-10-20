@@ -35,10 +35,11 @@ var operationOrder = []string{
 	"collect_polluted_ip", "rotate_doh_path",
 	"set_cache_ttl", "set_min_ttl", "flush_cache",
 	"reload_mosproxy", "restart_mosproxy", "restart_unbound",
-	"healthcheck", "cert_check", "cert_renew", "backup", "purge_legacy",
+	"cert_check", "cert_renew", "backup", "purge_legacy",
 	"clear_audit", "vacuum_logs", "clear_domains", "clear_domains_all",
 	"set_arch_epoch", "export", "refresh_routing",
 	"prune_backups", "drop_stale_logs", "set_backup_policy",
+	"set_alert_webhook", "alert_test",
 	"delete_query", "delete_domain", "delete_audit",
 }
 
@@ -51,7 +52,6 @@ var operationSpecs = map[string]operationSpec{
 	"reload_mosproxy":     {Label: "重载 mosproxy 域名表", Timeout: 30},
 	"restart_mosproxy":    {Label: "重启 mosproxy", Dangerous: true, Timeout: 60},
 	"restart_unbound":     {Label: "重启 Unbound", Dangerous: true, Timeout: 60},
-	"healthcheck":         {Label: "执行健康检查", Timeout: 60},
 	"cert_check":          {Label: "检查证书", Timeout: 60},
 	"cert_renew":          {Label: "续签证书", Dangerous: true, Timeout: 180},
 	"backup":              {Label: "立即备份", Timeout: 300},
@@ -66,6 +66,8 @@ var operationSpecs = map[string]operationSpec{
 	"prune_backups":       {Label: "按保留份数清理旧备份", Dangerous: true, Timeout: 60},
 	"set_backup_policy":   {Label: "调整备份策略", Timeout: 30},
 	"drop_stale_logs":     {Label: "清理废弃日志", Dangerous: true, Timeout: 60},
+	"set_alert_webhook":   {Label: "设置告警推送地址", Timeout: 30},
+	"alert_test":          {Label: "发送告警测试消息", Timeout: 40},
 	"delete_query":        {Label: "删除一条查询记录"},
 	"delete_domain":       {Label: "删除一个域名的统计"},
 	"delete_audit":        {Label: "删除一条审计记录"},
@@ -266,7 +268,7 @@ func (s *Server) openRW() (*sql.DB, error) {
 func safeAuditArgs(args map[string]any) string {
 	clean := map[string]any{}
 	for k, v := range args {
-		if k == "confirm" || k == "password" || k == "old_password" || k == "new_password" || k == "client_secret" || k == "secret" {
+		if k == "confirm" || k == "password" || k == "old_password" || k == "new_password" || k == "client_secret" || k == "secret" || k == "webhook" {
 			continue
 		}
 		clean[k] = v

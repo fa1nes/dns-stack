@@ -18,7 +18,30 @@ import (
 
 const upgradeLock = "/run/lock/dns-stack-upgrade.lock"
 
-func cmdUpgrade(args []string) error {
+type upgradeReport struct {
+	Target   string `json:"target"`
+	Check    bool   `json:"check"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Changed  bool   `json:"changed"`
+	Backup   string `json:"backup,omitempty"`
+	Rollback bool   `json:"rollback"`
+	Error    string `json:"error,omitempty"`
+}
+
+func cmdUpgrade(args []string) (err error) {
+	report := upgradeReport{Target: "dns-stack", From: version}
+	jsonOut := false
+	defer func() {
+		if !jsonOut {
+			return
+		}
+		if err != nil {
+			report.Error = err.Error()
+		}
+		encoded, _ := json.Marshal(report)
+		fmt.Println(stack.UpgradeResultPrefix + string(encoded))
+	}()
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	state := fs.String("state", envOr("STATE_DIR", pipeline.DefaultStateDir), "状态目录")
 	conf := fs.String("config", envOr("CONFIG_FILE", pipeline.DefaultConfigFile), "配置文件")
@@ -26,11 +49,14 @@ func cmdUpgrade(args []string) error {
 	restart := fs.String("restart", "dns-stack-helper,dns-stack-panel", "换好后重启哪些服务，逗号分隔；mosproxy 重启时解析中断约 0.1 秒、内存缓存清空，要用时显式写上")
 	check := fs.Bool("check", false, "只下载并核对新版本号，不替换")
 	force := fs.Bool("force", false, "版本相同也重新安装")
+	asJSON := fs.Bool("json", false, "结束时多打一行 "+strings.TrimSpace(stack.UpgradeResultPrefix)+" {JSON}，供面板读取结果")
 	mosproxy := fs.Bool("mosproxy", false, "升级 mosproxy（取 versions.lock 里那个 fork 的最新 Release），换好后重启它并用 DoH 自检；解析会中断约 0.1 秒")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	jsonOut, report.Check = *asJSON, *check
 	if *mosproxy {
+		report.Target = "mosproxy"
 		restartSet := false
 		fs.Visit(func(f *flag.Flag) { restartSet = restartSet || f.Name == "restart" })
 		if !restartSet {
@@ -71,6 +97,7 @@ func cmdUpgrade(args []string) error {
 		if err != nil {
 			return err
 		}
+		report.From = current
 		opt.Current, opt.Binary, opt.Asset = current, pipeline.MosproxyBinary, "mosproxy-linux-"+runtime.GOARCH
 		opt.BuildID, opt.VersionOf, opt.Backup = true, pipeline.MosproxyVersion, pipeline.MosproxyBackupName
 		opt.Probe = dohProbe
@@ -81,6 +108,7 @@ func cmdUpgrade(args []string) error {
 	rt := pipeline.NewRuntime(cfg, os.Stdout)
 	fmt.Printf("[信息] 当前版本 %s，从 %s 取最新构建\n", opt.Current, baseURL)
 	res, err := pipeline.Upgrade(context.Background(), rt, opt)
+	report.From, report.To, report.Changed, report.Backup, report.Rollback = opt.Current, res.To, res.Changed, res.Backup, res.Rollback
 	version := opt.Current
 	switch {
 	case err != nil:

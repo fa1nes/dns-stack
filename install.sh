@@ -740,6 +740,25 @@ step11_deploy_helper() {
     log_ok "helper 已启动"
 }
 
+PANEL_AUTH_FILE=/etc/dns-stack/secrets/panel/auth.json
+PANEL_FIRST_LOGIN=""
+
+ensure_panel_password() {
+    [[ -r "$PANEL_AUTH_FILE" ]] && return 0
+    local listen
+    listen="$(cfg_or_default PANEL_LISTEN 127.0.0.1:8080)"
+    case "${listen// /}" in 127.*|"[::1]"*|localhost*) return 0 ;; esac
+    local password
+    password="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)"
+    [[ ${#password} -eq 20 ]] || die "生成面板初始密码失败"
+    PW="$password" PANEL_USER=admin "$OPT_DIR/bin/dns-stack-go" panel-auth set-password --auth "$PANEL_AUTH_FILE" \
+        || die "写入面板初始密码失败"
+    chown dns-stack-panel:dns-stack-panel "$PANEL_AUTH_FILE"
+    chmod 0400 "$PANEL_AUTH_FILE"
+    PANEL_FIRST_LOGIN="admin / ${password}"
+    log_ok "  已生成面板初始账号（安装结束时显示一次，登录后可在「账号」里改）"
+}
+
 step12_deploy_panel() {
     log_info "[12/17] 部署中文管理面板..."
 
@@ -765,6 +784,7 @@ step12_deploy_panel() {
     systemctl daemon-reload
     systemctl enable dns-stack-panel.service
 
+    ensure_panel_password
     systemctl restart dns-stack-helper.service
     systemctl restart dns-stack-panel.service || die "面板启动失败"
 
@@ -796,7 +816,7 @@ step12_deploy_panel() {
 
     if [[ "$scheme" == "https" ]]; then
         log_ok "面板已启动: ${scheme}://<本机IP>:${port} (公网访问，需密码登录)"
-        [[ -r /etc/dns-stack/secrets/panel/auth.json ]] \
+        [[ -r "$PANEL_AUTH_FILE" ]] \
             || log_warn "  尚未设置访问密码，面板会拒绝非本机访问: sudo dns-stack panel-password"
     else
         log_ok "面板已启动: ${scheme}://127.0.0.1:${port} (仅本机监听，需 SSH 隧道或 WireGuard 访问)"
@@ -1001,9 +1021,28 @@ main() {
     echo
     log_ok "========== 安装完成 =========="
     echo "角色: ${ROLE}"
-    echo "日常管理请使用: sudo dns-stack"
+    print_panel_access
+    echo "日常管理请使用: sudo dns-stack；以后升级在面板「系统」页点一下，或 sudo dns-stack upgrade"
     echo
     dns-stack health || true
+}
+
+print_panel_access() {
+    local listen port ip
+    listen="$(cfg_or_default PANEL_LISTEN 127.0.0.1:8080)"
+    listen="${listen// /}"
+    port="${listen##*:}"
+    case "$listen" in
+        127.*|"[::1]"*|localhost*)
+            echo "管理面板: 只在本机监听，用 ssh -L ${port}:127.0.0.1:${port} 连上后打开 http://127.0.0.1:${port}"
+            return ;;
+    esac
+    ip="$(cfg_or_default PUBLIC_IPV4 "")"
+    echo "管理面板: https://${ip:-<本机IP>}:${port}"
+    if [[ -n "$PANEL_FIRST_LOGIN" ]]; then
+        echo "初始账号: ${PANEL_FIRST_LOGIN}"
+        echo "          只显示这一次；登录后在「账号」页改密码，或 sudo dns-stack panel-password"
+    fi
 }
 
 UNITS_DELETED_FROM_REPO_BUT_MAYBE_STILL_ENABLED_ON_OLD_MACHINES=(

@@ -31,7 +31,7 @@ func TestEveryOperationHasAButtonOrADedicatedControl(t *testing.T) {
 	}
 	drivenByDedicatedControl := []string{"set_cache_ttl", "set_min_ttl", "flush_cache", "set_backup_policy",
 		"import", "refresh_routing",
-		"delete_query", "delete_domain", "delete_audit"}
+		"delete_query", "delete_domain", "delete_audit", "set_alert_webhook"}
 	for _, op := range drivenByDedicatedControl {
 		wired[op] = true
 	}

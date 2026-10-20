@@ -33,6 +33,8 @@ var dedicatedOpRoles = map[string]string{
 	"acl_status":       stack.RoleCNResolver,
 	"route_add":        stack.RoleCNResolver,
 	"route_remove":     stack.RoleCNResolver,
+	"upgrade_check":    stack.RoleCNResolver,
+	"upgrade_apply":    stack.RoleCNResolver,
 }
 
 func (s *Server) accessStore() access.Store {

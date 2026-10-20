@@ -670,7 +670,7 @@ func cmdPanel(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	s := panel.New(panel.Config{Addr: panel.ResolveListen(*addr, *config), DBPath: *db, ConfigPath: *config, AuthPath: *auth, StateDir: *state})
+	s := panel.New(panel.Config{Addr: panel.ResolveListen(*addr, *config), DBPath: *db, ConfigPath: *config, AuthPath: *auth, StateDir: *state, Version: version})
 
 	if err := s.PreStartCheck(); err != nil {
 		return err

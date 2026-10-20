@@ -27,6 +27,7 @@ type Config struct {
 	CertPath     string
 	KeyPath      string
 	ECSConfPath  string
+	Version      string
 }
 
 type Server struct {
@@ -51,11 +52,13 @@ type Server struct {
 	overviewShared sharedResult
 	statsShared    sharedResults
 
-	exits    exitCache
-	nodes    nodeCache
-	svcMu    sync.Mutex
-	svcCache map[string]svcCacheEntry
-	http     *http.Server
+	exits     exitCache
+	nodes     nodeCache
+	svcMu     sync.Mutex
+	checkMu   sync.Mutex
+	lastCheck map[string]any
+	svcCache  map[string]svcCacheEntry
+	http      *http.Server
 }
 
 func New(cfg Config) *Server {
@@ -142,6 +145,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/dns-test", s.dnsTest)
 	mux.HandleFunc("/api/cdn-hit", s.cdnHit)
 	mux.HandleFunc("/api/access", s.access)
+	mux.HandleFunc("/api/upgrade", s.upgrade)
+	mux.HandleFunc("/api/alert", s.alertInfo)
+	mux.HandleFunc("/api/stats", s.stats)
+	mux.HandleFunc("/api/selfcheck", s.selfcheck)
 	mux.HandleFunc("/", s.static)
 
 	return securityHeaders(s.gzipMiddleware(s.corsMiddleware(s.originMiddleware(s.authMiddleware(mux)))))

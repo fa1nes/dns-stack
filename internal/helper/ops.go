@@ -63,6 +63,7 @@ var DangerousOps = map[string]bool{
 	"set_arch_epoch": true,
 	"acl_add":        true, "acl_remove": true, "acl_apply": true, "acl_disable": true,
 	"prune_backups": true, "drop_stale_logs": true,
+	"upgrade_apply": true,
 }
 
 var RoleOps = map[string]string{
@@ -77,13 +78,15 @@ var RoleOps = map[string]string{
 	"acl_status":       stack.RoleCNResolver,
 	"route_add":        stack.RoleCNResolver,
 	"route_remove":     stack.RoleCNResolver,
+	"upgrade_check":    stack.RoleCNResolver,
+	"upgrade_apply":    stack.RoleCNResolver,
 }
 
 var secretArgKeys = map[string]bool{
 	"password": true, "pw": true, "old_password": true,
 	"new_password": true, "passwd": true, "token": true,
 	"client_secret": true, "secret": true, "totp_code": true, "code": true,
-	"session_key": true, "hash": true, "salt": true,
+	"session_key": true, "hash": true, "salt": true, "webhook": true,
 }
 
 func stringArg(args map[string]any, key string) string {
@@ -172,7 +175,7 @@ func (h *Helper) opClearDomainsAll(map[string]any) result {
 }
 
 func (h *Helper) opHealthcheck(map[string]any) result {
-	return h.run([]string{h.cli, "health"}, 60*time.Second, true)
+	return h.run([]string{h.goBin, "selfcheck", "--json"}, 90*time.Second, true)
 }
 
 func (h *Helper) opCollectPollutedIP(map[string]any) result {
@@ -997,5 +1000,10 @@ func (h *Helper) operations() map[string]func(map[string]any) result {
 		"route_add":           h.opRouteAdd,
 		"route_remove":        h.opRouteRemove,
 		"drop_stale_logs":     h.opDropStaleLogs,
+		"upgrade_check":       h.opUpgradeCheck,
+		"upgrade_apply":       h.opUpgradeApply,
+		"upgrade_status":      h.opUpgradeStatus,
+		"set_alert_webhook":   h.opSetAlertWebhook,
+		"alert_test":          h.opAlertTest,
 	}
 }

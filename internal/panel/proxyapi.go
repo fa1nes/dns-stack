@@ -60,6 +60,8 @@ var auditOnlyLabels = map[string]string{
 	"mark_oauth_verified":   "GitHub 首次登录",
 	"cdn_hit_fresh":         "CDN 就近复核",
 	"audit_clear":           "清空审计记录",
+	"upgrade_apply":         "在线升级",
+	"healthcheck":           "健康检查",
 }
 
 var routeListLabels = map[string]string{"cn": "国内解析", "hk": "香港解析"}

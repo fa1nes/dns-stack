@@ -401,12 +401,14 @@ const state = {
 };
 
 const PAGE_TITLES = {
-  overview: '概览', queries: '查询', tools: '工具', settings: '设置', account: '账号',
+  overview: '概览', queries: '查询', stats: '统计', tools: '工具', system: '系统', settings: '设置', account: '账号',
 };
 
 const PAGE_DESCS = {
   overview: '解析是否健康、快不快',
   queries: '每一条请求和域名统计',
+  stats: '查询量、缓存命中、延迟分布与排行',
+  system: '版本升级、健康检查、服务与模块',
   tools: '解析测试、CDN 就近、IP 与日志',
   settings: '接入、域名规则、缓存与维护',
   account: '登录方式与会话',
@@ -447,6 +449,8 @@ function switchPage(page) {
       if (!active || active.dataset.qtab === 'live') initLivePage();
       else loadDomains(state.domPage || 1);
     },
+    stats: loadStats,
+    system: loadSystem,
     tools: function () {
       const active = $('#toolTabs button.active');
       openToolTab(active ? active.dataset.ttab : 'test');
@@ -542,7 +546,7 @@ function renderAlert() {
   const bad = health.level === 'err' || (mods && mods.verdict === 'down');
   setHtml(box, html`<div class="callout ${bad ? 'err' : ''} alert-bar">
     <ul>${issues.slice(0, 5).map((x) => html`<li>${x}</li>`)}</ul>
-    <button class="sm" data-page-jump="settings" data-tab="ops">查看</button>
+    <button class="sm" data-page-jump="system">查看</button>
   </div>`);
 }
 
@@ -2996,8 +3000,7 @@ async function revokeOtherSessions() {
 }
 
 function loadOps() {
-  $('#opsRoleExtra').hidden = window.PANEL_ROLE !== 'cn-resolver';
-  loadModules();
+  loadAlertInfo();
   loadBackups();
 }
 
@@ -3286,8 +3289,9 @@ const CMDK_PLACES = [
   ['概览', 'overview'], ['请求', 'queries', 'live'], ['域名统计', 'queries', 'domains'],
   ['解析测试', 'tools', 'test'], ['CDN 就近', 'tools', 'cdn'], ['IP 查询', 'tools', 'ip'],
   ['我的位置', 'tools', 'location'], ['日志', 'tools', 'logs'],
+  ['统计', 'stats'], ['系统', 'system'], ['升级', 'system'], ['健康检查', 'system'], ['服务与模块', 'system'],
   ['接入', 'settings', 'entry'], ['域名规则', 'settings', 'rules'], ['缓存与数据', 'settings', 'data'],
-  ['维护', 'settings', 'ops'], ['审计', 'settings', 'audit'], ['账号', 'account'],
+  ['维护', 'settings', 'ops'], ['告警推送', 'settings', 'ops'], ['审计', 'settings', 'audit'], ['账号', 'account'],
 ];
 const cmdk = { items: [], cursor: 0, returnFocus: null };
 
@@ -3438,7 +3442,330 @@ function jumpTo(page, tab, metric) {
   }
 }
 
+const STATS_EXIT = {
+  cache: '缓存', recursive: '本机递归', hongkong: '整条走香港', direct: '权威直连',
+  tunnel: '权威经香港', mixed: '部分直连', blocked: '拦截', unknown: '权威没问到', '': '未记录',
+};
+const LATENCY_LABELS = ['< 1 ms', '1–5 ms', '5–20 ms', '20–50 ms', '50–100 ms', '100–300 ms', '300 ms–1 s', '≥ 1 s'];
+const statsView = { span: '24h', data: null };
+
+const pct = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(Number(v) >= 10 ? 1 : 2).replace(/\.?0+$/, '') + '%');
+
+async function loadStats() {
+  const fresh = latestOnly('stats');
+  $$('#statsSpan button').forEach((b) => b.classList.toggle('active', b.dataset.span === statsView.span));
+  try {
+    const d = await api('/api/stats?span=' + statsView.span);
+    if (!fresh()) return;
+    statsView.data = d;
+    renderStats(d);
+  } catch (e) {
+    if (!fresh()) return;
+    setHtml($('#statsTotals'), errState(e));
+  }
+}
+
+function renderStats(d) {
+  const t = d.totals || {};
+  const label = d.span === '7d' ? '7 天' : '24 小时';
+  setHtml($('#statsRange'), html`${fmtTime(d.since).slice(0, 11)} 至 ${fmtTime(d.until).slice(0, 11)}，不含后台刷新`);
+  setHtml($('#statsTotals'), html`${[
+    statCard(fmtNum(t.queries), '客户端查询', label + ' · 后台刷新另有 ' + fmtNum(t.prefetch) + ' 次'),
+    statCard(pct(t.cache_ratio), '缓存命中', fmtNum(t.cached) + ' 次直接从缓存回答', 'ok'),
+    statCard(pct(t.servfail_ratio), 'SERVFAIL', fmtNum(t.servfail) + ' 次 · NXDOMAIN ' + fmtNum(t.nxdomain) + ' 次',
+      t.servfail_ratio >= 0.5 ? 'warn' : 'ok'),
+    statCard(fmtNum(t.slow_1s), '超过 1 秒', t.queries ? '占 ' + pct(t.slow_1s / t.queries * 100) : '', t.slow_1s ? '' : 'ok'),
+  ]}`);
+  drawStatsSeries(d);
+  renderLatency(d.latency || {});
+  const dist = (items, el, names) => setHtml($(el), items && items.length
+    ? barRows(items.map((x) => ({ name: names ? (names[x.key] || x.key) : x.name, count: x.count })))
+    : EMPTY());
+  dist(d.by_qtype, '#statsQtype');
+  dist(d.by_rcode, '#statsRcode');
+  dist(d.by_exit, '#statsExit', STATS_EXIT);
+  const top = (items, el, clickable, empty) => {
+    if (!items || !items.length) { setHtml($(el), html`<div class="pad">${EMPTY(empty)}</div>`); return; }
+    const total = items.reduce((n, x) => n + x.count, 0) || 1;
+    setHtml($(el), html`<div class="table-wrap"><table class="mini top-list"><tbody>${items.map((x) => html`<tr
+      class="${clickable ? 'clickable' : ''}" ${clickable ? raw('data-domain="' + esc(x.key) + '"') : raw('')}>
+      <td class="mono wrap">${x.name}</td>
+      <td class="top-bar"><span class="track"><span class="fill" style="width:${(x.count / total * 100).toFixed(1)}%"></span></span></td>
+      <td class="mono dim num">${fmtNum(x.count)}</td></tr>`)}</tbody></table></div>`);
+  };
+  top(d.top_domains, '#statsTopDomains', true);
+  top(d.top_failing, '#statsTopFailing', true, '没有 SERVFAIL');
+  top(d.top_clients, '#statsTopClients', false, '没有记录客户端网段');
+}
+
+function renderLatency(l) {
+  const part = (name, x, cls) => {
+    if (!x || !x.samples) return html`<div><div class="lat-head"><b>${name}</b></div>${EMPTY()}</div>`;
+    const items = (x.buckets || []).map((n, i) => ({ name: LATENCY_LABELS[i], count: n }));
+    return html`<div class="lat-col ${cls}">
+      <div class="lat-head"><b>${name}</b>
+        <span class="mono dim">P50 ${dash(x.p50, ' ms')} · P95 ${dash(x.p95, ' ms')} · P99 ${dash(x.p99, ' ms')}</span></div>
+      ${barRows(items)}</div>`;
+  };
+  setHtml($('#statsLatencyNote'), raw(''));
+  setHtml($('#statsLatency'), html`<div class="grid c2 tight">${part('缓存回答', l.cache, 'is-cache')}${part('递归回答', l.upstream, 'is-up')}</div>`);
+}
+
+function drawStatsSeries(d) {
+  const wrap = $('#statsSeries');
+  const points = d.series || [];
+  if (!wrap) return;
+  const w = wrap.clientWidth, h = wrap.clientHeight || 180;
+  if (!w || !points.length) { setHtml(wrap, EMPTY()); return; }
+  const pad = { l: 40, r: 6, t: 8, b: 20 };
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const max = Math.max(3, ...points.map((p) => p.total));
+  const tick = niceStep(max / 3);
+  const top = tick * Math.ceil(max / tick);
+  const slot = cw / points.length;
+  const bw = Math.max(1, Math.min(28, slot * 0.72));
+  const yAt = (v) => pad.t + ch - ch * v / top;
+  const grid = [];
+  for (let v = 0; v <= top; v += tick) {
+    const y = Math.round(yAt(v)) + 0.5;
+    grid.push(html`<line class="g-line" x1="${pad.l}" y1="${y}" x2="${pad.l + cw}" y2="${y}"/>`);
+    grid.push(html`<text class="g-tick" x="${pad.l - 6}" y="${y + 3.5}">${fmtNum(v)}</text>`);
+  }
+  const every = d.bucket >= 21600 ? Math.round(86400 / d.bucket) * Math.max(1, Math.ceil(44 / (slot * Math.round(86400 / d.bucket)))) : Math.max(3, Math.ceil(46 / slot / 3) * 3);
+  const bars = points.map((p, i) => {
+    const x = pad.l + slot * i + (slot - bw) / 2;
+    const failed = p.servfail, cached = p.cached, rest = Math.max(0, p.total - cached - failed);
+    const seg = [];
+    let base = 0;
+    [['b-cache', cached], ['b-up', rest], ['b-fail', failed]].forEach(([cls, v]) => {
+      if (!v) return;
+      const y1 = yAt(base + v), y0 = yAt(base);
+      seg.push(html`<rect class="${cls}" x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5, y0 - y1).toFixed(1)}"/>`);
+      base += v;
+    });
+    const end = p.t + d.bucket;
+    const tip = fmtShort(p.t) + '–' + fmtShort(end).slice(-5) + '\n共 ' + fmtNumFull(p.total) + ' 次，缓存 ' + fmtNumFull(cached) + '，失败 ' + fmtNumFull(failed);
+    const showLabel = d.bucket >= 21600
+      ? new Date(p.t * 1000).getHours() < d.bucket / 3600 && Math.floor((p.t - points[0].t) / 86400) % (every / Math.round(86400 / d.bucket)) === 0
+      : new Date(p.t * 1000).getHours() % every === 0;
+    const at = new Date(p.t * 1000);
+    const labelText = d.bucket >= 21600 ? pad2(at.getMonth() + 1) + '-' + pad2(at.getDate()) : pad2(at.getHours()) + ':00';
+    return html`<g><rect class="b-hit" x="${(pad.l + slot * i).toFixed(1)}" y="${pad.t}" width="${slot.toFixed(1)}" height="${ch}"><title>${tip}</title></rect>${seg}${
+      showLabel ? html`<text class="g-time" text-anchor="middle" x="${(x + bw / 2).toFixed(1)}" y="${h - 5}">${labelText}</text>` : raw('')}</g>`;
+  });
+  setHtml(wrap, html`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="查询量">${grid}${bars}</svg>`);
+}
+
+const upg = { info: null, check: {}, timer: 0, watching: false, startVersion: null, target: '' };
+const UPGRADE_TARGETS = { 'dns-stack': ['#verStack', '#btnApplyStack'], mosproxy: ['#verMosproxy', '#btnApplyMosproxy'] };
+const UPGRADE_NOTE = {
+  'dns-stack': '会替换 dns-stack 并重启 helper 和面板，这个页面会断开几秒；解析不受影响。\n重启后自检不过会自动换回旧版本。',
+  mosproxy: '会替换 mosproxy 并重启它：解析中断约 0.1 秒，内存缓存清空。\n重启后 DoH 自检不过会自动换回旧版本。',
+};
+
+function loadSystem() {
+  $('#opsRoleExtra').hidden = window.PANEL_ROLE !== 'cn-resolver';
+  loadModules();
+  loadUpgrade();
+  loadSelfcheck();
+}
+
+async function loadUpgrade() {
+  clearTimeout(upg.timer);
+  try {
+    const d = await api('/api/upgrade');
+    upg.info = d;
+    if (upg.startVersion === null) upg.startVersion = d.version;
+    renderUpgrade();
+    if (d.running) { upg.watching = true; pollUpgrade(); return; }
+    if (upg.watching) { upg.watching = false; finishUpgrade(d); }
+  } catch (e) {
+    if (upg.watching) { pollUpgrade(); return; }
+    setHtml($('#upgradeLast'), errState(e));
+  }
+}
+
+function pollUpgrade() {
+  clearTimeout(upg.timer);
+  upg.timer = setTimeout(() => { if (upg.watching) loadUpgrade(); }, 3000);
+}
+
+function finishUpgrade(d) {
+  const r = d.last || {};
+  const name = r.target || upg.target || '升级';
+  if (r.error) toast(name + ' 升级失败', r.rollback ? '已换回 ' + r.from + '：' + r.error : r.error, 'err');
+  else if (r.changed) toast(name + ' 已升级', r.from + ' → ' + r.to, 'ok');
+  else toast(name + ' 已是最新', r.to || '', 'ok');
+  upg.check = {};
+  if (d.version && upg.startVersion && d.version !== upg.startVersion) {
+    toast('面板已更新', '马上刷新页面载入新版本', 'ok');
+    setTimeout(() => location.reload(), 1800);
+  }
+  renderUpgrade();
+  loadModules();
+}
+
+function renderUpgrade() {
+  const d = upg.info || {};
+  const versions = { 'dns-stack': d.version, mosproxy: d.mosproxy_version };
+  Object.keys(UPGRADE_TARGETS).forEach((target) => {
+    const [verSel, applySel] = UPGRADE_TARGETS[target];
+    const c = upg.check[target];
+    let line = html`当前 <span class="mono">${versions[target] || '未知'}</span>`;
+    if (c && c.busy) line = html`${line} · <span class="spinner sm"></span> 正在下载核对…`;
+    else if (c && !c.ok) line = html`${line} · ${stateTag('err', '检查失败')}${c.message || ''}`;
+    else if (c && c.changed) line = html`${line} · ${stateTag('warn', '有新版本')}<span class="mono">${c.to}</span>`;
+    else if (c) line = html`${line} · ${stateTag('ok', '已是最新')}${ago(c.at)}检查`;
+    setHtml($(verSel), line);
+    $(applySel).hidden = !(c && c.ok && c.changed) || !!d.running;
+  });
+  $$('[data-upgrade-check]').forEach((b) => {
+    b.hidden = !d.supported;
+    b.disabled = !!d.running || !!(upg.check[b.dataset.upgradeCheck] || {}).busy;
+  });
+  setHtml($('#upgradeHint'), d.supported === false ? raw('香港节点重新运行 install-hk.sh 就是升级') : raw(''));
+  const box = $('#upgradeLast');
+  const r = d.last;
+  const parts = [];
+  if (d.running) parts.push(html`<div class="upgrade-state"><span class="spinner"></span> 升级进行中，换好后会自动重启并自检</div>`);
+  else if (r) {
+    const what = r.target + (r.check ? ' 检查' : ' 升级');
+    let text;
+    if (r.error) text = html`${stateTag('err', r.rollback ? '已回滚' : '失败')}${what}：${r.error}`;
+    else if (r.check) text = html`${stateTag('ok', '完成')}${what}：${r.changed ? '有新版本 ' + r.to : '已是最新'}`;
+    else text = html`${stateTag('ok', '成功')}${what}：${r.changed ? r.from + ' → ' + r.to : '已是最新 ' + r.to}`;
+    parts.push(html`<div class="upgrade-state">上一次 ${text}</div>`);
+  }
+  if (d.log && d.log.length) {
+    parts.push(html`<details class="drawer-details"${d.running ? raw(' open') : raw('')}><summary>升级日志（最近 ${d.log.length} 行）</summary>
+      <div class="dd-body"><pre class="block upgrade-log">${d.log.join('\n')}</pre></div></details>`);
+  }
+  setHtml(box, html`${parts}`);
+  box.hidden = !parts.length;
+}
+
+async function checkUpgrade(target) {
+  upg.check[target] = { busy: true };
+  renderUpgrade();
+  try {
+    const d = await api('/api/upgrade', { method: 'POST', body: JSON.stringify({ action: 'check', target }) });
+    const r = d.result || {};
+    upg.check[target] = { ok: !!d.ok, changed: !!r.changed, to: r.to, message: d.message, at: Math.floor(Date.now() / 1000) };
+  } catch (e) {
+    upg.check[target] = { ok: false, message: e.message };
+  }
+  renderUpgrade();
+}
+
+async function applyUpgrade(target) {
+  const c = upg.check[target] || {};
+  if (!confirm('升级 ' + target + ' 到 ' + (c.to || '最新版本') + '？\n\n' + UPGRADE_NOTE[target])) return;
+  try {
+    const d = await api('/api/upgrade', { method: 'POST', body: JSON.stringify({ action: 'apply', target, confirm: true }) });
+    if (!d.ok) { toast('没能开始升级', d.message, 'err'); return; }
+    toast('已开始升级 ' + target, '进度会显示在这里', 'ok');
+    upg.target = target;
+    upg.watching = true;
+    upg.info = Object.assign({}, upg.info, { running: true });
+    renderUpgrade();
+    pollUpgrade();
+  } catch (e) {
+    toast('没能开始升级', e.message, 'err');
+  }
+}
+
+const CHECK_LEVEL = { fail: ['err', '失败'], warn: ['warn', '警告'], ok: ['ok', '通过'], skip: ['idle', '跳过'] };
+
+async function loadSelfcheck(run) {
+  const btn = $('#btnSelfcheck');
+  if (run) { btn.disabled = true; btn.classList.add('busy'); setHtml($('#checkSummary'), html`<span class="spinner sm"></span> 正在逐项检查…`); }
+  try {
+    const d = run ? await api('/api/selfcheck', { method: 'POST', body: '{}' }) : await api('/api/selfcheck');
+    if (run && !d.report) { setHtml($('#checkSummary'), html`${stateTag('err', '没跑完')}${d.message || ''}`); return; }
+    renderSelfcheck(d.report);
+    if (run) toast('健康检查', d.message, d.ok ? 'ok' : 'warn');
+  } catch (e) {
+    setHtml($('#checkSummary'), errState(e));
+  } finally {
+    btn.disabled = false; btn.classList.remove('busy');
+  }
+}
+
+function renderSelfcheck(r) {
+  const box = $('#checkResults');
+  if (!r) { box.hidden = true; return; }
+  const level = r.fail ? 'err' : (r.warn ? 'warn' : 'ok');
+  setHtml($('#checkSummary'), html`${stateTag(level, r.fail ? r.fail + ' 项失败' : (r.warn ? r.warn + ' 项警告' : '全部通过'))}通过 ${r.ok} · 警告 ${r.warn} · 失败 ${r.fail}${
+    r.skip ? ' · 跳过 ' + r.skip : ''} · ${ago(r.at)}`);
+  const rows = (items) => html`${items.map((x) => {
+    const lv = CHECK_LEVEL[x.level] || CHECK_LEVEL.skip;
+    return html`<div class="check-item"><span class="dot ${lv[0]}"></span>
+      <div class="check-main"><div><b>${x.name}</b>${x.group ? html`<span class="check-group">${x.group}</span>` : raw('')}</div>
+      ${x.detail ? html`<div class="dim check-detail">${x.detail}</div>` : raw('')}</div></div>`;
+  })}`;
+  const results = r.results || [];
+  const bad = results.filter((x) => x.level === 'fail' || x.level === 'warn');
+  const rest = results.filter((x) => x.level !== 'fail' && x.level !== 'warn');
+  setHtml(box, html`${bad.length ? rows(bad) : raw('')}${rest.length ? html`<details class="drawer-details"${bad.length ? raw('') : raw(' open')}>
+    <summary>${bad.length ? '其余 ' + rest.length + ' 项' : '全部 ' + rest.length + ' 项'}</summary><div class="dd-body">${rows(rest)}</div></details>` : raw('')}`);
+  box.hidden = false;
+}
+
+async function loadAlertInfo() {
+  try {
+    const d = await api('/api/alert');
+    setHtml($('#alertInfo'), d.configured
+      ? html`${stateTag('ok', '已开启')}<span class="mono">${d.endpoint || '已设置'}</span>`
+      : html`${stateTag('idle', '未设置')}服务出问题时不会通知你`);
+    $('#btnAlertTest').disabled = !d.configured;
+    $('#btnAlertClear').hidden = !d.configured;
+  } catch (e) {
+    setHtml($('#alertInfo'), errState(e));
+  }
+}
+
+async function saveAlertWebhook(value) {
+  const ok = await runOp('set_alert_webhook', value ? '设置告警推送地址' : '关闭告警推送', { webhook: value }, false);
+  if (ok) { $('#alertEdit').hidden = true; $('#alertWebhook').value = ''; }
+  loadAlertInfo();
+}
+
+function bindSystemEvents() {
+  $('#statsSpan').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-span]');
+    if (!b || b.dataset.span === statsView.span) return;
+    statsView.span = b.dataset.span;
+    loadStats();
+  });
+  $('#btnStatsReload').addEventListener('click', () => { invalidateCache(); loadStats(); });
+  window.addEventListener('resize', debounce(() => {
+    if (state.page === 'stats' && statsView.data) drawStatsSeries(statsView.data);
+  }, 150));
+  document.addEventListener('click', (e) => {
+    const check = e.target.closest('button[data-upgrade-check]');
+    if (check) { checkUpgrade(check.dataset.upgradeCheck); return; }
+    const apply = e.target.closest('button[data-upgrade-apply]');
+    if (apply) applyUpgrade(apply.dataset.upgradeApply);
+  });
+  $('#btnSelfcheck').addEventListener('click', () => loadSelfcheck(true));
+  $('#btnAlertEdit').addEventListener('click', () => {
+    const box = $('#alertEdit');
+    box.hidden = !box.hidden;
+    if (!box.hidden) $('#alertWebhook').focus();
+  });
+  $('#alertForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = $('#alertWebhook').value.trim();
+    if (!/^https?:\/\/\S+$/.test(value)) { toast('推送地址不对', '要是 http:// 或 https:// 开头的完整网址', 'err'); return; }
+    saveAlertWebhook(value);
+  });
+  $('#btnAlertClear').addEventListener('click', () => {
+    if (confirm('关闭告警推送？之后服务出问题不会再通知你。')) saveAlertWebhook('');
+  });
+}
+
 function bindEvents() {
+  bindSystemEvents();
   $('#nav').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-page]');
     if (btn) switchPage(btn.dataset.page);
