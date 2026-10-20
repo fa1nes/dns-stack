@@ -302,5 +302,6 @@ func MaintenanceSteps(cfg Config) []Step {
 		{Name: "unbound-log", Label: "unbound 日志可写", Every: time.Hour, Run: stepUnboundLog},
 		{Name: "renew-cert", Label: "TLS 证书检查与续签", Every: 6 * time.Hour, Run: stepRenewCert},
 		{Name: "backup", Label: "数据库/配置/规则备份", Every: backupEvery, Run: stepBackup},
+		{Name: "stale-temps", Label: "清理写入残留的临时文件", Every: 24 * time.Hour, Run: stepStaleTemps},
 	}
 }
