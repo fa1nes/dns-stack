@@ -300,3 +300,34 @@ func containsPrefix(prefixes []netip.Prefix, want string) bool {
 	}
 	return false
 }
+
+func TestAccumulationKeepsSteeredBlocksTheConfigMergedAcrossRounds(t *testing.T) {
+	l := newLab(t)
+	l.opt.ECSTargetsPath = l.path("ecs-authority-targets.txt")
+	l.write("ecs.conf", "server:\n    send-client-subnet: 23.211.132.0/23\n")
+	l.write("ecs-accum-state.tsv", "")
+	l.write("ecs-authority-targets.txt", "23.211.132.0/24\n23.211.133.0/24\n")
+
+	res, err := l.run()
+	if err != nil {
+		t.Fatalf("执行失败: %v\n%s", err, l.log.String())
+	}
+	if res.AccumKept != 2 {
+		t.Errorf("累积保留 %d 条，期望 2——上一轮的两个 /24 写出时合并成了 /23，"+
+			"这一轮 infra 没覆盖到就整段丢掉，下一轮又加回来：白名单来回变，每 15 分钟一次 reload 清掉 Unbound 的 ECS 缓存\n%s",
+			res.AccumKept, l.log.String())
+	}
+	if !containsPrefix(l.ecsWhitelist(), "23.211.132.0/23") {
+		t.Errorf("白名单里应当仍是 23.211.132.0/23：%v", l.ecsWhitelist())
+	}
+
+	before, _ := os.ReadFile(l.opt.ECSOutPath)
+	l.log.Reset()
+	if _, err := l.run(); err != nil {
+		t.Fatalf("第二轮执行失败: %v\n%s", err, l.log.String())
+	}
+	after, _ := os.ReadFile(l.opt.ECSOutPath)
+	if string(before) != string(after) {
+		t.Errorf("输入没变，第二轮白名单却变了——只要变一次就会触发一次 reload：\n前 %s\n后 %s", before, after)
+	}
+}

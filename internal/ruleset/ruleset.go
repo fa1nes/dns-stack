@@ -78,6 +78,7 @@ type Zone struct {
 type Result struct {
 	RoutePrefixes    []netip.Prefix
 	ECSPrefixes      []netip.Prefix
+	AuthorityECS     []netip.Prefix
 	MatchedZones     []Zone
 	DeadZones        []string
 	Defective        map[string][]string
@@ -268,6 +269,7 @@ func Build(s infra.Snapshot, cfg Config) (Result, error) {
 	}
 	r.SteeredECSAddrs = len(steeredECS)
 	allECS := append(append([]netip.Prefix{}, ecsExact...), ecsExtra...)
+	r.AuthorityECS = uniquePrefixes(allECS)
 	directECS := directECSPrefixes(cfg)
 	r.DirectECSPrefixes = len(directECS)
 	r.DirectECSCutAddrs = cfg.Direct.AddressCount() - directECSAddressCount(directECS)
@@ -319,4 +321,24 @@ func collapse(prefixes []netip.Prefix) []netip.Prefix {
 		}
 	}
 	return ipset.New(ranges).Prefixes()
+}
+
+func uniquePrefixes(prefixes []netip.Prefix) []netip.Prefix {
+	seen := make(map[netip.Prefix]struct{}, len(prefixes))
+	out := make([]netip.Prefix, 0, len(prefixes))
+	for _, p := range prefixes {
+		p = p.Masked()
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if c := out[i].Addr().Compare(out[j].Addr()); c != 0 {
+			return c < 0
+		}
+		return out[i].Bits() < out[j].Bits()
+	})
+	return out
 }

@@ -33,6 +33,7 @@ func cmdCNAuthority(args []string) error {
 	ecsOut := fs.String("ecs-out", "", "ECS 白名单输出，必填")
 	prevECS := fs.String("ecs-prev", "", "现网 ECS 白名单，用于累积保留")
 	ecsState := fs.String("ecs-state", "", "ECS 累积状态(默认 <state>/chnroute/ecs-accum-state.tsv)")
+	ecsTargets := fs.String("ecs-targets", "", "上一轮的 ECS 权威目标(默认 <state>/chnroute/ecs-authority-targets.txt)")
 	sharedOut := fs.String("shared-excluded-out", envOr("SHARED_EXCLUDED_OUTPUT", ""), "共享 anycast 排除清单输出")
 	cdnRules := fs.String("cdn-rules", "", "CDN 直连规则集(默认 <state>/cdn-direct.txt)")
 	agg := fs.Int("aggregate", 24, "大陆权威聚合前缀")
@@ -70,6 +71,9 @@ func cmdCNAuthority(args []string) error {
 	if *ecsState == "" {
 		*ecsState = chn("ecs-accum-state.tsv")
 	}
+	if *ecsTargets == "" {
+		*ecsTargets = chn("ecs-authority-targets.txt")
+	}
 	if *cdnRules == "" {
 		*cdnRules = filepath.Join(*state, cdnrules.FileName)
 	}
@@ -95,6 +99,7 @@ func cmdCNAuthority(args []string) error {
 		ECSOutPath:        *ecsOut,
 		PrevECSPath:       *prevECS,
 		ECSStatePath:      *ecsState,
+		ECSTargetsPath:    *ecsTargets,
 		SharedExcludedOut: *sharedOut,
 		CDNRulesPath:      *cdnRules,
 		Aggregate:         *agg,

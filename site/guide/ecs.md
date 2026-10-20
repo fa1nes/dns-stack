@@ -10,7 +10,7 @@ ECS（EDNS Client Subnet）让递归在问权威时附上设备所在的网段�
 
 ## 发给谁：白名单按「这台权威服务谁」收敛
 
-Unbound 只向白名单里的权威发送 ECS（`/etc/unbound/unbound.conf.d/dns-stack-ecs.conf`，由流水线每 15 分钟重建并热重载，缓存保留）。收录规则：
+Unbound 只向白名单里的权威发送 ECS（`/etc/unbound/unbound.conf.d/dns-stack-ecs.conf`，由流水线每 15 分钟重建，有变化才热重载，见 [数据流水线](/ops/pipeline#失败时怎么办)）。收录规则：
 
 - 国内权威（`@cn_authority`）一律收录。
 - **只要 CDN 直连规则集证明某家 CDN 在大陆有节点，它的境外权威也收录**，不必等人工往表里补。

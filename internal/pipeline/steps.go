@@ -371,9 +371,11 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 			return err
 		}
 		defer os.RemoveAll(dir)
-		if state, err := os.ReadFile(cfg.Chnroute("ecs-accum-state.tsv")); err == nil {
-			if err := os.WriteFile(filepath.Join(dir, "ecs-accum-state.tsv"), state, 0o600); err != nil {
-				return err
+		for _, name := range []string{"ecs-accum-state.tsv", "ecs-authority-targets.txt"} {
+			if state, err := os.ReadFile(cfg.Chnroute(name)); err == nil {
+				if err := os.WriteFile(filepath.Join(dir, name), state, 0o600); err != nil {
+					return err
+				}
 			}
 		}
 		sideOutput = func(name string) string { return filepath.Join(dir, name) }
@@ -391,6 +393,7 @@ func stepCNAuthority(ctx context.Context, rt *Runtime) error {
 		ECSOutPath:        tempECS,
 		PrevECSPath:       cfg.ECSConfPath,
 		ECSStatePath:      sideOutput("ecs-accum-state.tsv"),
+		ECSTargetsPath:    sideOutput("ecs-authority-targets.txt"),
 		SharedExcludedOut: sideOutput("shared-excluded.txt"),
 		SteeredOutPath:    sideOutput("cdn-steered-zones.txt"),
 		CDNRulesPath:      cfg.Path(cdnrules.FileName),

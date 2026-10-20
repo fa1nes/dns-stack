@@ -314,7 +314,7 @@ func (r *Runtime) commitECSConf(ctx context.Context, staged string) error {
 		r.Warnf("ECS 白名单已写入（%d 条）但热重载失败，下次重启生效", fresh)
 		return nil
 	}
-	r.Infof("ECS 白名单已更新：%d -> %d 条（已热重载，缓存保留）", old, fresh)
+	r.Infof("ECS 白名单已更新：%d -> %d 条（已热重载：报文与记录缓存保留，按子网的 ECS 缓存和在途递归会丢）", old, fresh)
 	return nil
 }
 

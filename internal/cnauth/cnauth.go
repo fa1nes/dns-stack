@@ -41,6 +41,7 @@ type Options struct {
 	ECSOutPath        string
 	PrevECSPath       string
 	ECSStatePath      string
+	ECSTargetsPath    string
 	SharedExcludedOut string
 	SteeredOutPath    string
 	CDNRulesPath      string
@@ -518,6 +519,9 @@ func Run(opt Options) (Result, error) {
 	if err != nil {
 		return res, err
 	}
+	if err := writeECSTargets(p, opt.ECSTargetsPath, built.AuthorityECS); err != nil {
+		return res, err
+	}
 	res.AccumKept = len(accumKept)
 	for prefix := range accumKept {
 		ecsTargets[prefix] = struct{}{}
@@ -627,6 +631,15 @@ func applyAccumulation(
 	nextState := map[string]int64{}
 
 	prev := loadPrevECS(opt.PrevECSPath)
+	accumSince, stateOK := loadAccumState(opt.ECSStatePath)
+	for _, prefix := range loadECSTargets(opt.ECSTargetsPath) {
+		prev[prefix] = prevECSEntry{}
+	}
+	for key := range accumSince {
+		if prefix, err := netip.ParsePrefix(key); err == nil && prefix.Addr().Is4() {
+			prev[prefix.Masked()] = prevECSEntry{}
+		}
+	}
 	if len(prev) == 0 {
 		return kept, nextState, nil
 	}
@@ -640,7 +653,6 @@ func applyAccumulation(
 		return out
 	}())
 
-	accumSince, stateOK := loadAccumState(opt.ECSStatePath)
 	nowTS := now.Unix()
 	expired, accumDisputed := 0, 0
 
@@ -709,6 +721,40 @@ func writeAccumState(p printer, path string, state map[string]int64) error {
 	}
 	if err := statefile.WriteAtomic(path, []byte(b.String()), 0o644); err != nil {
 		p.warnf("ECS 累积状态文件写入失败：%v", err)
+	}
+	return nil
+}
+
+func loadECSTargets(path string) []netip.Prefix {
+	if path == "" {
+		return nil
+	}
+	lines, err := loadLines(path)
+	if err != nil {
+		return nil
+	}
+	var out []netip.Prefix
+	for _, line := range lines {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(line))
+		if err != nil || !prefix.Addr().Is4() {
+			continue
+		}
+		out = append(out, prefix.Masked())
+	}
+	return out
+}
+
+func writeECSTargets(p printer, path string, targets []netip.Prefix) error {
+	if path == "" {
+		return nil
+	}
+	var b strings.Builder
+	for _, prefix := range targets {
+		b.WriteString(prefix.String())
+		b.WriteByte('\n')
+	}
+	if err := statefile.WriteAtomic(path, []byte(b.String()), 0o644); err != nil {
+		p.warnf("ECS 权威目标清单写入失败：%v", err)
 	}
 	return nil
 }

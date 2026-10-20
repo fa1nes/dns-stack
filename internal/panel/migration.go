@@ -93,6 +93,8 @@ func migrationEntries(cfg Config) []migrationEntry {
 		{archive: "state/chnroute/shared-excluded.txt", source: joinState(cfg, "chnroute/shared-excluded.txt")},
 		{archive: "state/chnroute/ecs-accum-state.tsv", source: joinState(cfg, "chnroute/ecs-accum-state.tsv"),
 			note: "ECS 累积计时，缺了会让白名单重新从零累积"},
+		{archive: "state/chnroute/ecs-authority-targets.txt", source: joinState(cfg, "chnroute/ecs-authority-targets.txt"),
+			note: "上一轮的 ECS 权威目标，缺了只是第一轮少一层累积依据"},
 		{archive: "ecs/dns-stack-ecs.conf", source: ecs,
 			note: "Unbound 的 ECS 白名单，dns-stack routing-data 可重新生成"},
 	}
