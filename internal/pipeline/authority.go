@@ -240,6 +240,57 @@ func countECSLines(path string) int {
 	return count
 }
 
+func ecsPrefixes(path string) []netip.Prefix {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []netip.Prefix
+	for _, line := range strings.Split(string(data), "\n") {
+		value, found := strings.CutPrefix(strings.TrimSpace(line), "send-client-subnet:")
+		if !found {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		if prefix, err := netip.ParsePrefix(value); err == nil {
+			out = append(out, prefix.Masked())
+		} else if addr, err := netip.ParseAddr(value); err == nil {
+			out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+		}
+	}
+	return out
+}
+
+func ecsCover(prefixes []netip.Prefix) *ipset.Set {
+	ranges := make([]ipset.Range, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		if r, ok := ipset.PrefixRange(prefix); ok {
+			ranges = append(ranges, r)
+		}
+	}
+	return ipset.New(ranges)
+}
+
+func ecsOnlyGrew(live, staged string) (int, bool) {
+	old, fresh := ecsPrefixes(live), ecsPrefixes(staged)
+	if len(old) == 0 || len(fresh) == 0 {
+		return 0, false
+	}
+	before, after := ecsCover(old), ecsCover(fresh)
+	for _, prefix := range old {
+		if !after.CoversPrefix(prefix) {
+			return 0, false
+		}
+	}
+	added := 0
+	for _, prefix := range fresh {
+		if !before.CoversPrefix(prefix) {
+			added++
+		}
+	}
+	return added, added > 0
+}
+
 func sameFile(a, b string) bool {
 	left, err := os.ReadFile(a)
 	if err != nil {
@@ -277,6 +328,16 @@ func (r *Runtime) commitECSConf(ctx context.Context, staged string) error {
 		os.Remove(staged)
 		r.Infof("ECS 白名单无变化（%d 条），跳过重载", fresh)
 		return nil
+	}
+
+	if added, grew := ecsOnlyGrew(live, staged); grew {
+		wait := time.Duration(r.Config.Int("ECS_RELOAD_MIN_SEC", 21600)) * time.Second
+		if info, err := os.Stat(live); err == nil && time.Since(info.ModTime()) < wait {
+			os.Remove(staged)
+			r.Infof("ECS 白名单只多出 %d 条、没有删除，距上次重载 %d 分钟，攒到满 %d 小时再一起重载",
+				added, int(time.Since(info.ModTime()).Minutes()), int(wait.Hours()))
+			return nil
+		}
 	}
 
 	if err := unboundCheckConf(ctx); err != nil {
