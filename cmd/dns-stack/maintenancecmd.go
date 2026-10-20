@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/dns-stack/dns-stack/internal/alert"
 	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
+	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
 func cmdMaintenance(args []string) error {
@@ -110,6 +112,9 @@ func cmdRoutingWatchdog(args []string) error {
 	for _, tag := range set.OfflineUpstreams() {
 		problems = append(problems, "上游 "+tag+" 离线（mosproxy 健康检查失败）")
 	}
+	if cfg.Value("ROLE") == stack.RoleCNResolver {
+		problems = append(problems, certExpiryProblems(pipeline.CertPath, time.Now())...)
+	}
 	host, _ := os.Hostname()
 	if _, alertErr := alert.Notify(ctx, alert.Options{
 		Webhook: cfg.Value("ALERT_WEBHOOK"), StatePath: cfg.Path("alert-state"),
@@ -118,4 +123,25 @@ func cmdRoutingWatchdog(args []string) error {
 		fmt.Fprintf(os.Stderr, "[警告] 告警发送失败，下一轮重试: %v\n", alertErr)
 	}
 	return err
+}
+
+const certAlertWindow = 48 * time.Hour
+
+func certExpiryProblems(certPath string, now time.Time) []string {
+	status, err := pipeline.InspectCert(certPath, "", "", now)
+	if status.NotAfter.IsZero() {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return []string{fmt.Sprintf("读不到 DoH/DoT 证书：%v", err)}
+	}
+	left := status.NotAfter.Sub(now)
+	switch {
+	case left <= 0:
+		return []string{"DoH/DoT 证书已于 " + status.NotAfter.Local().Format("01-02 15:04") + " 过期，客户端会全部连不上"}
+	case left < certAlertWindow:
+		bucket := int(left.Hours())/12*12 + 12
+		return []string{fmt.Sprintf("DoH/DoT 证书不到 %d 小时就到期，自动续签一直没成功——看 journalctl -u dns-stack-maintenance", bucket)}
+	}
+	return nil
 }

@@ -190,8 +190,9 @@ func checkECSWhitelist(opt Options, report *Report, now time.Time) {
 	}
 	c.ok("ECS 白名单非空", "%d 条", len(prefixes))
 
-	if age, ok := fileAge(conf, now); ok && age > 2*time.Hour {
-		c.warn("ECS 白名单新鲜度", "已 %s 没更新", humanSpan(age))
+	statePath := filepath.Join(opt.StateDir, "chnroute", "ecs-accum-state.tsv")
+	if age, ok := fileAge(statePath, now); ok && age > 2*time.Hour {
+		c.warn("ECS 白名单新鲜度", "累积状态已 %s 没重算——routing-data 的 cn-authority 步骤没在跑", humanSpan(age))
 	}
 
 	checkSubnetAlwaysForward(c)
