@@ -284,6 +284,18 @@ body.sb-fold .fold-btn { color: var(--accent); }
   color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .stat .label { font-size: var(--fs-sm); color: var(--text-muted); }
+.stat .sub .vs { display: block; margin-top: 2px; color: var(--text-dim); }
+button.client-link {
+  display: inline-block; vertical-align: middle;
+  min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-muted); font: inherit; font-size: var(--fs-sm); cursor: pointer;
+}
+button.client-link:hover { color: var(--accent); text-decoration: underline; }
+@media (max-width: 1100px) {
+  table.live-table tr > :nth-child(7), #liveBody td.client-cell { display: none; }
+}
+.top-list .zone { margin-left: 8px; font-family: var(--sans); color: var(--text-dim); white-space: nowrap; }
 .stat .sub {
   font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.55; overflow-wrap: anywhere;
 }
@@ -1075,7 +1087,7 @@ code { overflow-wrap: anywhere; }
   #domBody:not([data-metric="slow"]) td:nth-child(6)::before { content: "最后"; color: var(--text-dim); margin-right: 3px; }
 
   #liveBody td:nth-child(2), #auditBody td:nth-child(2) { flex: 1 1 calc(100% - 40px); }
-  #liveBody td:nth-child(7), #auditBody td:nth-child(6) { order: -1; margin-left: auto; }
+  #liveBody td:nth-child(8), #auditBody td:nth-child(6) { order: -1; margin-left: auto; }
 
   #auditBody td:nth-child(1) { color: var(--text-dim); }
   #auditBody td:nth-child(4):empty, #auditBody td:nth-child(5):empty { display: none; }

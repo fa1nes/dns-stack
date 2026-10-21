@@ -21,6 +21,7 @@ type statsHour struct {
 	latency                                             [2][]int64
 	qtype, rcode, exit                                  map[string]int64
 	domains, failing, clients                           map[string]int64
+	zones                                               map[string]string
 }
 
 type statsRollup struct {
@@ -36,7 +37,7 @@ func (r *statsRollup) reset() {
 
 func newStatsHour() *statsHour {
 	h := &statsHour{qtype: map[string]int64{}, rcode: map[string]int64{}, exit: map[string]int64{},
-		domains: map[string]int64{}, failing: map[string]int64{}, clients: map[string]int64{}}
+		domains: map[string]int64{}, failing: map[string]int64{}, clients: map[string]int64{}, zones: map[string]string{}}
 	for i := range h.latency {
 		h.latency[i] = make([]int64, len(latencyEdges)+1)
 	}
@@ -100,9 +101,9 @@ func (r *statsRollup) hoursSince(ctx context.Context, db *sql.DB, since int64) (
 }
 
 func scanStatsHours(ctx context.Context, db *sql.DB, from, to int64) (*statsHour, error) {
-	rows, err := db.QueryContext(ctx, rollupScanColumns+"COALESCE(client_subnet, '') FROM query_events WHERE ts >= ? AND ts < ?", from, to)
+	rows, err := db.QueryContext(ctx, rollupScanColumns+"COALESCE(client_subnet, ''), COALESCE(ecs_zone, '') FROM query_events WHERE ts >= ? AND ts < ?", from, to)
 	if err != nil && strings.Contains(err.Error(), "no such column") {
-		rows, err = db.QueryContext(ctx, rollupScanColumns+"'' FROM query_events WHERE ts >= ? AND ts < ?", from, to)
+		rows, err = db.QueryContext(ctx, rollupScanColumns+"'', '' FROM query_events WHERE ts >= ? AND ts < ?", from, to)
 	}
 	if err != nil {
 		return nil, err
@@ -113,9 +114,9 @@ func scanStatsHours(ctx context.Context, db *sql.DB, from, to int64) (*statsHour
 		var (
 			ts, prefetch, cached, rcode, qtype int64
 			elapsed                            sql.NullFloat64
-			exit, domain, client               string
+			exit, domain, client, zone         string
 		)
-		if err := rows.Scan(&ts, &prefetch, &cached, &rcode, &elapsed, &qtype, &exit, &domain, &client); err != nil {
+		if err := rows.Scan(&ts, &prefetch, &cached, &rcode, &elapsed, &qtype, &exit, &domain, &client, &zone); err != nil {
 			return nil, err
 		}
 		h.rows++
@@ -151,6 +152,9 @@ func scanStatsHours(ctx context.Context, db *sql.DB, from, to int64) (*statsHour
 		h.domains[domain]++
 		if client != "" {
 			h.clients[client]++
+			if zone != "" {
+				h.zones[client] = zone
+			}
 		}
 	}
 	return h, rows.Err()
@@ -165,6 +169,11 @@ func (h *statsHour) trim() {
 		clear(m)
 		for _, item := range kept {
 			m[item.key] = item.count
+		}
+	}
+	for client := range h.zones {
+		if _, ok := h.clients[client]; !ok {
+			delete(h.zones, client)
 		}
 	}
 }

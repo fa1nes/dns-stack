@@ -609,6 +609,9 @@ function renderOverviewStats(d) {
   STAT_KEYS.forEach((key) => patchStat(box.querySelector('[data-stat="' + key + '"]'), stats[key]));
 }
 
+const perSecond = (rate) => (rate >= 10 ? fmtNum(Math.round(rate))
+  : rate.toFixed(rate > 0 && rate < 1 ? 2 : 1).replace(/\.?0+$/, ''));
+
 function eventsStat(ev, m) {
   const out = { label: '近 1 小时请求' };
   if (ev.error) return Object.assign(out, { num: '—', sub: ev.error, cls: 'warn' });
@@ -617,7 +620,7 @@ function eventsStat(ev, m) {
   }
   const c = ev.collector;
   const lossy = c && c.dropped_at && Date.now() / 1000 - c.dropped_at < 3600;
-  const sub = '每秒 ' + ((m && m.qps) || 0) + ' 次 · ' + fmtNum(ev.domains || 0) + ' 个域名';
+  const sub = '每秒 ' + perSecond((ev.last_5m || 0) / 300) + ' 次 · ' + fmtNum(ev.domains_1h ?? ev.domains ?? 0) + ' 个域名';
   return Object.assign(out, {
     num: fmtNum(ev.last_1h || 0), title: fmtNumFull(ev.last_1h || 0),
     sub: lossy ? html`${sub} · <span class="text-warn" title="写库跟不上时宁可少记，也不拖慢解析">统计在采样，少记 ${fmtNum(c.dropped)} 条</span>` : sub,
@@ -1312,6 +1315,8 @@ const queryRow = (r, cls) => html`<tr class="clickable${cls ? ' ' + cls : ''}" d
     <td>${rcodeBadge(r)}</td>
     <td>${routeBadge(r)}</td>
     <td class="mono">${latencyCell(r)}</td>
+    <td class="client-cell">${r.client ? html`<button class="link client-link" data-client-filter="${r.client}"
+      title="${r.client + (r.client_zone ? ' · ' + r.client_zone : '') + '，点击只看这个网段'}">${r.client_zone || r.client}</button>` : html`<span class="dim">—</span>`}</td>
     <td>${r.id === null || r.id === undefined ? ''
         : html`<button class="row-del" data-qid="${r.id}" title="删除这条记录" aria-label="删除"></button>`}</td>
   </tr>`;
@@ -1441,7 +1446,7 @@ const rangeLabel = (r) => fmtShort(r.since) + '–' + fmtShort(r.until + 1);
 async function loadQueries(page) {
   page = page || 1;
   const body = $('#liveBody');
-  setHtml(body, rowSpan(7, LOADING));
+  setHtml(body, rowSpan(8, LOADING));
   const params = liveFilterParams();
   params.set('page', String(page));
   params.set('size', '50');
@@ -1464,7 +1469,7 @@ async function loadQueries(page) {
     live.rows = d.page === 1 && !range ? d.items.slice() : [];
     setHtml(body, d.items.length
       ? html`${d.items.map((r) => queryRow(r))}`
-      : rowSpan(7, EMPTY('没有符合条件的请求')));
+      : rowSpan(8, EMPTY('没有符合条件的请求')));
     $('#liveCount').textContent = (d.total_capped ? '超过 ' : '共 ') + fmtNum(d.total) + ' 条';
     $('#pageInfo').textContent = d.page + ' / ' + (d.pages || 1) + (d.total_capped ? '+' : '');
     $('#btnPrev').disabled = d.page <= 1;
@@ -1472,7 +1477,7 @@ async function loadQueries(page) {
     if (d.page === 1 && !range) followLiveFrom(d.items.length ? d.items[0].id : 0);
   } catch (e) {
     if (!fresh()) return;
-    setHtml(body, rowSpan(7, errState(e)));
+    setHtml(body, rowSpan(8, errState(e)));
     $('#liveCount').textContent = '—';
   }
   renderLiveStatus();
@@ -1500,7 +1505,7 @@ function liveRate() {
   while (live.arrivals.length && now - live.arrivals[0][0] > 10000) live.arrivals.shift();
   const span = Math.min(10, Math.max(1, (now - live.openedAt) / 1000));
   const rate = live.arrivals.reduce((sum, a) => sum + a[1], 0) / span;
-  return rate >= 10 ? fmtNum(Math.round(rate)) : rate.toFixed(1).replace(/\.0$/, '');
+  return perSecond(rate);
 }
 
 function renderLiveStatus() {
@@ -1686,6 +1691,7 @@ function recordList(records, ipsGeo) {
 
 const SERVER_LABEL = { 'local-unbound': '本机', 'foreign-hk': '香港' };
 const RESP_NAME = { cache: '缓存', 'local-unbound': '本机', 'foreign-hk': '香港', '(无)': '没有回答' };
+const respName = (v) => RESP_NAME[v] || (/^local/.test(v) ? '本机' : (/^foreign/.test(v) ? '香港' : v));
 
 async function showDomain(domain) {
   openDrawer(domain);
@@ -1729,7 +1735,7 @@ async function showDomain(domain) {
     }
     if (d.by_upstream && d.by_upstream.length > 1) {
       parts.push(html`<h4>谁回答的</h4>`);
-      parts.push(barRows(d.by_upstream.map((x) => ({ name: RESP_NAME[x.resp_by] || x.resp_by, count: x.count }))));
+      parts.push(barRows(d.by_upstream.map((x) => ({ name: respName(x.resp_by), count: x.count }))));
     }
     if (d.recent && d.recent.length) {
       parts.push(html`<h4>最近 ${d.recent.length} 次</h4>`);
@@ -3495,6 +3501,7 @@ function jumpTo(page, tab, metric) {
 const STATS_EXIT = {
   cache: '缓存', recursive: '本机递归', hongkong: '整条走香港', direct: '权威直连',
   tunnel: '权威经香港', mixed: '部分直连', blocked: '拦截', unknown: '权威没问到', '': '未记录',
+  failed: '没有回答', reject: '拒绝',
 };
 const LATENCY_LABELS = ['< 1 ms', '1–5 ms', '5–20 ms', '20–50 ms', '50–100 ms', '100–300 ms', '300 ms–1 s', '≥ 1 s'];
 const statsView = { span: '24h', data: null };
@@ -3522,12 +3529,17 @@ function renderStats(d) {
   const t = d.totals || {};
   const label = d.span === '7d' ? '7 天' : '24 小时';
   setHtml($('#statsRange'), html`${fmtTime(d.since).slice(0, 11)} 至 ${fmtTime(d.until).slice(0, 11)}，不含后台刷新`);
+  const p = d.previous;
+  const vs = (base, text) => (p ? html`${base}<span class="vs">${text}</span>` : base);
+  const change = p && p.queries ? (t.queries - p.queries) / p.queries * 100 : null;
   setHtml($('#statsTotals'), html`${[
-    statCard(fmtNum(t.queries), '客户端查询', label + ' · 后台刷新另有 ' + fmtNum(t.prefetch) + ' 次'),
-    statCard(pct(t.cache_ratio), '缓存命中', fmtNum(t.cached) + ' 次直接从缓存回答', 'ok'),
-    statCard(pct(t.servfail_ratio), 'SERVFAIL', fmtNum(t.servfail) + ' 次 · NXDOMAIN ' + fmtNum(t.nxdomain) + ' 次',
-      t.servfail_ratio >= 0.5 ? 'warn' : 'ok'),
-    statCard(fmtNum(t.slow_1s), '超过 1 秒', t.queries ? '占 ' + pct(t.slow_1s / t.queries * 100) : '', t.slow_1s ? '' : 'ok'),
+    statCard(fmtNum(t.queries), '客户端查询', vs(label + (t.prefetch ? ' · 后台刷新另有 ' + fmtNum(t.prefetch) + ' 次' : ''),
+      change === null ? '前一天没有记录' : '比前一天 ' + (change >= 0 ? '+' : '−') + pct(Math.abs(change)))),
+    statCard(pct(t.cache_ratio), '缓存命中', vs(fmtNum(t.cached) + ' 次直接从缓存回答', p && '前一天 ' + pct(p.cache_ratio)), 'ok'),
+    statCard(pct(t.servfail_ratio), 'SERVFAIL', vs(fmtNum(t.servfail) + ' 次 · NXDOMAIN ' + fmtNum(t.nxdomain) + ' 次',
+      p && '前一天 ' + pct(p.servfail_ratio)), t.servfail_ratio >= 0.5 ? 'warn' : 'ok'),
+    statCard(fmtNum(t.slow_1s), '超过 1 秒', vs(t.queries ? '占 ' + pct(t.slow_1s / t.queries * 100) : '',
+      p && '前一天 ' + fmtNum(p.slow_1s) + ' 次'), t.slow_1s ? '' : 'ok'),
   ]}`);
   renderLatency(d.latency || {});
   const dist = (items, el, names) => setHtml($(el), items && items.length
@@ -3541,7 +3553,7 @@ function renderStats(d) {
     const total = items.reduce((n, x) => n + x.count, 0) || 1;
     setHtml($(el), html`<div class="table-wrap"><table class="mini top-list"><tbody>${items.map((x) => html`<tr
       class="clickable" ${raw(attr + '="' + esc(x.key) + '"')}>
-      <td class="mono wrap">${x.name}</td>
+      <td class="mono wrap">${x.name}${x.zone ? html`<span class="zone">${x.zone}</span>` : raw('')}</td>
       <td class="top-bar"><span class="track"><span class="fill" style="width:${(x.count / total * 100).toFixed(1)}%"></span></span></td>
       <td class="mono dim num">${fmtNum(x.count)}</td></tr>`)}</tbody></table></div>`);
   };
@@ -3983,6 +3995,8 @@ function bindEvents() {
     const delA = e.target.closest('button.row-del[data-aid]');
     if (delA) { deleteAudit(delA.dataset.aid, delA); return; }
 
+    const byClient = e.target.closest('button[data-client-filter]');
+    if (byClient) { searchClient(byClient.dataset.clientFilter); return; }
     const tr = e.target.closest('tr.clickable[data-domain]');
     if (tr) { showDomain(tr.dataset.domain); return; }
     const client = e.target.closest('tr.clickable[data-client]');

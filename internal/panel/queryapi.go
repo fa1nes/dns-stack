@@ -62,7 +62,7 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 		offset = queryCountCap
 	}
 	dataArgs := append(append([]any{}, args...), size, offset)
-	rows, err := db.QueryContext(r.Context(), "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE "+clause+" ORDER BY id DESC LIMIT ? OFFSET ?", dataArgs...)
+	rows, err := queryWithClient(r.Context(), db, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path,%s FROM query_events WHERE "+clause+" ORDER BY id DESC LIMIT ? OFFSET ?", dataArgs...)
 	if err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 		return
@@ -75,11 +75,12 @@ func (s *Server) queries(w http.ResponseWriter, r *http.Request) {
 		var prefetch int64
 		var elapsed sql.NullFloat64
 		var exit sql.NullString
-		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit); err != nil {
+		var client, zone string
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &prefetch, &elapsed, &exit, &client, &zone); err != nil {
 			writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
 			return
 		}
-		items = append(items, enrichItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit))
+		items = append(items, withClient(enrichItem(id, ts, qt, rc, domain, resp, route, tag, prefetch, elapsed, exit), client, zone))
 	}
 	if err := rows.Err(); err != nil {
 		writeJSON(w, 503, map[string]any{"error": "查询失败", "items": []any{}, "total": 0})
@@ -96,6 +97,20 @@ func enrichItem(id, ts, qt, rc int64, domain, resp, route, tag string, prefetch 
 	if exit.Valid {
 		m["exit_path"] = exit.String
 	}
+	return m
+}
+
+func queryWithClient(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Rows, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(query, "COALESCE(client_subnet,''),COALESCE(ecs_zone,'')"), args...)
+	if err != nil && strings.Contains(err.Error(), "no such column") {
+		return db.QueryContext(ctx, fmt.Sprintf(query, "'',''"), args...)
+	}
+	return rows, err
+}
+
+func withClient(m map[string]any, client, zone string) map[string]any {
+	m["client"] = client
+	m["client_zone"] = zone
 	return m
 }
 
@@ -224,7 +239,7 @@ func (s *Server) queryStream(w http.ResponseWriter, r *http.Request) {
 
 func streamBatch(ctx context.Context, db *sql.DB, after, upto int64, clause string, filterArgs []any) ([]map[string]any, int64, error) {
 	args := append([]any{after, upto}, filterArgs...)
-	rows, err := db.QueryContext(ctx, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path FROM query_events WHERE id > ? AND id <= ? AND "+clause+" ORDER BY id DESC LIMIT ?", append(args, streamBatchCap)...)
+	rows, err := queryWithClient(ctx, db, "SELECT id,ts,domain,qtype,rcode,resp_by,route,server_tag,prefetch,elapsed_ms,exit_path,%s FROM query_events WHERE id > ? AND id <= ? AND "+clause+" ORDER BY id DESC LIMIT ?", append(args, streamBatchCap)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -235,10 +250,11 @@ func streamBatch(ctx context.Context, db *sql.DB, after, upto int64, clause stri
 		var domain, resp, route, tag string
 		var elapsed sql.NullFloat64
 		var exit sql.NullString
-		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &pre, &elapsed, &exit); err != nil {
+		var client, zone string
+		if err := rows.Scan(&id, &ts, &domain, &qt, &rc, &resp, &route, &tag, &pre, &elapsed, &exit, &client, &zone); err != nil {
 			return nil, 0, err
 		}
-		events = append(events, enrichItem(id, ts, qt, rc, domain, resp, route, tag, pre, elapsed, exit))
+		events = append(events, withClient(enrichItem(id, ts, qt, rc, domain, resp, route, tag, pre, elapsed, exit), client, zone))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
@@ -582,7 +598,7 @@ func (s *Server) buildOverview(ctx context.Context) (int, map[string]any) {
 }
 
 func overviewEvents(ctx context.Context, db *sql.DB, now, windowStart int64) (map[string]any, error) {
-	var last5, last1, domains, total24, failed24 int
+	var last5, last1, domains, domains1, total24, failed24 int
 	for _, q := range []struct {
 		dest  *int
 		query string
@@ -591,6 +607,7 @@ func overviewEvents(ctx context.Context, db *sql.DB, now, windowStart int64) (ma
 		{&last5, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{now - 300}},
 		{&last1, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{now - 3600}},
 		{&domains, "SELECT COUNT(*) FROM domains", nil},
+		{&domains1, "SELECT COUNT(DISTINCT +domain) FROM query_events WHERE ts >= ?", []any{now - 3600}},
 		{&total24, "SELECT COUNT(*) FROM query_events WHERE ts >= ?", []any{windowStart}},
 		{&failed24, "SELECT COUNT(*) FROM query_events WHERE rcode = 2 AND ts >= ?", []any{windowStart}},
 	} {
@@ -602,7 +619,7 @@ func overviewEvents(ctx context.Context, db *sql.DB, now, windowStart int64) (ma
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{"last_5m": last5, "last_1h": last1, "domains": domains,
+	out := map[string]any{"last_5m": last5, "last_1h": last1, "domains": domains, "domains_1h": domains1,
 		"latency": latency, "total_24h": total24, "failed_24h": failed24}
 	collector, err := collectorState(ctx, db)
 	if err != nil {

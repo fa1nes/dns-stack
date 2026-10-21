@@ -42,7 +42,38 @@ func (s *Server) buildStats(ctx context.Context, span string) (int, map[string]a
 	if err := statsReport(ctx, db, &s.statsRollup, out, since, now, window.bucket); err != nil {
 		return http.StatusServiceUnavailable, map[string]any{"error": "查询失败：" + err.Error()}
 	}
+	if since == now-window.seconds {
+		previous, err := previousTotals(ctx, db, since-window.seconds, since, s.archEpoch())
+		if err != nil {
+			return http.StatusServiceUnavailable, map[string]any{"error": "查询失败：" + err.Error()}
+		}
+		if previous != nil {
+			out["previous"] = previous
+		}
+	}
 	return http.StatusOK, out
+}
+
+func previousTotals(ctx context.Context, db *sql.DB, from, to, epoch int64) (map[string]any, error) {
+	if from < epoch {
+		return nil, nil
+	}
+	var oldest sql.NullInt64
+	if err := db.QueryRowContext(ctx, "SELECT MIN(ts) FROM query_events").Scan(&oldest); err != nil {
+		return nil, err
+	}
+	if !oldest.Valid || oldest.Int64 > from+rollupHour {
+		return nil, nil
+	}
+	var queries, cached, servfail, slow int64
+	err := db.QueryRowContext(ctx, "SELECT COUNT(*), COALESCE(SUM(resp_by = 'cache'), 0), COALESCE(SUM(rcode = 2), 0), "+
+		"COALESCE(SUM(elapsed_ms >= 1000), 0) FROM query_events WHERE ts >= ? AND ts < ? AND prefetch = 0", from, to).
+		Scan(&queries, &cached, &servfail, &slow)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"since": from, "until": to, "queries": queries, "slow_1s": slow,
+		"cache_ratio": percentage(float64(cached), float64(queries)), "servfail_ratio": percentage(float64(servfail), float64(queries))}, nil
 }
 
 const clientEvents = "FROM query_events WHERE ts >= ? AND prefetch = 0"
@@ -80,6 +111,9 @@ func statsReport(ctx context.Context, db *sql.DB, rollup *statsRollup, out map[s
 				pair[0][key] += n
 			}
 		}
+		for client, zone := range h.zones {
+			sum.zones[client] = zone
+		}
 		if slot := (max(hour, since) - start) / bucket; slot >= 0 && slot < int64(slots) {
 			point := series[slot]
 			point["total"] = point["total"].(int64) + h.queries
@@ -110,7 +144,13 @@ func statsReport(ctx context.Context, db *sql.DB, rollup *statsRollup, out map[s
 	out["by_exit"] = rankedItems(sum.exit, 8, nil)
 	out["top_domains"] = rankedItems(sum.domains, 10, nil)
 	out["top_failing"] = rankedItems(sum.failing, 10, nil)
-	out["top_clients"] = rankedItems(sum.clients, 10, nil)
+	clients := rankedItems(sum.clients, 10, nil)
+	for _, item := range clients {
+		if zone := sum.zones[item["key"].(string)]; zone != "" {
+			item["zone"] = zone
+		}
+	}
+	out["top_clients"] = clients
 	return nil
 }
 
