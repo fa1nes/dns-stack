@@ -146,7 +146,7 @@ func certExpiryProblems(certPath string, now time.Time) []string {
 		return []string{"DoH/DoT 证书已于 " + status.NotAfter.Local().Format("01-02 15:04") + " 过期，客户端会全部连不上"}
 	case left < certAlertWindow:
 		bucket := int(left.Hours())/12*12 + 12
-		return []string{fmt.Sprintf("DoH/DoT 证书不到 %d 小时就到期，自动续签一直没成功——看 journalctl -u dns-stack-maintenance", bucket)}
+		return []string{fmt.Sprintf("DoH/DoT 证书不到 %d 小时就到期，自动续签一直没成功——看 "+pipeline.AcmeLog+" 与 journalctl -u dns-stack-maintenance", bucket)}
 	}
 	return nil
 }

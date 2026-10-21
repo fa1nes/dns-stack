@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -20,13 +21,16 @@ import (
 )
 
 const (
-	CertPath      = "/etc/dns-stack/secrets/doh-dot.pem"
-	KeyPath       = "/etc/dns-stack/secrets/doh-dot.key"
-	PanelCertDir  = "/etc/dns-stack/secrets/panel"
-	PanelCertPath = PanelCertDir + "/cert.pem"
-	PanelKeyPath  = PanelCertDir + "/key.pem"
-	AcmeHome      = "/root/.acme.sh"
-	renewWhenDays = 3
+	CertPath         = "/etc/dns-stack/secrets/doh-dot.pem"
+	KeyPath          = "/etc/dns-stack/secrets/doh-dot.key"
+	PanelCertDir     = "/etc/dns-stack/secrets/panel"
+	PanelCertPath    = PanelCertDir + "/cert.pem"
+	PanelKeyPath     = PanelCertDir + "/key.pem"
+	AcmeHome         = "/root/.acme.sh"
+	AcmeLog          = AcmeHome + "/acme.sh.log"
+	renewWhenDays    = 3
+	acmeForceDays    = 1
+	acmeRenewSkipped = 2
 )
 
 type CertStatus struct {
@@ -144,10 +148,18 @@ func stepRenewCert(ctx context.Context, rt *Runtime) error {
 		return fmt.Errorf("需要续签但 config.env 没有 PUBLIC_IPV4，无法确定证书主体")
 	}
 	rt.Infof("开始续签（Let's Encrypt IP 证书约 6 天有效期）")
-	return runAcme(ctx, rt, publicIP)
+	return runAcme(ctx, rt, publicIP, status.DaysLeft <= acmeForceDays || !status.SANHasIP)
 }
 
-func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
+func acmeRenewArgs(publicIP string, force bool) []string {
+	args := []string{"--home", AcmeHome, "--renew", "-d", publicIP, "--ecc", "--log", AcmeLog}
+	if force {
+		args = append(args, "--force")
+	}
+	return args
+}
+
+func runAcme(ctx context.Context, rt *Runtime, publicIP string, force bool) error {
 	acme := AcmeHome + "/acme.sh"
 	if _, err := os.Stat(acme); err != nil {
 		return fmt.Errorf("找不到 acme.sh: %s", acme)
@@ -167,10 +179,15 @@ func runAcme(ctx context.Context, rt *Runtime, publicIP string) error {
 		return fmt.Errorf("登记证书安装方式失败: %w", err)
 	}
 
-	renew := exec.CommandContext(ctx, acme, "--home", AcmeHome, "--renew", "-d", publicIP, "--ecc", "--force")
+	renew := exec.CommandContext(ctx, acme, acmeRenewArgs(publicIP, force)...)
 	renew.Stdout, renew.Stderr = rt.Out, rt.Out
 	if err := renew.Run(); err != nil {
-		return fmt.Errorf("续签失败，继续使用旧证书: %w", err)
+		var exit *exec.ExitError
+		if !force && errors.As(err, &exit) && exit.ExitCode() == acmeRenewSkipped {
+			rt.Infof("acme.sh 认为还没到它自己的续签时间，交给它的 cron 续签；日志在 %s", AcmeLog)
+			return syncPanelCertIfStale(ctx, rt)
+		}
+		return fmt.Errorf("续签失败，继续使用旧证书（acme.sh 日志 %s）: %w", AcmeLog, err)
 	}
 	rt.Infof("续签成功")
 	return SyncPanelCert(ctx, rt)
