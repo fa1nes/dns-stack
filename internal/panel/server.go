@@ -51,6 +51,7 @@ type Server struct {
 	rates          rateTracker
 	overviewShared sharedResult
 	statsShared    sharedResults
+	statsRollup    statsRollup
 
 	exits     exitCache
 	nodes     nodeCache

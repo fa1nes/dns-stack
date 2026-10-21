@@ -63,6 +63,11 @@ function fmtClock(ts) {
   const d = new Date(ts * 1000);
   return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
 }
+function fmtRowTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toDateString() === new Date().toDateString() ? fmtClock(ts)
+    : pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
 function fmtBytes(n) {
   if (n === null || n === undefined) return '—';
   const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -995,6 +1000,7 @@ function routeActions(rt, domain) {
   const blocked = rt && rt.rule === 'block';
   if (!blocked && rt && rt.rule !== 'cn') buttons.push(html`<button class="sm" data-route-add="cn" data-domain="${target}">走国内</button>`);
   if (!blocked && rt && rt.rule !== 'hk') buttons.push(html`<button class="sm" data-route-add="hk" data-domain="${target}">走香港</button>`);
+  if (!blocked && rt) buttons.push(html`<button class="sm danger" data-route-add="block" data-domain="${domain}">拦截</button>`);
   if (rt && rt.rule) buttons.push(html`<button class="sm" data-route-remove="${rt.rule}" data-domain="${rt.rule_domain}">${blocked ? '取消拦截' : '移出名单'}</button>`);
   buttons.push(html`<button class="sm" data-flush="${target}">清缓存</button>`);
   return html`<div class="row route-actions">${buttons}</div>`;
@@ -1042,8 +1048,9 @@ async function routeChange(btn) {
   const add = btn.dataset.routeAdd;
   const list = add || btn.dataset.routeRemove;
   const block = list === 'block';
-  const action = block ? 'blocklist_remove' : (add ? 'route_add' : 'route_remove');
-  const label = block ? '取消拦截' : (add ? '加入' : '移出') + RULE_TEXT[list];
+  if (block && add && !confirm('拦截 ' + domain + ' 和它的全部子域？\n\n之后查询一律返回「不存在」，可以在「设置 → 域名规则 → 拦截」里取消。')) return;
+  const action = block ? (add ? 'blocklist_add' : 'blocklist_remove') : (add ? 'route_add' : 'route_remove');
+  const label = block ? (add ? '拦截' : '取消拦截') : (add ? '加入' : '移出') + RULE_TEXT[list];
   await withBusy(btn, () => accessAction(action, label, block ? { domains: [domain] } : { list: list, domains: [domain] }));
   if (state.page === 'tools' && $('#testDomain').value.trim()) runDnsTest();
   else if ($('#drawer').classList.contains('open')) showDomain($('#drawerTitle').textContent);
@@ -1299,7 +1306,7 @@ function latencyCell(r) {
 }
 
 const queryRow = (r, cls) => html`<tr class="clickable${cls ? ' ' + cls : ''}" data-domain="${r.domain}">
-    <td class="mono dim">${fmtClock(r.ts)}</td>
+    <td class="mono dim nowrap" title="${fmtTime(r.ts)}">${fmtRowTime(r.ts)}</td>
     <td class="mono wrap">${r.domain}</td>
     <td class="mono">${r.qtype_name}</td>
     <td>${rcodeBadge(r)}</td>
@@ -1418,7 +1425,7 @@ const live = {
 function liveFilterParams() {
   const params = new URLSearchParams();
   [['domain', $('#fDomain').value.trim()], ['qtype', $('#fQtype').value],
-    ['route', $('#fRoute').value], ['rcode', $('#fRcode').value]]
+    ['route', $('#fRoute').value], ['rcode', $('#fRcode').value], ['client', $('#fClient').value.trim()]]
     .forEach(([key, value]) => { if (value) params.set(key, value); });
   return params;
 }
@@ -1758,7 +1765,7 @@ function deleteDomain(domain) {
   });
 }
 
-const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fSince'];
+const EXTRA_FILTERS = ['#fQtype', '#fRoute', '#fRcode', '#fClient', '#fSince'];
 
 function setFilterMore(open) {
   const box = $('#filterMore');
@@ -3344,6 +3351,16 @@ function searchQueries(domain) {
   if (loaded) loadQueries(1);
 }
 
+function searchClient(subnet) {
+  const loaded = state.liveLoaded;
+  $('#fClient').value = subnet;
+  state.queryRange = null;
+  syncFilterCount();
+  stopLive();
+  jumpTo('queries', 'live');
+  if (loaded) loadQueries(1);
+}
+
 function cmdkItems(text) {
   const items = [];
   const target = cmdkTarget(text);
@@ -3516,18 +3533,18 @@ function renderStats(d) {
   dist(d.by_qtype, '#statsQtype');
   dist(d.by_rcode, '#statsRcode');
   dist(d.by_exit, '#statsExit', STATS_EXIT);
-  const top = (items, el, clickable, empty) => {
+  const top = (items, el, attr, empty) => {
     if (!items || !items.length) { setHtml($(el), html`<div class="pad">${EMPTY(empty)}</div>`); return; }
     const total = items.reduce((n, x) => n + x.count, 0) || 1;
     setHtml($(el), html`<div class="table-wrap"><table class="mini top-list"><tbody>${items.map((x) => html`<tr
-      class="${clickable ? 'clickable' : ''}" ${clickable ? raw('data-domain="' + esc(x.key) + '"') : raw('')}>
+      class="clickable" ${raw(attr + '="' + esc(x.key) + '"')}>
       <td class="mono wrap">${x.name}</td>
       <td class="top-bar"><span class="track"><span class="fill" style="width:${(x.count / total * 100).toFixed(1)}%"></span></span></td>
       <td class="mono dim num">${fmtNum(x.count)}</td></tr>`)}</tbody></table></div>`);
   };
-  top(d.top_domains, '#statsTopDomains', true);
-  top(d.top_failing, '#statsTopFailing', true, '没有 SERVFAIL');
-  top(d.top_clients, '#statsTopClients', false, '没有记录客户端网段');
+  top(d.top_domains, '#statsTopDomains', 'data-domain');
+  top(d.top_failing, '#statsTopFailing', 'data-domain', '没有 SERVFAIL');
+  top(d.top_clients, '#statsTopClients', 'data-client', '没有记录客户端网段');
 }
 
 function renderLatency(l) {
@@ -3896,7 +3913,7 @@ function bindEvents() {
   $('#btnSearch').addEventListener('click', () => loadQueries(1));
   $('#fDomain').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadQueries(1); });
   $('#btnReset').addEventListener('click', () => {
-    ['#fDomain', '#fQtype', '#fRoute', '#fRcode'].forEach((s) => { $(s).value = ''; });
+    ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#fClient'].forEach((s) => { $(s).value = ''; });
     $('#fSince').value = '0';
     state.queryRange = null;
     syncFilterCount();
@@ -3963,6 +3980,8 @@ function bindEvents() {
 
     const tr = e.target.closest('tr.clickable[data-domain]');
     if (tr) { showDomain(tr.dataset.domain); return; }
+    const client = e.target.closest('tr.clickable[data-client]');
+    if (client) { searchClient(client.dataset.client); return; }
 
     const cp = e.target.closest('button[data-copy-target]');
     if (cp) { copyFrom($('#' + cp.dataset.copyTarget), cp.dataset.copyWhat || ''); return; }
@@ -4053,7 +4072,7 @@ function bindEvents() {
 }
 
 function resetFilterControls() {
-  ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#domSearch', '#domRoute', '#logSearch']
+  ['#fDomain', '#fQtype', '#fRoute', '#fRcode', '#fClient', '#domSearch', '#domRoute', '#logSearch']
     .forEach((s) => { const el = $(s); if (el) el.value = ''; });
   const defaults = { '#fSince': '0', '#domLimit': '50', '#logLines': '200', '#tsSpan': '3600' };
   Object.keys(defaults).forEach((s) => { const el = $(s); if (el) el.value = defaults[s]; });

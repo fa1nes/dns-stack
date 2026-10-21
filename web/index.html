@@ -162,6 +162,8 @@ try {
             <select id="fSince" title="时间" autocomplete="off"><option value="0">不限时间</option>
               <option value="300">5 分钟内</option><option value="3600">1 小时内</option>
               <option value="86400">24 小时内</option><option value="604800">7 天内</option></select>
+            <input type="search" id="fClient" class="w-client" placeholder="客户端网段，如 1.2.3.0/24" title="客户端网段" autocomplete="off"
+                   autocapitalize="none" autocorrect="off" spellcheck="false">
             <button id="btnReset">重置</button>
             </div>
           </div>
@@ -186,7 +188,7 @@ try {
             <div class="table-wrap card-rows live-wrap">
               <table class="card-rows live-table">
                 <thead><tr>
-                  <th style="width:76px">时间</th><th>域名</th><th style="width:64px">类型</th>
+                  <th style="width:100px">时间</th><th>域名</th><th style="width:64px">类型</th>
                   <th style="width:100px">结果</th><th style="width:72px">来源</th>
                   <th style="width:78px">耗时</th><th style="width:40px"></th>
                 </tr></thead>

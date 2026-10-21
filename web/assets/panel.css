@@ -465,6 +465,8 @@ code {
 
 .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .row.nowrap { flex-wrap: nowrap; }
+td.nowrap { white-space: nowrap; }
+.filter-more .w-client { width: 210px; max-width: 100%; }
 .grow-1 { flex: 1; min-width: 0; }
 .fs-12 { font-size: var(--fs-sm); }
 .dim { color: var(--text-muted); }

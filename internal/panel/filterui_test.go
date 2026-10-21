@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var selectIDRe = regexp.MustCompile(`<select id="(f[A-Za-z]+)"`)
+var selectIDRe = regexp.MustCompile(`<(?:select|input)\b[^>]*?\bid="(f[A-Za-z]+)"`)
 var extraFiltersRe = regexp.MustCompile(`const EXTRA_FILTERS = \[([^\]]*)\]`)
 
 func TestCollapsedFiltersAreAllCounted(t *testing.T) {

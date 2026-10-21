@@ -125,6 +125,10 @@ func eventFilters(q url.Values) ([]string, []any) {
 		where = append(where, "resp_by = ?")
 		args = append(args, v)
 	}
+	if v := strings.TrimSpace(q.Get("client")); v != "" {
+		where = append(where, "client_subnet = ?")
+		args = append(args, v)
+	}
 	if v := q.Get("qtype"); v != "" {
 		if n := parseType(v); n >= 0 {
 			where = append(where, "qtype = ?")

@@ -122,4 +122,5 @@ func writeShared(w http.ResponseWriter, status int, body []byte) {
 func (s *Server) forgetShared() {
 	s.overviewShared.forget()
 	s.statsShared.forget()
+	s.statsRollup.reset()
 }
