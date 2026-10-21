@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -96,7 +97,7 @@ func cmdECSPrecision(args []string) error {
 	if err != nil {
 		return fmt.Errorf("读不到 ECS 分片表: %w", err)
 	}
-	vantages := precisionVantages(zones, rows, *maxZones)
+	vantages := precisionVantages(zones, rows, loadFanoutSubnets(filepath.Join(*state, "ecs-fanout.txt")), *maxZones)
 	if len(vantages) == 0 {
 		return fmt.Errorf("没有带省份和运营商的客户端分片，无从比较")
 	}
@@ -244,7 +245,26 @@ func precisionTopDomains(db *sql.DB, since int64, limit int) ([]precisionDomain,
 	return out, rs.Err()
 }
 
-func precisionVantages(zones []precisionVantage, rows []ecszone.Row, limit int) []precisionVantage {
+func loadFanoutSubnets(path string) map[string]string {
+	out := map[string]string{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		zone, subnet, ok := strings.Cut(line, ",")
+		if !ok || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if _, err := netip.ParsePrefix(subnet); err == nil {
+			out[zone] = subnet
+		}
+	}
+	return out
+}
+
+func precisionVantages(zones []precisionVantage, rows []ecszone.Row, known map[string]string, limit int) []precisionVantage {
 	var out []precisionVantage
 	seen := map[string]bool{}
 	for _, z := range zones {
@@ -260,13 +280,25 @@ func precisionVantages(zones []precisionVantage, rows []ecszone.Row, limit int) 
 	if len(out) == 0 {
 		return nil
 	}
+	for _, zone := range sortedKeys(known) {
+		subnet := known[zone]
+		province, carrier := ecszone.SplitZone(zone)
+		if !seen[zone] && province != "" && carrier != "" {
+			out = append(out, precisionVantage{Zone: zone, Subnet: subnet, Province: province, Carrier: carrier})
+			seen[zone] = true
+		}
+	}
 	province := out[0].Province
 	for _, carrier := range []string{"电信", "联通", "移动"} {
 		zone := province + carrier
 		if seen[zone] {
 			continue
 		}
-		if subnet := zoneSampleSubnet(rows, zone); subnet != "" {
+		subnet := known[zone]
+		if subnet == "" {
+			subnet = zoneSampleSubnet(rows, zone)
+		}
+		if subnet != "" {
 			out = append(out, precisionVantage{Zone: zone, Subnet: subnet, Province: province, Carrier: carrier})
 			seen[zone] = true
 		}
