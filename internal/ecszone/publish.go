@@ -3,10 +3,9 @@ package ecszone
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/dns-stack/dns-stack/internal/cidrutil"
-	"github.com/dns-stack/dns-stack/internal/statefile"
+	"github.com/dns-stack/dns-stack/internal/metrics"
 )
 
 func CheckPublishable(out string, merged []Row) error {
@@ -29,26 +28,5 @@ func Publish(out string, merged []Row, reload func() int) (string, error) {
 	if err := CheckPublishable(out, merged); err != nil {
 		return "", err
 	}
-	previous, readErr := os.ReadFile(out)
-	if err := statefile.WriteAtomic(out, []byte(Render(merged)), 0o644); err != nil {
-		return "", err
-	}
-	switch code := reload(); code {
-	case 0:
-		return "mosproxy 管理接口连不上，分片表已落盘，下次启动时生效", nil
-	case 200:
-		return "mosproxy 已热加载新的分片表", nil
-	default:
-		if readErr != nil {
-			os.Remove(out)
-			return "", fmt.Errorf("mosproxy reload 返回 %d，首次生成的分片表已移除", code)
-		}
-		if err := statefile.WriteAtomic(out, previous, 0o644); err != nil {
-			return "", fmt.Errorf("mosproxy reload 返回 %d，回滚也失败了: %w", code, err)
-		}
-		if recheck := reload(); recheck != 200 {
-			return "", fmt.Errorf("mosproxy reload 返回 %d，已回滚到上一版，但回滚后 reload 仍返回 %d——问题不在分片表，检查 mosproxy 日志", code, recheck)
-		}
-		return "", fmt.Errorf("mosproxy reload 返回 %d，新分片表无法解析，已回滚到上一版", code)
-	}
+	return metrics.ReplaceAndReload(out, []byte(Render(merged)), "分片表", reload)
 }

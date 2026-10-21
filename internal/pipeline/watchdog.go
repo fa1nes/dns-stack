@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
@@ -28,6 +29,7 @@ type WatchdogConfig struct {
 	MinEntries int
 	MaxRepairs int
 	AuthRatio  int
+	FailClosed bool
 }
 
 type Health struct {
@@ -81,6 +83,7 @@ func NewWatchdog(cfg Config) WatchdogConfig {
 		MinEntries: DefaultMinSetEntries,
 		MaxRepairs: DefaultMaxRepairs,
 		AuthRatio:  DefaultAuthorityRatio,
+		FailClosed: pick(cfg.Value("TUNNEL_FAIL_MODE"), DefaultFailMode) == "closed",
 	}
 }
 
@@ -125,6 +128,9 @@ func (w WatchdogConfig) problems(snap routingSnapshot) []string {
 	if !regexp.MustCompile(`fwmark ` + mark.String()).MatchString(snap.IPRules) {
 		problems = append(problems, "fwmark 策略路由规则缺失")
 	}
+	if w.FailClosed && !regexp.MustCompile(`fwmark `+mark.String()+` prohibit`).MatchString(snap.IPRules) {
+		problems = append(problems, "隧道故障兜底规则缺失(隧道一断境外查询就会直连，拿到污染答案)")
+	}
 	sizes := w.sizes(snap)
 	if w.DirectTooSmall(sizes) {
 		problems = append(problems, "大陆 IP 集合过小或为空")
@@ -165,6 +171,11 @@ func (w WatchdogConfig) flushPoisonedCache(ctx context.Context, rt *Runtime) {
 		return
 	}
 	rt.Infof("已清空 Unbound 缓存(故障期间可能缓存了污染答案)")
+	if removed, err := metrics.FlushCache(ctx, ""); err != nil {
+		rt.Warnf("清空 mosproxy 缓存失败(%v)——故障期间的污染答案会留在 mosproxy 缓存里直到过期", err)
+	} else {
+		rt.Infof("已清空 mosproxy 缓存 %d 条", removed)
+	}
 }
 
 func (w WatchdogConfig) Check(ctx context.Context, rt *Runtime) (Health, error) {

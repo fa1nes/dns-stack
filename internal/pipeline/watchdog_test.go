@@ -101,3 +101,31 @@ func TestWatchdogJudgesOneSnapshotTheWayItJudgedSixCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchdogWantsTheProhibitRuleOnlyWhenFailClosed(t *testing.T) {
+	withoutProhibit := strings.Replace(productionIPRules, "102:\tfrom all fwmark 0x1d5 prohibit\n", "", 1)
+	table := productionShapedTable(4256, 120)
+	w := watchdogForTest()
+	w.FailClosed = true
+	if got := w.problems(routingSnapshot{table, productionIPRules, 150}); len(got) != 0 {
+		t.Fatalf("兜底规则在时不该报问题: %q", got)
+	}
+	got := w.problems(routingSnapshot{table, withoutProhibit, 150})
+	if len(got) != 1 || !strings.Contains(got[0], "兜底规则缺失") {
+		t.Fatalf("fail-mode=closed 而 prohibit 规则丢了，隧道一断就会直连拿污染答案，看门狗必须报出来: %q", got)
+	}
+	w.FailClosed = false
+	if got := w.problems(routingSnapshot{table, withoutProhibit, 150}); len(got) != 0 {
+		t.Fatalf("fail-mode=open 本来就没有 prohibit 规则，不该报: %q", got)
+	}
+}
+
+func TestNewWatchdogFollowsTunnelFailMode(t *testing.T) {
+	if !NewWatchdog(Config{}).FailClosed {
+		t.Fatal("没配 TUNNEL_FAIL_MODE 时默认是 closed，看门狗应当检查兜底规则")
+	}
+	open := Config{values: map[string]string{"TUNNEL_FAIL_MODE": "open"}}
+	if NewWatchdog(open).FailClosed {
+		t.Fatal("TUNNEL_FAIL_MODE=open 时不该要求兜底规则")
+	}
+}

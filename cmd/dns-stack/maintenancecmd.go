@@ -14,6 +14,7 @@ import (
 	"github.com/dns-stack/dns-stack/internal/metrics"
 	"github.com/dns-stack/dns-stack/internal/pipeline"
 	"github.com/dns-stack/dns-stack/internal/stack"
+	"github.com/dns-stack/dns-stack/internal/statefile"
 )
 
 func cmdMaintenance(args []string) error {
@@ -98,6 +99,10 @@ func cmdRoutingWatchdog(args []string) error {
 		problems = append(problems, "访问控制表缺失且重新下发失败（入口正对全网开放）："+aclErr.Error())
 	} else if restored {
 		rt.Warnf("访问控制表不在内核里，已按 acl.txt 重新下发")
+	}
+	if unlock, lockErr := statefile.TryLock(upgradeLock); lockErr == nil {
+		problems = append(problems, pipeline.NewReviver().Revive(ctx, rt, pipeline.ReviveUnits)...)
+		unlock()
 	}
 	health, err := watchdog.Check(ctx, rt)
 	if !health.Repaired {

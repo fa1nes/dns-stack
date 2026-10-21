@@ -10,7 +10,6 @@ import (
 
 	"github.com/dns-stack/dns-stack/internal/ecszone"
 	"github.com/dns-stack/dns-stack/internal/metrics"
-	"github.com/dns-stack/dns-stack/internal/statefile"
 
 	_ "modernc.org/sqlite"
 )
@@ -67,16 +66,10 @@ func stepECSFanout(ctx context.Context, rt *Runtime) error {
 		rt.Infof("预览：并发清单有变化，未落盘 %s", out)
 		return nil
 	}
-	if err := statefile.WriteAtomic(out, content, 0o644); err != nil {
+	message, err := metrics.ReplaceAndReload(out, content, "并发清单", func() int { return metrics.Reload(ctx) })
+	if err != nil {
 		return err
 	}
-	switch metrics.Reload(ctx) {
-	case 200:
-		rt.Infof("mosproxy 已热加载新的并发清单")
-	case 0:
-		rt.Infof("mosproxy 管理接口连不上，并发清单已落盘，下次启动时生效")
-	default:
-		rt.Warnf("mosproxy reload 失败，并发清单已落盘，检查 mosproxy 日志")
-	}
+	rt.Infof("%s", message)
 	return nil
 }
