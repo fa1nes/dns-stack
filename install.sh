@@ -32,6 +32,14 @@ bundle_fetch() {
     return 1
 }
 
+meta_fetch() {
+    local url="$1" out="$2" opts=(-fsSL --connect-timeout 15 --max-time 60)
+    if ip -4 addr show 2>/dev/null | grep -q ' 10\.100\.0\.2/'; then
+        curl "${opts[@]}" --interface 10.100.0.2 -o "$out" "$url" 2>/dev/null && return 0
+    fi
+    curl "${opts[@]}" -o "$out" "$url" 2>/dev/null
+}
+
 bundle_verify() {
     local file="$1" sums="$2" want got
     want="$(awk 'NR == 1 {print tolower($1)}' "$sums")"
@@ -54,14 +62,14 @@ bootstrap_bundle() {
     tmp="$(mktemp -d /tmp/dns-stack-bundle.XXXXXX)"
     log_info "从 ${base} 获取安装包与 ${arch} 二进制..."
     bundle_fetch "$base/dns-stack-bundle.tar.gz" "$tmp/bundle.tar.gz" || die "下载安装包失败"
-    bundle_fetch "$base/dns-stack-bundle.tar.gz.sha256" "$tmp/bundle.sha256" || die "下载安装包校验和失败"
+    meta_fetch "$base/dns-stack-bundle.tar.gz.sha256" "$tmp/bundle.sha256" || die "校验和只从 GitHub 直连或隧道取，两条都没取到，已中止"
     bundle_verify "$tmp/bundle.tar.gz" "$tmp/bundle.sha256"
     mkdir -p "$tmp/src"
     tar -xzf "$tmp/bundle.tar.gz" -C "$tmp/src"
     [[ -f "$tmp/src/install.sh" && -d "$tmp/src/systemd" && -f "$tmp/src/versions.lock" ]] || die "安装包内容不完整"
     mkdir -p "$tmp/src/bin"
     bundle_fetch "$base/dns-stack-linux-${arch}" "$tmp/src/bin/dns-stack-linux-${arch}" || die "下载二进制失败"
-    bundle_fetch "$base/dns-stack-linux-${arch}.sha256" "$tmp/bin.sha256" || die "下载二进制校验和失败"
+    meta_fetch "$base/dns-stack-linux-${arch}.sha256" "$tmp/bin.sha256" || die "校验和只从 GitHub 直连或隧道取，两条都没取到，已中止"
     bundle_verify "$tmp/src/bin/dns-stack-linux-${arch}" "$tmp/bin.sha256"
     chmod 0755 "$tmp/src/bin/dns-stack-linux-${arch}"
     log_ok "安装包与二进制都已核对 sha256: $("$tmp/src/bin/dns-stack-linux-${arch}" version)"
@@ -516,7 +524,8 @@ install_go_runtime() {
             fi
             log_ok "  sha256 与 CI 记录一致"
         else
-            log_warn "  取不到 .sha256，跳过校验（内容未经核对）"
+            rm -rf "$download_dir"
+            die "取不到 ${base}/dns-stack-linux-${arch}.sha256，未经核对的二进制不安装"
         fi
         chmod 0755 "$download_dir/dns-stack"
         candidate="$download_dir/dns-stack"
@@ -581,11 +590,11 @@ download_mosproxy() {
         rm -f "$tmp" "$sum" "$build_id"
         curl -fsSL --max-time 300 --speed-limit 4096 --speed-time 30 "$u" -o "$tmp" 2>/dev/null || continue
         [[ -s "$tmp" ]] || continue
-        if ! curl -fsSL --max-time 60 "${u}.sha256" -o "$sum" 2>/dev/null; then
-            log_warn "  取不到校验和，换下一个源"
+        if ! meta_fetch "${direct}.sha256" "$sum"; then
+            log_warn "  校验和只从 GitHub 直连或隧道取，没取到，换下一个源"
             continue
         fi
-        if ! curl -fsSL --max-time 60 "${u}.build-id" -o "$build_id" 2>/dev/null; then
+        if ! meta_fetch "${direct}.build-id" "$build_id"; then
             log_warn "  取不到构建身份，换下一个源"
             continue
         fi
