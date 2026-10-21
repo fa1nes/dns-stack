@@ -14,7 +14,7 @@ import (
 
 const (
 	mosproxyBuildIDPath = "/opt/dns-stack/bin/mosproxy.build-id"
-	upgradeCheckTimeout = 300 * time.Second
+	upgradeCheckTimeout = 310 * time.Second
 	upgradeLogLines     = 40
 )
 

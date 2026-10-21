@@ -2156,7 +2156,7 @@ function renderLocalRecords(d) {
   if (d.local_error) { setHtml($('#localList'), stateHtml(d.local_error, 'error')); return; }
   if (!items.length) { setHtml($('#localList'), html`<span class="note-xs">还没有</span>`); return; }
   setHtml($('#localList'), html`${items.map((r) => html`<span class="chip">
-      <span class="mono">${r.name}</span><span class="chip-k">${r.type}</span><span class="mono">${r.value}</span>
+      <span class="mono" title="${r.name}">${r.name}</span><span class="chip-k">${r.type}</span><span class="mono" title="${r.value}">${r.value}</span>
       <button type="button" data-local-remove="${r.name}" data-type="${r.type}" data-value="${r.value}"
               aria-label="删除 ${r.name} ${r.type} ${r.value}" title="删除">${ICON_X}</button>
     </span>`)}`);
@@ -2167,7 +2167,7 @@ async function localAdd() {
   const value = $('#localValue').value.trim();
   if (!name) { $('#localName').focus(); return; }
   if (!value) { $('#localValue').focus(); return; }
-  const type = value.includes(':') ? 'AAAA' : 'A';
+  const type = value.includes(':') && !/^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(value) ? 'AAAA' : 'A';
   const ok = await withBusy($('#localForm button[type="submit"]'),
     () => accessAction('local_record_add', '添加本地记录', { name: name, type: type, value: value }));
   if (ok) { $('#localName').value = ''; $('#localValue').value = ''; }
@@ -2194,7 +2194,8 @@ async function accessAction(action, label, payload, confirmed) {
   if (confirmed) body.confirm = true;
   try {
     const d = await api('/api/access', { method: 'POST', body: JSON.stringify(body) });
-    toast(d.ok ? '已' + label : label + '失败', (d.message || '').slice(0, 800), d.ok ? 'ok' : 'err');
+    const unchanged = d.ok && /未改动/.test(d.message || '');
+    toast(unchanged ? '没有改动' : d.ok ? '已' + label : label + '失败', (d.message || '').slice(0, 800), d.ok ? 'ok' : 'err');
     if (state.page === 'settings') await loadAccess();
     return d.ok;
   } catch (e) {
@@ -3510,7 +3511,10 @@ async function loadStats() {
     renderStats(d);
   } catch (e) {
     if (!fresh()) return;
+    statsView.data = null;
     setHtml($('#statsTotals'), errState(e));
+    ['#statsRange', '#statsSeries', '#statsLatencyNote', '#statsLatency', '#statsQtype', '#statsRcode', '#statsExit',
+      '#statsTopDomains', '#statsTopFailing', '#statsTopClients'].forEach((sel) => { const el = $(sel); if (el) setHtml(el, raw('')); });
   }
 }
 
@@ -3525,7 +3529,6 @@ function renderStats(d) {
       t.servfail_ratio >= 0.5 ? 'warn' : 'ok'),
     statCard(fmtNum(t.slow_1s), '超过 1 秒', t.queries ? '占 ' + pct(t.slow_1s / t.queries * 100) : '', t.slow_1s ? '' : 'ok'),
   ]}`);
-  drawStatsSeries(d);
   renderLatency(d.latency || {});
   const dist = (items, el, names) => setHtml($(el), items && items.length
     ? barRows(items.map((x) => ({ name: names ? (names[x.key] || x.key) : x.name, count: x.count })))
@@ -3545,6 +3548,7 @@ function renderStats(d) {
   top(d.top_domains, '#statsTopDomains', 'data-domain');
   top(d.top_failing, '#statsTopFailing', 'data-domain', '没有 SERVFAIL');
   top(d.top_clients, '#statsTopClients', 'data-client', '没有记录客户端网段');
+  drawStatsSeries(d);
 }
 
 function renderLatency(l) {
@@ -3770,6 +3774,7 @@ async function loadAlertInfo() {
     $('#btnAlertClear').hidden = !d.configured;
   } catch (e) {
     setHtml($('#alertInfo'), errState(e));
+    $('#btnAlertTest').disabled = true;
   }
 }
 

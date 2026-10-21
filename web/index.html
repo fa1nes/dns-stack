@@ -143,7 +143,7 @@ try {
 
         <div class="tab-panel active" id="qtab-live">
           <div class="filters">
-            <input type="search" id="fDomain" class="grow" placeholder="搜索域名" autocomplete="off"
+            <input type="search" id="fDomain" aria-label="搜索域名" class="grow" placeholder="搜索域名" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
             <button id="btnSearch" class="primary">搜索</button>
             <button id="btnFilterMore" aria-expanded="false" aria-controls="filterMore">
@@ -220,7 +220,7 @@ try {
             <button data-metric="slow">最慢</button>
           </div>
           <div class="filters">
-            <input type="search" id="domSearch" class="grow" placeholder="搜索域名" autocomplete="off"
+            <input type="search" id="domSearch" aria-label="搜索域名" class="grow" placeholder="搜索域名" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
             <select id="domRoute" title="来源" autocomplete="off"><option value="">全部来源</option>
               <option value="cache">缓存</option><option value="cn">本机</option><option value="foreign">香港</option></select>
@@ -304,7 +304,7 @@ try {
         <div class="tab-panel active" id="ttab-test">
           <div class="card">
             <form class="filters flat m0" id="testForm">
-              <input type="text" id="testDomain" class="grow" placeholder="域名或 IP" autocomplete="off"
+              <input type="text" id="testDomain" aria-label="要测试的域名或 IP" class="grow" placeholder="域名或 IP" autocomplete="off"
                      enterkeyhint="go" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false">
               <select id="testQtype" title="记录类型" autocomplete="off"><option value="">自动</option>
                 <option>A</option><option>AAAA</option><option>CNAME</option><option>HTTPS</option><option>MX</option>
@@ -334,7 +334,7 @@ try {
         <div class="tab-panel" id="ttab-ip">
           <div class="card">
             <div class="filters flat m0">
-              <input type="text" id="ipQuery" class="grow mono" placeholder="IP，留空查自己" autocomplete="off"
+              <input type="text" id="ipQuery" aria-label="要查询的 IP" class="grow mono" placeholder="IP，留空查自己" autocomplete="off"
                      enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
               <button class="primary" id="btnIpLookup">查询</button>
             </div>
@@ -355,7 +355,7 @@ try {
           <div class="filters">
             <select id="logLines" title="行数" autocomplete="off"><option value="200">200 行</option><option value="500">500 行</option>
               <option value="1000">1000 行</option><option value="2000">2000 行</option></select>
-            <input type="search" id="logSearch" class="grow" placeholder="过滤" autocomplete="off"
+            <input type="search" id="logSearch" aria-label="过滤日志" class="grow" placeholder="过滤" autocomplete="off"
                    enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
             <button id="btnLogRefresh" class="primary">刷新</button>
             <button id="btnLogFollow">跟随</button>
@@ -780,7 +780,7 @@ try {
                 <button data-set="polluted">污染 IP</button>
               </span>
               <span class="row">
-                <input type="search" id="dataSearch" class="ipt-sm" placeholder="筛选" autocomplete="off"
+                <input type="search" id="dataSearch" aria-label="筛选名单" class="ipt-sm" placeholder="筛选" autocomplete="off"
                        enterkeyhint="search" autocapitalize="none" autocorrect="off" spellcheck="false">
                 <button class="sm" id="btnExportDataset">导出</button>
                 <button class="sm" id="btnReloadCollected">刷新</button>
@@ -870,7 +870,7 @@ try {
                 <div class="set-k">导入迁移包</div>
                 <div class="set-v">只认本面板导出的包，覆盖前自动备份</div>
                 <div class="row mt-8">
-                  <input type="file" id="migrationFile" accept=".gz,.tgz,application/gzip" class="sm">
+                  <input type="file" id="migrationFile" aria-label="迁移包文件" accept=".gz,.tgz,application/gzip" class="sm">
                   <button class="sm" id="btnMigrationDryRun">试算</button>
                   <button class="sm danger" id="btnMigrationImport">导入</button>
                 </div>

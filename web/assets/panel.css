@@ -370,7 +370,7 @@ button, .btn {
 button:hover:not(:disabled), .btn:hover {
   background: var(--bg-hover); border-color: var(--border-strong);
 }
-button:active:not(:disabled) { transform: translateY(.5px); }
+button:active:not(:disabled) { translate: 0 .5px; }
 
 button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
