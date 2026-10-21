@@ -1743,7 +1743,9 @@ async function showDomain(domain) {
           <td class="mono dim">${fmtTime(r.ts)}</td>
           <td class="mono">${r.qtype_name}</td>
           <td>${rcodeBadge(r)}</td>
-          <td>${routeBadge(r)}</td></tr>`)}</tbody></table>`);
+          <td>${routeBadge(r)}</td>
+          <td class="mono">${latencyCell(r)}</td>
+          <td class="dim" title="${r.client_subnet || ''}">${r.ecs_zone || r.client_subnet || ''}</td></tr>`)}</tbody></table>`);
     }
     parts.push(html`<div class="drawer-foot">
       <button class="danger sm" id="btnDelDomain">删除统计</button>
@@ -3358,6 +3360,18 @@ function searchQueries(domain) {
   if (loaded) loadQueries(1);
 }
 
+async function fillClientChoices() {
+  const list = $('#fClientList');
+  if (!list || list.dataset.loaded) return;
+  list.dataset.loaded = '1';
+  try {
+    const d = await api('/api/stats?span=7d');
+    setHtml(list, html`${(d.top_clients || []).map((x) => html`<option value="${x.key}">${x.zone || ''}</option>`)}`);
+  } catch (e) {
+    delete list.dataset.loaded;
+  }
+}
+
 function searchClient(subnet) {
   const loaded = state.liveLoaded;
   $('#fClient').value = subnet;
@@ -3941,7 +3955,8 @@ function bindEvents() {
     if (el) el.addEventListener('change', () => { syncFilterCount(); loadQueries(1); });
   });
   const more = $('#btnFilterMore');
-  if (more) more.addEventListener('click', () => setFilterMore($('#filterMore').hidden));
+  if (more) more.addEventListener('click', () => { setFilterMore($('#filterMore').hidden); fillClientChoices(); });
+  $('#fClient').addEventListener('focus', fillClientChoices);
   syncFilterCount(true);
   $('#btnPrev').addEventListener('click', () => {
     if (state.queryPage > 1) loadQueries(state.queryPage - 1);

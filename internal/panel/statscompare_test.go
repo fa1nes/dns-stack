@@ -79,3 +79,37 @@ func TestQueryRowsCarryTheClientSubnetAndZone(t *testing.T) {
 		t.Fatalf("老库没有 client_subnet 列，查询列表也要照常返回：%v", body.Items)
 	}
 }
+
+func TestWarmStatsFillsTheRollupBeforeTheFirstVisit(t *testing.T) {
+	const now = 1700000000
+	server := newCollectorServer(t, now, []collect.Event{clientEvent(now-5*86400, "cache", 0, "", ""), clientEvent(now-60, "local-unbound", 0, "", "")})
+	server.warmStats()
+	server.statsRollup.mu.Lock()
+	hours := len(server.statsRollup.hours)
+	server.statsRollup.mu.Unlock()
+	if hours == 0 {
+		t.Fatal("预热后按小时汇总仍是空的，第一次打开 7 天视图还得从头扫")
+	}
+	entry := server.statsShared.entry("report-7d")
+	entry.mu.Lock()
+	cached := entry.body != nil
+	entry.mu.Unlock()
+	if !cached {
+		t.Fatal("预热没有留下 7 天报表")
+	}
+}
+
+func TestUpstreamLatencySampleCoversEveryNonCacheRoute(t *testing.T) {
+	const now = 1700000000
+	var events []collect.Event
+	for i, resp := range []string{"local-unbound", "foreign-hk", "", "cache"} {
+		ms := float64(10 * (i + 1))
+		e := clientEvent(now-int64(100+i), resp, map[string]int64{"": 2}[resp], "", "")
+		e.ElapsedMS = &ms
+		events = append(events, e)
+	}
+	_, out := newCollectorServer(t, now, events).buildStats(t.Context(), "24h")
+	latency := out["latency"].(map[string]any)
+	checkedEqual(t, "递归样本", latency["upstream"].(map[string]any)["samples"], 3)
+	checkedEqual(t, "缓存样本", latency["cache"].(map[string]any)["samples"], 1)
+}

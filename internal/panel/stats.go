@@ -23,10 +23,20 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := statsSpans[span]; !ok {
 		span = "24h"
 	}
-	status, body := s.statsShared.entry("report-"+span).get(r.Context(), s.now(), statsReportTTL, func() (int, []byte) {
+	status, body := s.statsBody(r.Context(), span)
+	writeShared(w, status, body)
+}
+
+func (s *Server) statsBody(ctx context.Context, span string) (int, []byte) {
+	return s.statsShared.entry("report-"+span).get(ctx, s.now(), statsReportTTL, func() (int, []byte) {
 		return encodeShared(s.buildStats(context.Background(), span))
 	})
-	writeShared(w, status, body)
+}
+
+func (s *Server) warmStats() {
+	for _, span := range []string{"7d", "24h"} {
+		s.statsBody(context.Background(), span)
+	}
 }
 
 func (s *Server) buildStats(ctx context.Context, span string) (int, map[string]any) {
@@ -128,7 +138,7 @@ func statsReport(ctx context.Context, db *sql.DB, rollup *statsRollup, out map[s
 
 	latency := map[string]any{"edges": latencyEdges}
 	for class, name := range []string{"cache", "upstream"} {
-		where := map[string]string{"cache": "resp_by = 'cache'", "upstream": "resp_by != 'cache'"}[name]
+		where := map[string]string{"cache": "resp_by = 'cache'", "upstream": "route IN ('cn', 'foreign', 'failed', 'reject', 'unknown')"}[name]
 		values, err := latencySample(ctx, db, "SELECT elapsed_ms "+clientEvents+" AND elapsed_ms IS NOT NULL AND "+where+
 			" ORDER BY ts DESC LIMIT ?", since, latencySampleCap)
 		if err != nil {

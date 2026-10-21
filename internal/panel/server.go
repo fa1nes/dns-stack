@@ -179,6 +179,7 @@ func (s *Server) ListenAndServe() error {
 	s.http = &http.Server{Addr: s.cfg.Addr, Handler: s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: time.Minute,
 		IdleTimeout: 90 * time.Second, MaxHeaderBytes: 64 << 10}
+	go s.warmStats()
 	if !isLoopbackListen(s.cfg.Addr) {
 
 		return s.http.ListenAndServeTLS(s.cfg.CertPath, s.cfg.KeyPath)

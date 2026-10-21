@@ -163,7 +163,8 @@ try {
               <option value="300">5 分钟内</option><option value="3600">1 小时内</option>
               <option value="86400">24 小时内</option><option value="604800">7 天内</option></select>
             <input type="search" id="fClient" class="w-client" placeholder="客户端网段，如 1.2.3.0/24" title="客户端网段" autocomplete="off"
-                   autocapitalize="none" autocorrect="off" spellcheck="false">
+                   autocapitalize="none" autocorrect="off" spellcheck="false" list="fClientList">
+            <datalist id="fClientList"></datalist>
             <button id="btnReset">重置</button>
             </div>
           </div>
