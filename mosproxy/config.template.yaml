@@ -1,4 +1,4 @@
-# template-rev: 10
+# template-rev: 11
 
 log:
   queries: true
@@ -50,6 +50,8 @@ ecs:
   forward: true
   ip_zone:
     - /var/lib/dns-stack/ecs-ip-zone.txt
+  fanout:
+    - /var/lib/dns-stack/ecs-fanout.txt
 
 strip_ech: true
 

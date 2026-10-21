@@ -55,6 +55,10 @@ func Steps() []Step {
 			Name: "ecs-zone", Label: "ECS 缓存分片表", Every: 24 * time.Hour,
 			Needs: []string{"chnroute", "geo-cross"}, Run: stepECSZone,
 		},
+		{
+			Name: "ecs-fanout", Label: "多运营商 ECS 并发清单", Every: 6 * time.Hour,
+			Run: stepECSFanout,
+		},
 	}
 }
 

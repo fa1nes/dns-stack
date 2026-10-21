@@ -699,7 +699,7 @@ step8_deploy_mosproxy() {
         log_ok "  已生成 /etc/dns-stack/mosproxy/config.yaml (rev ${tpl_rev})"
     fi
 
-    for f in manual-gfw.txt manual-exclude.txt manual-cn-zones.txt blocklist.txt acl.txt; do
+    for f in manual-gfw.txt manual-exclude.txt manual-cn-zones.txt blocklist.txt acl.txt ecs-fanout.txt; do
         [[ -f "$STATE_DIR/$f" ]] || : > "$STATE_DIR/$f"
     done
     chmod 0644 "$STATE_DIR"/*.txt 2>/dev/null || true
