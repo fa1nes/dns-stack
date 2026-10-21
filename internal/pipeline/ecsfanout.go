@@ -16,7 +16,7 @@ import (
 
 func stepECSFanout(ctx context.Context, rt *Runtime) error {
 	cfg := rt.Config
-	days := int(cfg.Duration("ECS_FANOUT_WINDOW_SEC", 14*24*time.Hour) / (24 * time.Hour))
+	days := int(cfg.Duration("ECS_FANOUT_WINDOW_SEC", 7*24*time.Hour) / (24 * time.Hour))
 	if days < 1 {
 		days = 1
 	}
