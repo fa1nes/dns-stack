@@ -66,7 +66,6 @@ func CarrierOf(record map[string]string) string {
 	return ""
 }
 
-// SplitZone undoes ZoneOf: "广东电信" -> ("广东", "电信").
 func SplitZone(zone string) (province, carrier string) {
 	for _, name := range provinces {
 		if rest, ok := strings.CutPrefix(zone, name); ok {

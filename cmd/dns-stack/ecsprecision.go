@@ -20,11 +20,6 @@ import (
 	"github.com/dns-stack/dns-stack/internal/stack"
 )
 
-// ecs-precision replays the domains clients actually asked for, once per
-// client zone (province+carrier) and once per carrier of the busiest
-// province, through the local Unbound with that zone's subnet as ECS, and
-// checks whether the answer lands on the zone's own carrier and province.
-
 type precisionVantage struct {
 	Zone     string `json:"zone"`
 	Subnet   string `json:"subnet"`
@@ -249,9 +244,6 @@ func precisionTopDomains(db *sql.DB, since int64, limit int) ([]precisionDomain,
 	return out, rs.Err()
 }
 
-// precisionVantages keeps the busiest tagged client zones and adds the three
-// big carriers of the busiest province, so a household on one carrier still
-// shows what the other carriers would get.
 func precisionVantages(zones []precisionVantage, rows []ecszone.Row, limit int) []precisionVantage {
 	var out []precisionVantage
 	seen := map[string]bool{}
@@ -375,8 +367,6 @@ func precisionReplay(client *resolve.Client, reader *geoip.IPDBReader, domains [
 			if len(pa.Addrs) == 0 || !pa.Domestic || containsString(pa.Carriers, vantages[v].Carrier) {
 				continue
 			}
-			// Only a mismatch if some vantage got an answer on its own carrier,
-			// i.e. the CDN does have per-carrier nodes for this name.
 			for w, other := range answers[d] {
 				if w != v && containsString(other.Carriers, vantages[w].Carrier) {
 					item.Mismatch = append(item.Mismatch, fmt.Sprintf("%s→%s(scope %d)",
