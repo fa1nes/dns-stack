@@ -89,3 +89,13 @@ func TestWithoutAWebhookNothingIsSentAndNoErrorIsRaised(t *testing.T) {
 			"没通道时也记下状态的话，这条异常就被当成「已经通知过」永远不发了", sent, err, len(box.messages))
 	}
 }
+
+func TestAnUnreachableWebhookDoesNotLeakItsSecretIntoTheError(t *testing.T) {
+	err := SendTest(context.Background(), "http://127.0.0.1:1/SECRETKEY123/push", "cn", nil)
+	if err == nil {
+		t.Fatal("expected an error for an unreachable webhook")
+	}
+	if strings.Contains(err.Error(), "SECRETKEY123") {
+		t.Fatalf("error leaks the webhook secret: %v", err)
+	}
+}

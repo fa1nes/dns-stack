@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -65,7 +66,11 @@ func post(ctx context.Context, webhook string, client *http.Client, title, body 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return fmt.Errorf("告警通道 %s 不可达: %w", MaskWebhook(webhook), urlErr.Err)
+		}
+		return fmt.Errorf("告警通道 %s 不可达", MaskWebhook(webhook))
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 300 {
