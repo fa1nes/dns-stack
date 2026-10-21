@@ -110,9 +110,74 @@ rc-update add crond default >/dev/null 2>&1 || true
 "$GO_BIN" trim-logs --drop-stale --dir "$LOG_DIR" --keep-bytes "$LOG_KEEP_BYTES" 2>&1 | tee -a "$TRIM_LOG"
 log_ok "每日保留每份日志末尾 $((LOG_KEEP_BYTES/1024/1024))MB"
 
-log_info "[5/5] 让 Unbound 不依赖开机顺序、崩溃后自动拉起..."
+log_info "[5/5] 写入 Unbound 配置，让它不依赖开机顺序、崩溃后自动拉起..."
+UNBOUND_CONF=/etc/unbound/unbound.conf.d/dns-stack.conf
+CN_PEER="${CN_PEER:-10.100.0.2}"
+mkdir -p "$(dirname "$UNBOUND_CONF")"
+NEW_CONF="$UNBOUND_CONF.new.$$"
+cat > "$NEW_CONF" <<EOF
+server:
+    interface: 127.0.0.1@5335
+    interface: ::1@5335
+    interface: 10.100.0.3@5335
+    port: 5335
+    do-ip4: yes
+    do-ip6: yes
+    do-udp: yes
+    do-tcp: yes
+
+    trust-anchor: ". IN DS 20326 8 2 E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D"
+    trust-anchor: ". IN DS 38696 8 2 683D2D0ACB8C9B712A1948B27F741219298D0A450D612C483AF444A4C0FB2B16"
+    val-permissive-mode: no
+    qname-minimisation: yes
+    prefetch: yes
+    prefetch-key: yes
+    serve-expired: yes
+    serve-expired-ttl: 3600
+    aggressive-nsec: yes
+    edns-buffer-size: 1232
+
+    hide-identity: yes
+    hide-version: yes
+    identity: "dns"
+    version: "unknown"
+
+    num-threads: 2
+    msg-cache-size: 8m
+    rrset-cache-size: 16m
+    cache-min-ttl: 0
+    cache-max-ttl: 86400
+    cache-max-negative-ttl: 3600
+    neg-cache-size: 1m
+    msg-cache-slabs: 2
+    rrset-cache-slabs: 2
+    infra-cache-slabs: 2
+    key-cache-slabs: 2
+
+    access-control: 127.0.0.0/8 allow
+    access-control: ::1/128 allow
+    access-control: $CN_PEER/32 allow
+    access-control: 0.0.0.0/0 refuse
+    access-control: ::/0 refuse
+
+    username: "unbound"
+    directory: "/etc/unbound"
+    logfile: ""
+    verbosity: 1
+EOF
+if [ -f "$UNBOUND_CONF" ] && cmp -s "$NEW_CONF" "$UNBOUND_CONF"; then
+    rm -f "$NEW_CONF"
+else
+    [ -f "$UNBOUND_CONF" ] && cp -p "$UNBOUND_CONF" "$UNBOUND_CONF.prev"
+    mv "$NEW_CONF" "$UNBOUND_CONF"
+    if ! unbound-checkconf >/dev/null 2>&1; then
+        if [ -f "$UNBOUND_CONF.prev" ]; then mv "$UNBOUND_CONF.prev" "$UNBOUND_CONF"; else rm -f "$UNBOUND_CONF"; fi
+        log_err "新的 $UNBOUND_CONF 通不过 unbound-checkconf，已换回原文件"
+        exit 1
+    fi
+    log_ok "已写入 $UNBOUND_CONF（放行 $CN_PEER，旧文件留在 .prev）"
+fi
 BOOT_CONF=/etc/unbound/unbound.conf.d/00-dns-stack-boot.conf
-mkdir -p "$(dirname "$BOOT_CONF")"
 printf 'server:
     ip-freebind: yes
 ' > "$BOOT_CONF"
