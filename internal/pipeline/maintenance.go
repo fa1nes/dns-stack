@@ -127,7 +127,40 @@ func InspectCert(certPath, keyPath, publicIP string, now time.Time) (CertStatus,
 	return status, nil
 }
 
+var acmeLogSetting = regexp.MustCompile(`(?m)^[ \t]*LOG_FILE=`)
+
+func EnsureAcmeLog(accountConf string) (bool, error) {
+	data, err := os.ReadFile(accountConf)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if acmeLogSetting.Match(data) {
+		return false, nil
+	}
+	f, err := os.OpenFile(accountConf, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return false, err
+	}
+	line := "LOG_FILE='" + AcmeLog + "'\n"
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		line = "\n" + line
+	}
+	_, err = f.WriteString(line)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err == nil, err
+}
+
 func stepRenewCert(ctx context.Context, rt *Runtime) error {
+	if added, err := EnsureAcmeLog(AcmeHome + "/account.conf"); err != nil {
+		rt.Warnf("没能给 acme.sh 打开日志：%v", err)
+	} else if added {
+		rt.Infof("acme.sh 自己的 cron 之前不留日志，已在 account.conf 打开 LOG_FILE=%s", AcmeLog)
+	}
 	publicIP := rt.Config.Value("PUBLIC_IPV4")
 	status, err := InspectCert(CertPath, KeyPath, publicIP, time.Now())
 	if err != nil {
