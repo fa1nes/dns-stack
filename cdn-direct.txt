@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1792920307
+# generated-at: 1793010696
 # providers: 20
 # domains: 78
-# prefixes: 10024
+# prefixes: 10022
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -1493,7 +1493,6 @@ N	amazon	off	23.91.0.0/19
 N	amazon	off	23.92.173.0/24
 N	amazon	off	23.92.174.0/24
 N	amazon	off	23.95.142.0/24
-N	amazon	off	23.130.160.0/24
 N	amazon	off	23.133.224.0/24
 N	amazon	off	23.136.244.0/24
 N	amazon	off	23.138.4.0/24
@@ -3293,7 +3292,6 @@ N	amazon	off	126.226.0.0/16
 N	amazon	off	126.228.0.0/16
 N	amazon	off	128.11.0.0/16
 N	amazon	off	128.21.0.0/16
-N	amazon	off	128.65.168.0/22
 N	amazon	off	128.81.0.0/16
 N	amazon	off	128.125.0.0/16
 N	amazon	off	128.167.0.0/16
@@ -6722,9 +6720,8 @@ N	amazon	off	2605:9cc0:c04::/48
 N	amazon	off	2605:9cc0:c08::/48
 N	amazon	off	2605:9cc0:c0b::/48
 N	amazon	off	2605:9cc0:c0c::/48
-N	amazon	off	2605:9cc0:c16::/47
+N	amazon	off	2605:9cc0:c17::/48
 N	amazon	off	2605:9cc0:c19::/48
-N	amazon	off	2605:9cc0:c1c::/48
 N	amazon	off	2605:9cc0:f03e::/48
 N	amazon	off	2605:a7c0:100::/45
 N	amazon	off	2605:a7c0:108::/46
@@ -7215,6 +7212,7 @@ N	amazon	off	2a0b:71c0::/29
 N	amazon	off	2a0b:a200:6::/47
 N	amazon	off	2a0b:a200:8::/46
 N	amazon	off	2a0c:9a40:8b50::/48
+N	amazon	off	2a0c:9a40:e1a0::/48
 N	amazon	off	2a0c:9e40:3::/48
 N	amazon	off	2a0c:b280::/48
 N	amazon	off	2a0d:2146:848a::/48
