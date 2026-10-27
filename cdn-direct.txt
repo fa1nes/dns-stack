@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1793010696
+# generated-at: 1793095395
 # providers: 20
 # domains: 78
-# prefixes: 10022
+# prefixes: 10025
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -634,7 +634,7 @@ N	alibaba	off	14.1.112.0/22
 N	alibaba	off	31.56.124.0/24
 N	alibaba	off	38.84.220.0/24
 N	alibaba	off	39.125.80.0/24
-N	alibaba	off	43.90.0.0/15
+N	alibaba	off	43.90.0.0/16
 N	alibaba	off	43.92.0.0/15
 N	alibaba	off	43.94.0.0/18
 N	alibaba	off	43.96.0.0/24
@@ -3180,6 +3180,7 @@ N	amazon	off	109.68.69.0/24
 N	amazon	off	109.68.70.0/23
 N	amazon	off	109.71.184.0/24
 N	amazon	off	109.71.191.0/24
+N	amazon	off	109.95.126.0/24
 N	amazon	off	109.95.191.0/24
 N	amazon	off	109.110.181.0/24
 N	amazon	off	109.111.48.0/23
@@ -3838,6 +3839,7 @@ N	amazon	off	150.9.220.0/23
 N	amazon	off	150.9.222.0/24
 N	amazon	off	150.126.0.0/16
 N	amazon	off	150.237.16.0/23
+N	amazon	off	150.237.30.0/23
 N	amazon	off	150.242.68.0/24
 N	amazon	off	150.245.0.0/16
 N	amazon	off	150.247.0.0/19
@@ -4022,6 +4024,7 @@ N	amazon	off	155.226.254.0/24
 N	amazon	off	155.254.160.0/19
 N	amazon	off	156.2.0.0/16
 N	amazon	off	156.7.0.0/16
+N	amazon	off	156.9.119.0/24
 N	amazon	off	156.15.0.0/16
 N	amazon	off	156.20.20.0/23
 N	amazon	off	156.27.0.0/16
@@ -7382,7 +7385,7 @@ N	baidu	cn	182.61.200.0/21
 N	baidu	cn	182.61.208.0/20
 N	baidu	cn	182.61.224.0/19
 N	baidu	cn	202.46.48.0/20
-N	baidu	cn	202.181.120.0/21
+N	baidu	cn	202.181.120.0/22
 N	baidu	cn	2400:da00::/32
 N	baidu	cn	240c:4000::/22
 N	baidu	off	45.113.192.0/23
@@ -8225,7 +8228,6 @@ N	huawei	cn	139.159.144.0/20
 N	huawei	cn	139.159.160.0/22
 N	huawei	cn	139.159.176.0/20
 N	huawei	cn	139.159.192.0/18
-N	huawei	cn	140.210.157.0/24
 N	huawei	cn	2407:c080::/36
 N	huawei	cn	2407:c080:1000::/37
 N	huawei	cn	2407:c080:4000::/37
@@ -8345,7 +8347,6 @@ N	huawei	off	148.145.160.0/20
 N	huawei	off	148.145.192.0/19
 N	huawei	off	148.145.224.0/21
 N	huawei	off	148.145.232.0/23
-N	huawei	off	148.145.236.0/23
 N	huawei	off	148.145.240.0/23
 N	huawei	off	148.145.250.0/23
 N	huawei	off	148.145.252.0/22
@@ -8447,6 +8448,7 @@ N	huawei	off	2405:f080:4102::/47
 N	huawei	off	2405:f080:4104::/48
 N	huawei	off	2405:f080:4200::/39
 N	huawei	off	2405:f080:ec00::/39
+N	huawei	off	2410:7000::/20
 N	huawei	off	2801:80:e0::/48
 N	imperva	off	42.200.61.0/24
 N	imperva	off	45.60.0.0/19
@@ -9660,6 +9662,7 @@ N	microsoft	off	203.27.127.0/24
 N	microsoft	off	203.28.214.0/23
 N	microsoft	off	203.32.8.0/24
 N	microsoft	off	203.32.10.0/23
+N	microsoft	off	203.34.181.0/24
 N	microsoft	off	203.84.134.0/23
 N	microsoft	off	204.14.180.0/22
 N	microsoft	off	204.76.110.0/23
