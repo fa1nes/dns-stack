@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1793184604
+# generated-at: 1793271961
 # providers: 20
 # domains: 78
-# prefixes: 10025
+# prefixes: 9933
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -331,6 +331,7 @@ N	akamai	off	2001:590:2005:200::/56
 N	akamai	off	2001:668:108:400::/56
 N	akamai	off	2001:c38:500a::/48
 N	akamai	off	2001:df4:4c40::/48
+N	akamai	off	2001:41a8:806:200::/56
 N	akamai	off	2001:41a8:807:100::/56
 N	akamai	off	2001:4450:40::/48
 N	akamai	off	2001:4457:ff0::/48
@@ -642,6 +643,7 @@ N	alibaba	off	43.96.0.0/24
 N	alibaba	off	43.96.3.0/24
 N	alibaba	off	43.96.4.0/22
 N	alibaba	off	43.96.8.0/22
+N	alibaba	off	43.96.12.0/24
 N	alibaba	off	43.96.18.0/24
 N	alibaba	off	43.96.20.0/23
 N	alibaba	off	43.96.23.0/24
@@ -718,7 +720,6 @@ N	alibaba	off	43.109.68.0/23
 N	alibaba	off	43.109.70.0/24
 N	alibaba	off	43.109.72.0/23
 N	alibaba	off	43.109.76.0/22
-N	alibaba	off	43.109.80.0/24
 N	alibaba	off	43.109.83.0/24
 N	alibaba	off	43.109.84.0/22
 N	alibaba	off	43.109.88.0/22
@@ -762,8 +763,7 @@ N	alibaba	off	43.109.216.0/21
 N	alibaba	off	43.109.224.0/23
 N	alibaba	off	43.109.226.0/24
 N	alibaba	off	43.109.235.0/24
-N	alibaba	off	43.109.237.0/24
-N	alibaba	off	43.109.238.0/23
+N	alibaba	off	43.109.236.0/22
 N	alibaba	off	43.110.0.0/15
 N	alibaba	off	43.112.0.0/15
 N	alibaba	off	43.114.0.0/16
@@ -892,7 +892,7 @@ N	alibaba	off	155.102.16.0/23
 N	alibaba	off	155.102.20.0/24
 N	alibaba	off	155.102.22.0/23
 N	alibaba	off	155.102.24.0/24
-N	alibaba	off	155.102.26.0/23
+N	alibaba	off	155.102.26.0/24
 N	alibaba	off	155.102.28.0/22
 N	alibaba	off	155.102.32.0/23
 N	alibaba	off	155.102.34.0/24
@@ -1513,7 +1513,7 @@ N	amazon	off	23.169.80.0/24
 N	amazon	off	23.183.112.0/23
 N	amazon	off	23.190.16.0/24
 N	amazon	off	23.191.48.0/24
-N	amazon	off	23.226.138.0/23
+N	amazon	off	23.226.139.0/24
 N	amazon	off	23.228.196.0/23
 N	amazon	off	23.228.198.0/24
 N	amazon	off	23.228.212.0/23
@@ -2493,6 +2493,7 @@ N	amazon	off	69.25.180.0/22
 N	amazon	off	69.25.212.0/22
 N	amazon	off	69.25.232.0/21
 N	amazon	off	69.25.252.0/22
+N	amazon	off	69.33.239.0/24
 N	amazon	off	69.38.0.0/17
 N	amazon	off	69.46.37.0/24
 N	amazon	off	69.52.208.0/23
@@ -2749,7 +2750,6 @@ N	amazon	off	82.41.168.0/24
 N	amazon	off	82.41.200.0/24
 N	amazon	off	82.47.64.0/19
 N	amazon	off	82.108.123.0/24
-N	amazon	off	82.108.210.0/24
 N	amazon	off	82.110.124.0/22
 N	amazon	off	82.115.214.0/24
 N	amazon	off	82.139.229.0/24
@@ -3106,6 +3106,7 @@ N	amazon	off	104.194.224.0/19
 N	amazon	off	104.200.216.0/24
 N	amazon	off	104.200.222.0/24
 N	amazon	off	104.200.224.0/19
+N	amazon	off	104.204.34.0/23
 N	amazon	off	104.204.255.0/24
 N	amazon	off	104.207.162.0/24
 N	amazon	off	104.207.170.0/23
@@ -4155,6 +4156,7 @@ N	amazon	off	159.172.192.0/20
 N	amazon	off	159.172.208.0/21
 N	amazon	off	159.172.216.0/22
 N	amazon	off	159.172.220.0/23
+N	amazon	off	159.172.222.0/24
 N	amazon	off	159.172.224.0/22
 N	amazon	off	159.172.228.0/23
 N	amazon	off	159.174.0.0/16
@@ -4622,6 +4624,7 @@ N	amazon	off	172.86.224.0/23
 N	amazon	off	172.99.14.0/23
 N	amazon	off	172.99.250.0/24
 N	amazon	off	172.103.40.0/21
+N	amazon	off	172.111.33.0/24
 N	amazon	off	172.111.132.0/24
 N	amazon	off	172.111.144.0/24
 N	amazon	off	172.111.149.0/24
@@ -5019,7 +5022,6 @@ N	amazon	off	192.166.114.0/24
 N	amazon	off	192.170.16.0/21
 N	amazon	off	192.170.24.0/22
 N	amazon	off	192.170.48.0/21
-N	amazon	off	192.172.221.0/24
 N	amazon	off	192.175.3.0/24
 N	amazon	off	192.175.4.0/23
 N	amazon	off	192.177.62.0/24
@@ -5222,6 +5224,7 @@ N	amazon	off	195.93.178.0/24
 N	amazon	off	195.95.191.0/24
 N	amazon	off	195.95.245.0/24
 N	amazon	off	195.119.0.0/16
+N	amazon	off	195.137.243.0/24
 N	amazon	off	195.146.160.0/21
 N	amazon	off	195.146.168.0/23
 N	amazon	off	195.182.198.0/24
@@ -5833,7 +5836,9 @@ N	amazon	off	208.212.23.0/24
 N	amazon	off	208.213.176.0/21
 N	amazon	off	208.213.184.0/22
 N	amazon	off	208.213.188.0/23
-N	amazon	off	208.214.224.0/20
+N	amazon	off	208.214.224.0/23
+N	amazon	off	208.214.228.0/22
+N	amazon	off	208.214.232.0/21
 N	amazon	off	208.215.88.0/24
 N	amazon	off	208.215.248.0/22
 N	amazon	off	208.215.252.0/23
@@ -6576,7 +6581,6 @@ N	amazon	off	2602:fa28:6a::/48
 N	amazon	off	2602:fa36:4::/46
 N	amazon	off	2602:fa36:8::/47
 N	amazon	off	2602:fa66::/36
-N	amazon	off	2602:fa6b::/40
 N	amazon	off	2602:faca:100::/48
 N	amazon	off	2602:fb0b:2::/48
 N	amazon	off	2602:fb10:40::/45
@@ -7410,125 +7414,26 @@ N	cloudflare	off	5.172.33.0/24
 N	cloudflare	off	5.226.183.0/24
 N	cloudflare	off	5.252.81.0/24
 N	cloudflare	off	8.6.112.0/24
-N	cloudflare	off	8.6.144.0/23
-N	cloudflare	off	8.6.146.0/24
-N	cloudflare	off	8.9.231.0/24
-N	cloudflare	off	8.10.148.0/24
-N	cloudflare	off	8.14.201.0/24
-N	cloudflare	off	8.14.202.0/23
-N	cloudflare	off	8.14.204.0/24
-N	cloudflare	off	8.17.205.0/24
-N	cloudflare	off	8.17.206.0/24
-N	cloudflare	off	8.18.50.0/24
-N	cloudflare	off	8.18.113.0/24
-N	cloudflare	off	8.18.194.0/23
-N	cloudflare	off	8.18.196.0/24
-N	cloudflare	off	8.19.8.0/24
-N	cloudflare	off	8.20.100.0/23
-N	cloudflare	off	8.20.103.0/24
-N	cloudflare	off	8.20.122.0/23
-N	cloudflare	off	8.20.124.0/22
-N	cloudflare	off	8.20.253.0/24
-N	cloudflare	off	8.21.8.0/22
-N	cloudflare	off	8.21.13.0/24
-N	cloudflare	off	8.21.110.0/23
-N	cloudflare	off	8.21.238.0/23
-N	cloudflare	off	8.23.139.0/24
-N	cloudflare	off	8.23.240.0/24
+N	cloudflare	off	8.20.125.0/24
+N	cloudflare	off	8.21.10.0/24
 N	cloudflare	off	8.24.87.0/24
-N	cloudflare	off	8.24.242.0/23
-N	cloudflare	off	8.24.244.0/24
-N	cloudflare	off	8.25.96.0/23
-N	cloudflare	off	8.25.249.0/24
-N	cloudflare	off	8.26.182.0/24
 N	cloudflare	off	8.27.64.0/24
 N	cloudflare	off	8.27.66.0/23
-N	cloudflare	off	8.27.68.0/23
-N	cloudflare	off	8.27.70.0/24
-N	cloudflare	off	8.27.79.0/24
-N	cloudflare	off	8.28.20.0/24
-N	cloudflare	off	8.28.82.0/24
-N	cloudflare	off	8.28.126.0/23
-N	cloudflare	off	8.28.213.0/24
-N	cloudflare	off	8.29.105.0/24
 N	cloudflare	off	8.29.109.0/24
 N	cloudflare	off	8.29.228.0/24
 N	cloudflare	off	8.29.230.0/23
-N	cloudflare	off	8.30.234.0/24
-N	cloudflare	off	8.31.2.0/24
 N	cloudflare	off	8.31.160.0/23
-N	cloudflare	off	8.31.163.0/24
-N	cloudflare	off	8.34.69.0/24
-N	cloudflare	off	8.34.70.0/23
+N	cloudflare	off	8.34.70.0/24
 N	cloudflare	off	8.34.146.0/24
-N	cloudflare	off	8.34.200.0/23
-N	cloudflare	off	8.34.202.0/24
-N	cloudflare	off	8.35.57.0/24
-N	cloudflare	off	8.35.58.0/23
-N	cloudflare	off	8.35.149.0/24
 N	cloudflare	off	8.35.211.0/24
-N	cloudflare	off	8.35.216.0/24
-N	cloudflare	off	8.36.216.0/22
-N	cloudflare	off	8.36.220.0/24
-N	cloudflare	off	8.37.41.0/24
-N	cloudflare	off	8.37.43.0/24
-N	cloudflare	off	8.38.147.0/24
-N	cloudflare	off	8.38.148.0/23
-N	cloudflare	off	8.39.6.0/24
-N	cloudflare	off	8.39.18.0/24
 N	cloudflare	off	8.39.125.0/24
-N	cloudflare	off	8.39.126.0/23
-N	cloudflare	off	8.39.201.0/24
-N	cloudflare	off	8.39.202.0/23
-N	cloudflare	off	8.39.204.0/23
-N	cloudflare	off	8.39.206.0/24
-N	cloudflare	off	8.39.212.0/22
-N	cloudflare	off	8.40.26.0/23
-N	cloudflare	off	8.40.28.0/22
-N	cloudflare	off	8.40.107.0/24
-N	cloudflare	off	8.40.111.0/24
-N	cloudflare	off	8.40.140.0/24
-N	cloudflare	off	8.41.5.0/24
-N	cloudflare	off	8.41.6.0/23
-N	cloudflare	off	8.41.36.0/23
-N	cloudflare	off	8.41.39.0/24
-N	cloudflare	off	8.41.129.0/24
-N	cloudflare	off	8.42.51.0/24
-N	cloudflare	off	8.42.52.0/24
-N	cloudflare	off	8.42.54.0/23
-N	cloudflare	off	8.42.161.0/24
-N	cloudflare	off	8.42.164.0/24
-N	cloudflare	off	8.42.172.0/24
-N	cloudflare	off	8.42.245.0/24
-N	cloudflare	off	8.43.121.0/24
-N	cloudflare	off	8.43.122.0/23
-N	cloudflare	off	8.43.224.0/23
-N	cloudflare	off	8.43.226.0/24
+N	cloudflare	off	8.39.204.0/24
+N	cloudflare	off	8.39.214.0/24
 N	cloudflare	off	8.44.0.0/23
 N	cloudflare	off	8.44.2.0/24
-N	cloudflare	off	8.44.6.0/24
-N	cloudflare	off	8.44.58.0/23
 N	cloudflare	off	8.44.61.0/24
 N	cloudflare	off	8.44.62.0/24
-N	cloudflare	off	8.45.41.0/24
-N	cloudflare	off	8.45.42.0/23
-N	cloudflare	off	8.45.97.0/24
-N	cloudflare	off	8.45.100.0/23
-N	cloudflare	off	8.45.102.0/24
-N	cloudflare	off	8.45.108.0/24
-N	cloudflare	off	8.45.111.0/24
-N	cloudflare	off	8.45.144.0/22
-N	cloudflare	off	8.45.151.0/24
-N	cloudflare	off	8.46.113.0/24
-N	cloudflare	off	8.46.114.0/23
-N	cloudflare	off	8.46.116.0/22
-N	cloudflare	off	8.47.9.0/24
-N	cloudflare	off	8.47.12.0/22
 N	cloudflare	off	8.47.69.0/24
-N	cloudflare	off	8.47.71.0/24
-N	cloudflare	off	8.48.130.0/24
-N	cloudflare	off	8.48.132.0/23
-N	cloudflare	off	8.48.134.0/24
 N	cloudflare	off	16.5.144.0/20
 N	cloudflare	off	23.131.204.0/24
 N	cloudflare	off	23.145.136.0/24
@@ -7551,6 +7456,7 @@ N	cloudflare	off	43.229.39.0/24
 N	cloudflare	off	43.230.144.0/24
 N	cloudflare	off	45.6.45.0/24
 N	cloudflare	off	45.6.47.0/24
+N	cloudflare	off	45.8.200.0/24
 N	cloudflare	off	45.12.44.0/23
 N	cloudflare	off	45.43.147.0/24
 N	cloudflare	off	45.43.158.0/24
@@ -8605,7 +8511,7 @@ N	imperva	off	131.125.215.0/24
 N	imperva	off	131.125.216.0/23
 N	imperva	off	131.125.218.0/24
 N	imperva	off	131.125.222.0/24
-N	imperva	off	131.125.227.0/24
+N	imperva	off	131.125.224.0/22
 N	imperva	off	131.125.240.0/21
 N	imperva	off	131.125.248.0/23
 N	imperva	off	131.125.251.0/24
@@ -8762,6 +8668,8 @@ N	imperva	off	2a02:e980:258::/48
 N	imperva	off	2a02:e980:25b::/48
 N	imperva	off	2a02:e980:25c::/46
 N	imperva	off	2a02:e980:260::/45
+N	imperva	off	2a02:e980:269::/48
+N	imperva	off	2a02:e980:26a::/47
 N	imperva	off	2a02:e980:300::/48
 N	imperva	off	2a02:e980:320::/46
 N	imperva	off	2a02:e980:327::/48
