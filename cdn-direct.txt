@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1793532571
+# generated-at: 1793623917
 # providers: 20
 # domains: 78
-# prefixes: 9938
+# prefixes: 9940
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -635,7 +635,7 @@ N	alibaba	off	14.1.112.0/22
 N	alibaba	off	31.56.124.0/24
 N	alibaba	off	38.84.220.0/24
 N	alibaba	off	39.125.80.0/24
-N	alibaba	off	43.90.0.0/16
+N	alibaba	off	43.90.0.0/15
 N	alibaba	off	43.92.0.0/15
 N	alibaba	off	43.94.0.0/18
 N	alibaba	off	43.96.0.0/24
@@ -909,7 +909,6 @@ N	alibaba	off	155.102.70.0/24
 N	alibaba	off	155.102.72.0/23
 N	alibaba	off	155.102.75.0/24
 N	alibaba	off	155.102.76.0/22
-N	alibaba	off	155.102.80.0/24
 N	alibaba	off	155.102.82.0/23
 N	alibaba	off	155.102.84.0/23
 N	alibaba	off	155.102.86.0/24
@@ -2792,11 +2791,9 @@ N	amazon	off	85.237.72.0/21
 N	amazon	off	85.237.80.0/22
 N	amazon	off	86.112.0.0/15
 N	amazon	off	87.58.64.0/23
-N	amazon	off	87.76.170.0/24
 N	amazon	off	87.81.32.0/19
 N	amazon	off	87.84.233.0/24
 N	amazon	off	87.85.64.0/24
-N	amazon	off	87.85.227.0/24
 N	amazon	off	87.86.212.0/23
 N	amazon	off	87.229.110.0/24
 N	amazon	off	87.232.96.0/24
@@ -3481,6 +3478,7 @@ N	amazon	off	135.84.218.0/24
 N	amazon	off	135.133.0.0/16
 N	amazon	off	135.140.0.0/16
 N	amazon	off	135.159.0.0/16
+N	amazon	off	136.0.52.0/24
 N	amazon	off	136.0.131.0/24
 N	amazon	off	136.0.133.0/24
 N	amazon	off	136.0.144.0/24
@@ -6243,7 +6241,6 @@ N	amazon	off	217.149.108.0/23
 N	amazon	off	217.169.73.0/24
 N	amazon	off	217.179.124.0/23
 N	amazon	off	217.216.168.0/24
-N	amazon	off	217.216.202.0/24
 N	amazon	off	217.217.96.0/24
 N	amazon	off	218.33.0.0/18
 N	amazon	off	218.33.104.0/22
@@ -8029,6 +8026,7 @@ N	fastly	off	2a04:4e47::/45
 N	fastly	off	2a0d:8000:1::/48
 N	huawei	cn	1.92.0.0/16
 N	huawei	cn	1.94.0.0/15
+N	huawei	cn	14.131.0.0/16
 N	huawei	cn	43.254.0.0/22
 N	huawei	cn	49.4.0.0/19
 N	huawei	cn	49.4.48.0/20
@@ -8037,6 +8035,8 @@ N	huawei	cn	49.4.112.0/21
 N	huawei	cn	49.4.120.0/22
 N	huawei	cn	49.4.124.0/23
 N	huawei	cn	49.4.126.0/24
+N	huawei	cn	60.201.0.0/16
+N	huawei	cn	60.202.0.0/16
 N	huawei	cn	60.204.0.0/16
 N	huawei	cn	101.245.0.0/17
 N	huawei	cn	101.245.128.0/19
@@ -8096,11 +8096,13 @@ N	huawei	cn	115.175.112.0/20
 N	huawei	cn	115.175.128.0/17
 N	huawei	cn	116.204.0.0/17
 N	huawei	cn	116.205.0.0/16
+N	huawei	cn	116.216.0.0/16
 N	huawei	cn	116.218.0.0/18
 N	huawei	cn	116.218.64.0/19
 N	huawei	cn	116.218.128.0/20
 N	huawei	cn	116.218.144.0/21
 N	huawei	cn	117.78.0.0/18
+N	huawei	cn	118.246.0.0/16
 N	huawei	cn	119.3.0.0/16
 N	huawei	cn	120.46.0.0/16
 N	huawei	cn	121.36.0.0/15
