@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1793795550
+# generated-at: 1793882656
 # providers: 20
 # domains: 78
-# prefixes: 10046
+# prefixes: 10049
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -4650,6 +4650,7 @@ N	amazon	off	173.82.216.0/21
 N	amazon	off	173.82.224.0/22
 N	amazon	off	173.82.228.0/24
 N	amazon	off	173.82.235.0/24
+N	amazon	off	173.82.240.0/24
 N	amazon	off	173.82.255.0/24
 N	amazon	off	173.83.0.0/16
 N	amazon	off	173.96.0.0/11
@@ -5829,15 +5830,14 @@ N	amazon	off	208.122.0.0/24
 N	amazon	off	208.124.0.0/18
 N	amazon	off	208.127.200.0/21
 N	amazon	off	208.212.23.0/24
-N	amazon	off	208.213.176.0/21
+N	amazon	off	208.213.176.0/23
+N	amazon	off	208.213.180.0/22
 N	amazon	off	208.213.184.0/22
-N	amazon	off	208.213.188.0/23
 N	amazon	off	208.214.224.0/23
 N	amazon	off	208.214.228.0/22
 N	amazon	off	208.214.232.0/21
 N	amazon	off	208.215.88.0/24
 N	amazon	off	208.215.248.0/22
-N	amazon	off	208.215.252.0/23
 N	amazon	off	209.19.0.0/17
 N	amazon	off	209.21.96.0/20
 N	amazon	off	209.46.16.0/21
@@ -6383,6 +6383,7 @@ N	amazon	off	2407:7a80:104::/46
 N	amazon	off	2407:a6c0:318::/48
 N	amazon	off	2600:1f00::/24
 N	amazon	off	2600:2a41::/32
+N	amazon	off	2600:2a42::/32
 N	amazon	off	2600:9000::/28
 N	amazon	off	2600:f000::/24
 N	amazon	off	2601:1700:e100::/40
@@ -6718,7 +6719,6 @@ N	amazon	off	2605:9cc0:378::/48
 N	amazon	off	2605:9cc0:3c2::/48
 N	amazon	off	2605:9cc0:492::/47
 N	amazon	off	2605:9cc0:64d::/48
-N	amazon	off	2605:9cc0:c04::/48
 N	amazon	off	2605:9cc0:c08::/48
 N	amazon	off	2605:9cc0:c0b::/48
 N	amazon	off	2605:9cc0:c0c::/48
@@ -7955,6 +7955,7 @@ N	cloudflare	off	212.6.39.0/24
 N	cloudflare	off	212.104.128.0/24
 N	cloudflare	off	212.114.54.0/24
 N	cloudflare	off	212.135.49.0/24
+N	cloudflare	off	212.135.156.0/24
 N	cloudflare	off	212.189.71.0/24
 N	cloudflare	off	212.189.86.0/23
 N	cloudflare	off	212.189.92.0/23
@@ -9746,6 +9747,7 @@ N	microsoft	off	208.76.46.0/24
 N	microsoft	off	208.80.20.0/24
 N	microsoft	off	208.80.134.0/23
 N	microsoft	off	208.83.106.0/24
+N	microsoft	off	208.83.116.0/24
 N	microsoft	off	208.84.0.0/21
 N	microsoft	off	208.85.163.0/24
 N	microsoft	off	208.88.70.0/24
@@ -9973,6 +9975,7 @@ N	tencent	cn	146.56.192.0/18
 N	tencent	cn	148.70.0.0/16
 N	tencent	cn	149.41.0.0/18
 N	tencent	cn	149.41.128.0/18
+N	tencent	cn	149.41.192.0/20
 N	tencent	cn	149.41.224.0/19
 N	tencent	cn	150.158.0.0/16
 N	tencent	cn	152.136.0.0/16
