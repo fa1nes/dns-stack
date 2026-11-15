@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1794656719
+# generated-at: 1794744971
 # providers: 20
 # domains: 78
-# prefixes: 10105
+# prefixes: 10107
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -1138,7 +1138,7 @@ N	alibaba	off	2404:2280:265::/48
 N	alibaba	off	2404:2280:266::/47
 N	alibaba	off	2404:2280:268::/46
 N	alibaba	off	2404:2280:26c::/48
-N	alibaba	off	2404:2280:26e::/47
+N	alibaba	off	2404:2280:26f::/48
 N	alibaba	off	2404:2280:270::/44
 N	alibaba	off	2404:2280:282::/47
 N	alibaba	off	2404:2280:284::/47
@@ -6745,7 +6745,8 @@ N	amazon	off	2605:9cc0:3cc::/48
 N	amazon	off	2605:9cc0:492::/47
 N	amazon	off	2605:9cc0:64d::/48
 N	amazon	off	2605:9cc0:c00::/46
-N	amazon	off	2605:9cc0:c08::/46
+N	amazon	off	2605:9cc0:c08::/47
+N	amazon	off	2605:9cc0:c0a::/48
 N	amazon	off	2605:9cc0:c0c::/48
 N	amazon	off	2605:9cc0:c11::/48
 N	amazon	off	2605:9cc0:c12::/48
@@ -7946,6 +7947,7 @@ N	cloudflare	off	199.68.16.0/22
 N	cloudflare	off	200.69.28.0/24
 N	cloudflare	off	200.102.177.0/24
 N	cloudflare	off	200.218.32.0/24
+N	cloudflare	off	201.4.29.0/24
 N	cloudflare	off	202.27.69.0/24
 N	cloudflare	off	202.49.114.0/24
 N	cloudflare	off	202.58.111.0/24
@@ -9663,6 +9665,7 @@ N	microsoft	off	198.91.39.0/24
 N	microsoft	off	198.99.146.0/24
 N	microsoft	off	198.99.155.0/24
 N	microsoft	off	198.167.255.0/24
+N	microsoft	off	198.181.201.0/24
 N	microsoft	off	198.185.5.0/24
 N	microsoft	off	198.186.138.0/24
 N	microsoft	off	198.186.172.0/24
@@ -10201,7 +10204,6 @@ N	tencent	off	240d:c000:f0c0::/42
 N	tencent	off	240d:c000:f1c0::/43
 N	tencent	off	240d:c000:f1f0::/44
 N	tencent	off	240d:c000:f3f0::/44
-N	tencent	off	240d:c010:16::/48
 N	tencent	off	240d:c010:20::/44
 N	tencent	off	240d:c010:58::/48
 N	tencent	off	240d:c010:5c::/48
