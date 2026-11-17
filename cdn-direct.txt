@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1794834535
+# generated-at: 1794923481
 # providers: 20
 # domains: 78
-# prefixes: 10002
+# prefixes: 10104
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -335,15 +335,118 @@ N	akamai	off	2001:41a8:807:100::/56
 N	akamai	off	2001:4450:40::/48
 N	akamai	off	2001:4457:ff0::/48
 N	akamai	off	2001:4546:1003::/48
+N	akamai	off	2001:4878:7::/48
+N	akamai	off	2001:4878:8::/48
+N	akamai	off	2001:4878:37::/48
+N	akamai	off	2001:4878:39::/48
+N	akamai	off	2001:4878:48::/48
+N	akamai	off	2001:4878:62::/47
+N	akamai	off	2001:4878:68::/48
+N	akamai	off	2001:4878:151::/48
+N	akamai	off	2001:4878:164::/48
+N	akamai	off	2001:4878:166::/48
+N	akamai	off	2001:4878:173::/48
 N	akamai	off	2001:4878:1e0::/44
+N	akamai	off	2001:4878:202::/48
+N	akamai	off	2001:4878:204::/48
+N	akamai	off	2001:4878:225::/48
+N	akamai	off	2001:4878:228::/48
+N	akamai	off	2001:4878:242::/48
+N	akamai	off	2001:4878:321::/48
+N	akamai	off	2001:4878:322::/47
+N	akamai	off	2001:4878:347::/48
+N	akamai	off	2001:4878:2007::/48
+N	akamai	off	2001:4878:2008::/48
+N	akamai	off	2001:4878:2037::/48
+N	akamai	off	2001:4878:2048::/48
 N	akamai	off	2001:4878:2055::/48
+N	akamai	off	2001:4878:2062::/47
+N	akamai	off	2001:4878:2068::/48
+N	akamai	off	2001:4878:2151::/48
+N	akamai	off	2001:4878:2164::/48
+N	akamai	off	2001:4878:2166::/48
+N	akamai	off	2001:4878:2173::/48
 N	akamai	off	2001:4878:21e0::/44
+N	akamai	off	2001:4878:2202::/48
+N	akamai	off	2001:4878:2204::/48
+N	akamai	off	2001:4878:2216::/48
+N	akamai	off	2001:4878:2225::/48
+N	akamai	off	2001:4878:2228::/48
+N	akamai	off	2001:4878:2242::/48
+N	akamai	off	2001:4878:2321::/48
+N	akamai	off	2001:4878:2322::/47
+N	akamai	off	2001:4878:2347::/48
+N	akamai	off	2001:4878:3068::/48
 N	akamai	off	2001:4878:4001::/48
 N	akamai	off	2001:4878:4003::/48
+N	akamai	off	2001:4878:4007::/48
+N	akamai	off	2001:4878:4037::/48
 N	akamai	off	2001:4878:4055::/48
+N	akamai	off	2001:4878:4062::/47
+N	akamai	off	2001:4878:4164::/48
+N	akamai	off	2001:4878:4173::/48
 N	akamai	off	2001:4878:41e0::/44
+N	akamai	off	2001:4878:4225::/48
+N	akamai	off	2001:4878:4321::/48
+N	akamai	off	2001:4878:4322::/47
+N	akamai	off	2001:4878:4347::/48
+N	akamai	off	2001:4878:8007::/48
+N	akamai	off	2001:4878:8008::/48
+N	akamai	off	2001:4878:8037::/48
+N	akamai	off	2001:4878:8048::/48
+N	akamai	off	2001:4878:8062::/47
+N	akamai	off	2001:4878:8068::/48
+N	akamai	off	2001:4878:8151::/48
+N	akamai	off	2001:4878:8164::/48
+N	akamai	off	2001:4878:8166::/48
+N	akamai	off	2001:4878:8173::/48
 N	akamai	off	2001:4878:81e0::/44
+N	akamai	off	2001:4878:8202::/48
+N	akamai	off	2001:4878:8204::/48
+N	akamai	off	2001:4878:8216::/48
+N	akamai	off	2001:4878:8225::/48
+N	akamai	off	2001:4878:8228::/48
+N	akamai	off	2001:4878:8242::/48
+N	akamai	off	2001:4878:8321::/48
+N	akamai	off	2001:4878:8322::/47
+N	akamai	off	2001:4878:8347::/48
+N	akamai	off	2001:4878:a007::/48
+N	akamai	off	2001:4878:a008::/48
+N	akamai	off	2001:4878:a048::/48
+N	akamai	off	2001:4878:a062::/48
+N	akamai	off	2001:4878:a151::/48
+N	akamai	off	2001:4878:a166::/48
+N	akamai	off	2001:4878:a202::/48
+N	akamai	off	2001:4878:a216::/48
+N	akamai	off	2001:4878:a225::/48
+N	akamai	off	2001:4878:a228::/48
+N	akamai	off	2001:4878:a242::/48
+N	akamai	off	2001:4878:a321::/48
+N	akamai	off	2001:4878:a322::/47
+N	akamai	off	2001:4878:a347::/48
+N	akamai	off	2001:4878:b007::/48
+N	akamai	off	2001:4878:b008::/48
+N	akamai	off	2001:4878:b048::/48
+N	akamai	off	2001:4878:b151::/48
+N	akamai	off	2001:4878:b166::/48
+N	akamai	off	2001:4878:b202::/48
+N	akamai	off	2001:4878:b216::/48
+N	akamai	off	2001:4878:b225::/48
+N	akamai	off	2001:4878:b242::/48
+N	akamai	off	2001:4878:b347::/48
+N	akamai	off	2001:4878:c007::/48
+N	akamai	off	2001:4878:c031::/48
+N	akamai	off	2001:4878:c037::/48
+N	akamai	off	2001:4878:c048::/48
+N	akamai	off	2001:4878:c062::/47
+N	akamai	off	2001:4878:c164::/48
 N	akamai	off	2001:4878:c1e0::/44
+N	akamai	off	2001:4878:c204::/48
+N	akamai	off	2001:4878:c225::/48
+N	akamai	off	2001:4878:c228::/48
+N	akamai	off	2001:4878:c321::/48
+N	akamai	off	2001:4878:c322::/47
+N	akamai	off	2001:4878:c347::/48
 N	akamai	off	2001:4c08:2026::/48
 N	akamai	off	2401:fdc0:a000::/48
 N	akamai	off	2403:c780:7203::/48
@@ -535,7 +638,8 @@ N	alibaba	off	38.84.220.0/24
 N	alibaba	off	39.125.80.0/24
 N	alibaba	off	43.90.0.0/15
 N	alibaba	off	43.92.0.0/15
-N	alibaba	off	43.94.0.0/18
+N	alibaba	off	43.94.0.0/16
+N	alibaba	off	43.95.0.0/18
 N	alibaba	off	43.95.192.0/18
 N	alibaba	off	43.96.0.0/24
 N	alibaba	off	43.96.3.0/24
@@ -677,7 +781,7 @@ N	alibaba	off	43.123.128.0/18
 N	alibaba	off	43.124.0.0/16
 N	alibaba	off	43.125.0.0/18
 N	alibaba	off	43.125.64.0/21
-N	alibaba	off	43.126.0.0/17
+N	alibaba	off	43.126.0.0/16
 N	alibaba	off	47.52.0.0/16
 N	alibaba	off	47.56.0.0/15
 N	alibaba	off	47.74.0.0/15
@@ -763,6 +867,7 @@ N	alibaba	off	116.0.89.0/24
 N	alibaba	off	125.24.253.0/24
 N	alibaba	off	139.95.0.0/20
 N	alibaba	off	139.95.16.0/22
+N	alibaba	off	139.95.21.0/24
 N	alibaba	off	139.95.22.0/23
 N	alibaba	off	139.95.24.0/21
 N	alibaba	off	139.95.32.0/21
@@ -1718,6 +1823,7 @@ N	amazon	off	51.60.0.0/16
 N	amazon	off	51.69.0.0/16
 N	amazon	off	51.70.0.0/16
 N	amazon	off	51.72.40.128/27
+N	amazon	off	51.72.96.0/23
 N	amazon	off	51.74.20.0/23
 N	amazon	off	51.74.22.0/24
 N	amazon	off	51.74.192.0/18
@@ -2113,6 +2219,7 @@ N	amazon	off	64.202.96.0/24
 N	amazon	off	64.204.59.0/24
 N	amazon	off	64.204.65.0/24
 N	amazon	off	64.204.69.0/24
+N	amazon	off	64.204.128.0/23
 N	amazon	off	64.204.229.0/24
 N	amazon	off	64.205.66.0/23
 N	amazon	off	64.207.194.0/24
@@ -3043,6 +3150,7 @@ N	amazon	off	107.162.252.0/24
 N	amazon	off	107.179.0.0/17
 N	amazon	off	107.180.192.0/21
 N	amazon	off	107.180.200.0/23
+N	amazon	off	107.180.204.0/23
 N	amazon	off	107.190.183.0/24
 N	amazon	off	107.191.76.0/24
 N	amazon	off	108.96.0.0/11
@@ -3238,6 +3346,7 @@ N	amazon	off	130.137.16.0/24
 N	amazon	off	130.137.26.0/24
 N	amazon	off	130.137.28.0/23
 N	amazon	off	130.137.47.0/24
+N	amazon	off	130.137.63.0/24
 N	amazon	off	130.137.78.0/23
 N	amazon	off	130.137.80.0/23
 N	amazon	off	130.137.82.0/24
@@ -3973,7 +4082,6 @@ N	amazon	off	157.254.141.0/24
 N	amazon	off	157.254.169.0/24
 N	amazon	off	157.254.200.0/22
 N	amazon	off	157.254.217.0/24
-N	amazon	off	157.254.232.0/24
 N	amazon	off	157.254.239.0/24
 N	amazon	off	158.26.56.0/21
 N	amazon	off	158.26.168.0/21
@@ -5484,6 +5592,7 @@ N	amazon	off	204.194.168.0/21
 N	amazon	off	204.194.222.0/23
 N	amazon	off	204.209.84.0/23
 N	amazon	off	204.236.128.0/17
+N	amazon	off	204.238.120.0/24
 N	amazon	off	204.239.0.0/24
 N	amazon	off	204.246.160.0/19
 N	amazon	off	205.147.80.0/23
@@ -5682,7 +5791,6 @@ N	amazon	off	208.56.47.0/24
 N	amazon	off	208.56.48.0/22
 N	amazon	off	208.56.52.0/23
 N	amazon	off	208.56.55.0/24
-N	amazon	off	208.64.40.0/24
 N	amazon	off	208.64.224.0/21
 N	amazon	off	208.66.42.0/24
 N	amazon	off	208.67.42.0/24
@@ -6832,13 +6940,8 @@ N	amazon	off	2606:f4c0:9800::/43
 N	amazon	off	2607:b40::/48
 N	amazon	off	2607:3640:ffcc::/46
 N	amazon	off	2607:4240:10::/47
-N	amazon	off	2607:4240:4042::/47
-N	amazon	off	2607:4240:4045::/48
-N	amazon	off	2607:4240:4047::/48
-N	amazon	off	2607:4240:4048::/47
-N	amazon	off	2607:4240:404c::/48
-N	amazon	off	2607:4240:404e::/47
-N	amazon	off	2607:4240:4052::/47
+N	amazon	off	2607:4240:4040::/44
+N	amazon	off	2607:4240:4050::/46
 N	amazon	off	2607:4240:4054::/48
 N	amazon	off	2607:5ac0::/47
 N	amazon	off	2607:5ac0:6080::/48
@@ -6847,8 +6950,11 @@ N	amazon	off	2607:5f40:8100::/48
 N	amazon	off	2607:5f40:8200::/48
 N	amazon	off	2607:5f40:8202::/48
 N	amazon	off	2607:5f40:8204::/48
+N	amazon	off	2607:5f40:8220::/47
+N	amazon	off	2607:5f40:8222::/48
 N	amazon	off	2607:6bc0:301::/48
 N	amazon	off	2607:6bc0:302::/47
+N	amazon	off	2607:6bc0:340::/48
 N	amazon	off	2607:6bc0:342::/47
 N	amazon	off	2607:6bc0:382::/48
 N	amazon	off	2607:6bc0:385::/48
@@ -7228,6 +7334,7 @@ N	amazon	off	2a13:7f00:4::/47
 N	amazon	off	2a13:85c0::/47
 N	amazon	off	2a13:85c0:10::/47
 N	amazon	off	2a13:85c0:20::/47
+N	amazon	off	2a13:88c0::/29
 N	amazon	off	2a13:9500:110::/48
 N	amazon	off	2a13:9500:176::/48
 N	amazon	off	2a13:9500:1d7::/48
@@ -7524,7 +7631,6 @@ N	cloudflare	off	66.93.178.0/24
 N	cloudflare	off	66.203.249.0/24
 N	cloudflare	off	66.235.200.0/24
 N	cloudflare	off	66.242.60.0/23
-N	cloudflare	off	68.182.187.0/24
 N	cloudflare	off	69.12.95.0/24
 N	cloudflare	off	69.87.126.0/24
 N	cloudflare	off	69.90.210.0/24
@@ -7843,6 +7949,7 @@ N	cloudflare	off	200.69.28.0/24
 N	cloudflare	off	200.102.177.0/24
 N	cloudflare	off	200.218.32.0/24
 N	cloudflare	off	201.4.29.0/24
+N	cloudflare	off	201.15.212.0/24
 N	cloudflare	off	202.27.69.0/24
 N	cloudflare	off	202.49.114.0/24
 N	cloudflare	off	202.58.111.0/24
@@ -8062,7 +8169,6 @@ N	fastly	off	2a04:4e47::/45
 N	fastly	off	2a0d:8000:1::/48
 N	huawei	cn	1.92.0.0/16
 N	huawei	cn	1.94.0.0/15
-N	huawei	cn	14.131.0.0/16
 N	huawei	cn	43.254.0.0/22
 N	huawei	cn	49.4.0.0/19
 N	huawei	cn	49.4.48.0/20
@@ -8071,8 +8177,6 @@ N	huawei	cn	49.4.112.0/21
 N	huawei	cn	49.4.120.0/22
 N	huawei	cn	49.4.124.0/23
 N	huawei	cn	49.4.126.0/24
-N	huawei	cn	60.201.0.0/16
-N	huawei	cn	60.202.0.0/16
 N	huawei	cn	60.204.0.0/16
 N	huawei	cn	101.245.0.0/17
 N	huawei	cn	101.245.128.0/19
@@ -8134,13 +8238,11 @@ N	huawei	cn	115.175.128.0/17
 N	huawei	cn	116.63.0.0/19
 N	huawei	cn	116.204.0.0/17
 N	huawei	cn	116.205.0.0/16
-N	huawei	cn	116.216.0.0/16
 N	huawei	cn	116.218.0.0/18
 N	huawei	cn	116.218.64.0/19
 N	huawei	cn	116.218.128.0/20
 N	huawei	cn	116.218.144.0/21
 N	huawei	cn	117.78.0.0/18
-N	huawei	cn	118.246.0.0/16
 N	huawei	cn	119.3.0.0/16
 N	huawei	cn	120.46.0.0/16
 N	huawei	cn	121.36.0.0/15
