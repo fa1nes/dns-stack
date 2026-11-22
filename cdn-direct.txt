@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1795266030
+# generated-at: 1795351902
 # providers: 20
 # domains: 78
-# prefixes: 10106
+# prefixes: 10105
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -945,7 +945,6 @@ N	alibaba	off	155.102.220.0/23
 N	alibaba	off	155.102.223.0/24
 N	alibaba	off	155.102.224.0/19
 N	alibaba	off	156.59.108.0/24
-N	alibaba	off	156.227.20.0/24
 N	alibaba	off	156.236.17.0/24
 N	alibaba	off	161.117.0.0/16
 N	alibaba	off	163.5.166.0/24
@@ -3026,6 +3025,7 @@ N	amazon	off	103.94.240.0/22
 N	amazon	off	103.96.100.0/22
 N	amazon	off	103.102.160.0/22
 N	amazon	off	103.104.86.0/24
+N	amazon	off	103.106.14.0/24
 N	amazon	off	103.107.56.0/24
 N	amazon	off	103.109.83.0/24
 N	amazon	off	103.116.4.0/23
@@ -3620,7 +3620,6 @@ N	amazon	off	140.233.148.0/22
 N	amazon	off	140.233.152.0/21
 N	amazon	off	140.235.214.0/24
 N	amazon	off	140.244.0.0/16
-N	amazon	off	141.11.12.0/22
 N	amazon	off	141.11.112.0/24
 N	amazon	off	141.11.115.0/24
 N	amazon	off	141.11.136.0/24
@@ -4657,7 +4656,6 @@ N	amazon	off	173.82.224.0/22
 N	amazon	off	173.82.228.0/24
 N	amazon	off	173.82.235.0/24
 N	amazon	off	173.82.238.0/23
-N	amazon	off	173.82.240.0/24
 N	amazon	off	173.82.255.0/24
 N	amazon	off	173.83.0.0/16
 N	amazon	off	173.96.0.0/11
@@ -7652,10 +7650,7 @@ N	cloudflare	off	78.128.122.0/24
 N	cloudflare	off	79.182.131.0/24
 N	cloudflare	off	79.183.146.0/24
 N	cloudflare	off	80.68.216.0/21
-N	cloudflare	off	80.174.2.0/23
-N	cloudflare	off	80.174.7.0/24
-N	cloudflare	off	80.174.202.0/24
-N	cloudflare	off	80.174.205.0/24
+N	cloudflare	off	80.174.2.0/24
 N	cloudflare	off	80.240.93.0/24
 N	cloudflare	off	82.21.82.0/24
 N	cloudflare	off	82.21.188.0/24
@@ -8060,6 +8055,9 @@ N	cloudflare	off	2803:f800::/32
 N	cloudflare	off	2a02:d21:20::/44
 N	cloudflare	off	2a06:98c0::/29
 N	cloudflare	off	2a07:8240::/47
+N	cloudflare	off	2a09:bac0:684::/48
+N	cloudflare	off	2a09:bac0:711::/48
+N	cloudflare	off	2a09:bac0:712::/48
 N	cloudflare	off	2a09:bac0:745::/48
 N	cloudflare	off	2a09:bac0:1000::/47
 N	cloudflare	off	2a09:bac0:1008::/45
@@ -9588,6 +9586,7 @@ N	microsoft	off	192.40.76.0/22
 N	microsoft	off	192.46.170.0/24
 N	microsoft	off	192.48.225.0/24
 N	microsoft	off	192.64.201.0/24
+N	microsoft	off	192.67.217.0/24
 N	microsoft	off	192.71.41.0/24
 N	microsoft	off	192.80.239.0/24
 N	microsoft	off	192.80.246.0/23
