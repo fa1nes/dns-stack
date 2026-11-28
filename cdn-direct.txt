@@ -1,8 +1,8 @@
 # schema: cdn-direct/1
-# generated-at: 1795789248
+# generated-at: 1795872988
 # providers: 20
 # domains: 78
-# prefixes: 10115
+# prefixes: 10113
 P	akamai	Akamai
 P	alibaba	阿里云
 P	amazon	AWS
@@ -6293,7 +6293,6 @@ N	amazon	off	2001:df2:f8c0::/48
 N	amazon	off	2001:df3:5580::/48
 N	amazon	off	2001:df3:aac0::/48
 N	amazon	off	2001:df5:fd40::/48
-N	amazon	off	2001:1b74:d0a::/48
 N	amazon	off	2001:3fc6:4::/47
 N	amazon	off	2001:3fc6:20::/43
 N	amazon	off	2001:43ff:d000::/48
@@ -6551,7 +6550,6 @@ N	amazon	off	2602:f2eb::/40
 N	amazon	off	2602:f2f2::/40
 N	amazon	off	2602:f387::/47
 N	amazon	off	2602:f3e4:40::/47
-N	amazon	off	2602:f3e4:43::/48
 N	amazon	off	2602:f4a8:902::/47
 N	amazon	off	2602:f4a8:904::/48
 N	amazon	off	2602:f4d2:a00::/48
@@ -7670,7 +7668,6 @@ N	cloudflare	off	82.47.123.0/24
 N	cloudflare	off	82.47.124.0/23
 N	cloudflare	off	82.152.217.0/24
 N	cloudflare	off	82.153.184.0/24
-N	cloudflare	off	83.245.13.0/24
 N	cloudflare	off	83.245.67.0/24
 N	cloudflare	off	84.232.93.0/24
 N	cloudflare	off	84.236.184.0/24
@@ -7996,6 +7993,7 @@ N	cloudflare	off	210.1.232.0/23
 N	cloudflare	off	211.56.101.0/24
 N	cloudflare	off	211.188.26.0/23
 N	cloudflare	off	212.6.39.0/24
+N	cloudflare	off	212.74.47.0/24
 N	cloudflare	off	212.104.128.0/24
 N	cloudflare	off	212.114.54.0/24
 N	cloudflare	off	212.135.49.0/24
@@ -8310,6 +8308,7 @@ N	huawei	off	14.137.170.0/23
 N	huawei	off	14.137.172.0/22
 N	huawei	off	14.137.176.0/21
 N	huawei	off	14.137.187.0/24
+N	huawei	off	14.137.189.0/24
 N	huawei	off	14.137.190.0/23
 N	huawei	off	27.106.0.0/17
 N	huawei	off	27.255.0.0/18
@@ -8661,7 +8660,7 @@ N	imperva	off	131.125.202.0/23
 N	imperva	off	131.125.204.0/24
 N	imperva	off	131.125.208.0/24
 N	imperva	off	131.125.210.0/23
-N	imperva	off	131.125.212.0/24
+N	imperva	off	131.125.212.0/23
 N	imperva	off	131.125.215.0/24
 N	imperva	off	131.125.216.0/23
 N	imperva	off	131.125.218.0/24
@@ -9824,7 +9823,6 @@ N	microsoft	off	212.1.222.0/23
 N	microsoft	off	212.42.130.0/24
 N	microsoft	off	212.46.57.0/24
 N	microsoft	off	212.80.193.0/24
-N	microsoft	off	212.103.45.0/24
 N	microsoft	off	212.207.0.0/16
 N	microsoft	off	213.54.0.0/16
 N	microsoft	off	213.109.150.0/24
